@@ -73,6 +73,15 @@ BASE_PATH_CHECK = 0.001
 # that check: upstream's (None) first, as nearly every path does; a search at 1 mm
 # costs about ten times one at upstream's 1 cm.
 BASE_REPLAN_STEPS = (None, 0.003, BASE_PATH_CHECK)
+# How far the robot's batch return keeps the chassis from the counter (its top and
+# legs) on the base paths it plans, when a path that does exists: what the base may be
+# off its path while it follows it (`RackScraper.follow_base_path` ends within 3 mm).
+# Planned to touch nothing and no more, a path passed leg_1 0.21 mm clear; the base
+# followed it 0.18 mm off, and the executor's check of the line to its next command
+# cut 0.011 mm into the leg (robot batch return after a Sweep, seed 2, 2026-11-13).
+# Set on the shelf only for the return's own motions (`RackRobotBatchReturn`), so
+# every other skill's base plans are unchanged.
+BASE_CLEARANCE_M = 0.003
 # Base candidates tried per skill before refusing; each costs IK and possibly a BiRRT.
 MAX_STANCES = 400
 
@@ -413,9 +422,16 @@ class ScraperMotionPlanner:
         guard: Callable[[np.ndarray], bool],
         held: HeldObject | None = None,
         ignore: tuple[str, ...] | None = None,
+        clearance_guard: Callable[[np.ndarray], bool] | None = None,
     ) -> list[np.ndarray]:
         """A base path from `base` to `target` on which `guard` holds at every
         configuration at most `BASE_PATH_CHECK` apart, or PlanningRefused.
+
+        `clearance_guard` is `guard` with a clearance (`BASE_CLEARANCE_M`). The path
+        `guard` alone admits is kept when it has that clearance throughout, so a path
+        that had it is planned exactly as before. Otherwise the path is planned again
+        under `clearance_guard`; only when no such path exists (the base starts or
+        must end closer to the counter than the clearance) is the first path returned.
 
         Upstream checks the 3-D body 1 cm / 0.01 rad apart, and a chassis corner
         sweeping past a thin counter leg can collide for less than that between two
@@ -430,32 +446,43 @@ class ScraperMotionPlanner:
             *((() if held is None else ("wiper_0",)) if ignore is None else ignore),
             *ScraperMotionPlanner.counter_colliders(state=state),
         )
-        out: list[np.ndarray] = []
-        for step in BASE_REPLAN_STEPS:
-            path = KitchenMotionPlanner.plan_base(
-                sim=sim,
-                state=state,
-                target=target,
-                arm=arm,
-                what=what,
-                held=held,
-                ignore=ignored,
-                also_collides=lambda pose: not guard(np.array([pose.x, pose.y, pose.theta()])),
-                **(
-                    {}
-                    if step is None
-                    else {"body_check_xy_step": step, "body_check_rot_step": step}
-                ),
-            )
-            # Unwrap the heading so the base turns the short way between waypoints.
-            out = [base.copy()]
-            for pose in path[1:]:
-                pose = pose.copy()
-                pose[2] = out[-1][2] + (pose[2] - out[-1][2] + np.pi) % (2 * np.pi) - np.pi
-                out.append(pose)
-            if ScraperMotionPlanner.base_path_clear(path=out, guard=guard):
-                return out
-        raise PlanningRefused(f"No base path to {what} clear at {BASE_PATH_CHECK} m spacing")
+
+        def planned(*, within: Callable[[np.ndarray], bool]) -> list[np.ndarray]:
+            for step in BASE_REPLAN_STEPS:
+                path = KitchenMotionPlanner.plan_base(
+                    sim=sim,
+                    state=state,
+                    target=target,
+                    arm=arm,
+                    what=what,
+                    held=held,
+                    ignore=ignored,
+                    also_collides=lambda pose: not within(np.array([pose.x, pose.y, pose.theta()])),
+                    **(
+                        {}
+                        if step is None
+                        else {"body_check_xy_step": step, "body_check_rot_step": step}
+                    ),
+                )
+                # Unwrap the heading so the base turns the short way between waypoints.
+                out = [base.copy()]
+                for pose in path[1:]:
+                    pose = pose.copy()
+                    pose[2] = out[-1][2] + (pose[2] - out[-1][2] + np.pi) % (2 * np.pi) - np.pi
+                    out.append(pose)
+                if ScraperMotionPlanner.base_path_clear(path=out, guard=within):
+                    return out
+            raise PlanningRefused(f"No base path to {what} clear at {BASE_PATH_CHECK} m spacing")
+
+        path = planned(within=guard)
+        if clearance_guard is None or ScraperMotionPlanner.base_path_clear(
+            path=path, guard=clearance_guard
+        ):
+            return path
+        try:
+            return planned(within=clearance_guard)
+        except PlanningRefused:
+            return path
 
     @staticmethod
     def base_path_clear(*, path: list[np.ndarray], guard: Callable[[np.ndarray], bool]) -> bool:
@@ -573,6 +600,9 @@ class ScraperMotionPlanner:
                         arm=arm,
                         what="the scraper pick stance",
                         guard=ScraperMotionPlanner.base_guard(ok=ok, arm=arm),
+                        clearance_guard=ScraperMotionPlanner.clearance_guard(
+                            tool=tool, ok=ok, arm=arm
+                        ),
                     )
                     sim.set_robot_base(SE2(*(float(v) for v in stance)))
                     arm_path = ScraperMotionPlanner.plan_arm_to(
@@ -686,6 +716,9 @@ class ScraperMotionPlanner:
                             arm=carry[-1],
                             what="the scraper return stance",
                             guard=ScraperMotionPlanner.base_guard(ok=ok, arm=carry[-1]),
+                            clearance_guard=ScraperMotionPlanner.clearance_guard(
+                                tool=tool, ok=ok, arm=carry[-1]
+                            ),
                             held=held,
                         )
                         sim.set_robot_base(SE2(*(float(v) for v in stance)))
@@ -827,6 +860,9 @@ class ScraperMotionPlanner:
                             arm=carry[-1],
                             what=what,
                             guard=ScraperMotionPlanner.base_guard(ok=ok, arm=carry[-1]),
+                            clearance_guard=ScraperMotionPlanner.clearance_guard(
+                                tool=tool, ok=ok, arm=carry[-1]
+                            ),
                             held=held,
                             ignore=ignore,
                         )
@@ -901,13 +937,14 @@ class ScraperMotionPlanner:
         more conservatively than PyBullet's mirror of the plate, so a path PyBullet
         clears with the margin can still be refused mid-motion without it."""
 
-        def ok(*, base: np.ndarray, arm: Any) -> bool:
+        def ok(*, base: np.ndarray, arm: Any, clearance: float = 0.0) -> bool:
             try:
                 tool.check_configuration(
                     base=np.asarray(base, dtype=float),
                     arm=np.asarray(arm[:7], dtype=float),
                     holding=holding,
                     inflate=TOOL_INFLATE_M,
+                    chassis_clearance=clearance,
                 )
             except SkillFailed:
                 return False
@@ -920,7 +957,25 @@ class ScraperMotionPlanner:
         return lambda q: ok(base=base, arm=q)
 
     @staticmethod
-    def base_guard(*, ok: Callable[..., bool], arm: Any) -> Callable[[np.ndarray], bool]:
+    def clearance_guard(
+        *, tool: Any, ok: Callable[..., bool], arm: Any
+    ) -> Callable[[np.ndarray], bool] | None:
+        """`base_guard` with the chassis kept `shelf.base_clearance` from the fixtures,
+        or None while that is zero: only the robot's batch return sets it, so every
+        other skill plans its base exactly as it always did."""
+        clearance = float(getattr(tool.shelf, "base_clearance", 0.0))
+        if not clearance:
+            return None
+        return ScraperMotionPlanner.base_guard(ok=ok, arm=arm, clearance=clearance)
+
+    @staticmethod
+    def base_guard(
+        *, ok: Callable[..., bool], arm: Any, clearance: float = 0.0
+    ) -> Callable[[np.ndarray], bool]:
+        """`ok` over base poses with the arm held at `arm`; with `clearance`, the chassis
+        must also keep that far from the fixtures."""
+        if clearance:
+            return lambda pose: ok(base=pose, arm=arm, clearance=clearance)
         return lambda pose: ok(base=pose, arm=arm)
 
     @staticmethod

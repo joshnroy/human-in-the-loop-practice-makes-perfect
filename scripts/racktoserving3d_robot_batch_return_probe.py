@@ -132,7 +132,9 @@ class RobotBatchReturnProbe:
             if writer is not None:
                 writer.close()
                 record["video_frames"] = frames[0]
-        record["report"] = env.rack_controllers().metrics.get("robot_batch_return")
+        metrics = env.rack_controllers().metrics
+        record["report"] = metrics.get("robot_batch_return")
+        record["descents_stopped_short"] = metrics.get("descents_stopped_short", [])
         record["after"] = RobotBatchReturnProbe.where(env=env)
         record["in_place_after"] = sum(
             location == "OnRackInPlace" for location in record["after"].values()

@@ -130,11 +130,19 @@ class _FoodMotion(RackScraper):
         return bool(self.food.backend.config.food_handling == "welded")
 
     def check_configuration(
-        self, *, base: np.ndarray, arm: np.ndarray, holding: bool, inflate: float = 0.0
+        self,
+        *,
+        base: np.ndarray,
+        arm: np.ndarray,
+        holding: bool,
+        inflate: float = 0.0,
+        chassis_clearance: float = 0.0,
     ) -> None:
         del inflate  # the food check carries no scraper
         try:
-            super().check_configuration(base=base, arm=arm, holding=False)
+            super().check_configuration(
+                base=base, arm=arm, holding=False, chassis_clearance=chassis_clearance
+            )
         except SkillFailed:
             if not self.departing or self._undeparted_cost() > 0:
                 raise
@@ -1258,6 +1266,14 @@ WELDED_DESCENT_STEP_M = 0.01
 SNAP_RAISE_M = 0.002
 SNAP_RAISE_STEPS = 15
 SNAP_MARGIN_STEPS = 2
+# With `clear_of_food`, how far a snapped dumpling may be raised to clear the other
+# food: twice a dumpling's height, enough to clear one lying against it or on it.
+SNAP_FOOD_RAISE_STEPS = 30
+# What a pick that would put the dumpling inside another one refuses with.
+SNAP_INTO_FOOD = "No snap into the hand clear of the other food"
+# Control steps the hand is held at the waypoint where a descent ended early, so that it
+# has arrived there before the food is snapped.
+DESCENT_STOP_STEPS = 20
 
 
 class WeldedFoodSkills:
@@ -1383,7 +1399,10 @@ class WeldedFoodSkills:
             refusal="No collision-free food grasp",
         )
 
-    def pick(self, *, name: str) -> None:
+    def pick(self, *, name: str, clear_of_food: bool = False) -> None:
+        """`clear_of_food` (the robot's batch return) takes the dumpling only where its
+        snap into the hand overlaps no other food, and refuses otherwise with
+        `SNAP_INTO_FOOD`, nothing moved but the hand (`_snap_clear`)."""
         food, backend, shelf, motion = self.food, self.backend, self.shelf, self.motion
         food._validate_name(name=name)  # noqa: SLF001
         backend.sync_clock()
@@ -1417,14 +1436,8 @@ class WeldedFoodSkills:
                 shelf.hold(count=10, label="food_open")
                 food._follow(plan=plan, pose=payload["hover"], label="food")  # noqa: SLF001
             reached, hover = payload["reached"], payload["hover"]
-            motion.line(
-                position=reached[:3, 3],
-                rotation=reached[:3, :3],
-                label="food_approach",
-                holding=False,
-                step=0.005,
-            )
-            self._snap_clear(name=name, hover=hover)
+            self._descend(pose=reached, label="food_approach")
+            self._snap_clear(name=name, hover=hover, clear_of_food=clear_of_food)
             food.controllers.held_food = shelf.held_cube = food.carried = name
             # The fingers close once the hand is back at the hover: closing swings the
             # pads' tips down, onto a wire or the plate if the hand is still low.
@@ -1440,7 +1453,41 @@ class WeldedFoodSkills:
             shelf.hold(count=30, label="food_close")
             food._require_held(name=name)  # noqa: SLF001
 
-    def _snap_clear(self, *, name: str, hover: np.ndarray) -> None:
+    def _descend(self, *, pose: np.ndarray, label: str, steps_per: int = 3) -> None:
+        """The hand down the straight line to `pose`, as far as the fixtures allow.
+
+        `_descent` plans the line at its own IK solutions, 1 cm apart, and ends it where
+        the fixtures stop it. The executor solves every 5 mm waypoint again, within the
+        IK's tolerance of the same hand pose, so its solution can touch a fixture the
+        planned one cleared: a pad 0.02 mm into the plate's rim at the last waypoint of
+        a descent planned clear to the grasp (robot batch return after a GatherAndSweep,
+        seed 6, 2026-11-13). A waypoint the guard refuses as a collision is refused
+        before it is commanded, so the hand is at the waypoint before it; the descent
+        ends there, as a planned one does, and the snap is taken from where the hand
+        is. Any other refusal, and a collision met while moving, still fails.
+        """
+        motion, shelf = self.motion, self.shelf
+        try:
+            motion.line(
+                position=pose[:3, 3],
+                rotation=pose[:3, :3],
+                label=label,
+                holding=False,
+                step=0.005,
+                steps_per=steps_per,
+            )
+        except SkillFailed as exc:
+            refusal = str(exc)
+            if not (refusal.startswith(f"{label}: Cartesian fraction") and "collide" in refusal):
+                raise
+            shelf.hold(count=DESCENT_STOP_STEPS, label=f"{label}_stopped")
+            self.food.controllers.metrics.setdefault("descents_stopped_short", []).append({
+                "label": label,
+                "refusal": refusal,
+                "short_m": float(np.linalg.norm(shelf.site_pose()[:3, 3] - pose[:3, 3])),
+            })
+
+    def _snap_clear(self, *, name: str, hover: np.ndarray, clear_of_food: bool = False) -> None:
         """Snap `name` into the hand, raised as little as lets it start, and lift
         to `hover`, clear of the fixtures.
 
@@ -1448,19 +1495,33 @@ class WeldedFoodSkills:
         but the dumpling it holds can still reach into a wire or the rim beneath it,
         or be dragged across the rim as a leaned hand backs out; the carried-food
         check then refuses the lift. The lift is checked as `line` checks it.
+
+        The snap turns the dumpling to the hand, and among other food that can put it
+        inside a neighbour: 13 mm inside one on a plate holding a GatherAndSweep's five,
+        which the next physics step threw 1.2 m to the floor at 4.7 m/s (robot batch
+        return, seed 2, 2026-11-13). With `clear_of_food` the dumpling is raised, up to
+        `SNAP_FOOD_RAISE_STEPS`, until it overlaps no other food as well; if no height
+        clears, it is put back where it lay, unwelded, and the pick refuses with
+        `SNAP_INTO_FOOD`. No physics step runs between the trial snaps, so a refused
+        pick has disturbed nothing.
         """
         shelf, motion = self.shelf, self.motion
         base = shelf.data.qpos[shelf.ba].copy()
         arm = shelf.data.qpos[shelf.qa].copy()
+        model, data = self.backend.model(), self.backend.data()
+        address = model.jnt_qposadr[model.joint(f"{name}_joint").id]
+        rested = data.qpos[address : address + 7].copy()
         self.food.carried = name
         try:
-            for step in range(SNAP_RAISE_STEPS + 1):
+            for step in range((SNAP_FOOD_RAISE_STEPS if clear_of_food else SNAP_RAISE_STEPS) + 1):
                 WeldedFood.snap_into_hand(
                     backend=self.backend, shelf=shelf, name=name, raise_m=step * SNAP_RAISE_M
                 )
                 try:
                     motion.check_configuration(base=base, arm=arm, holding=False)
                 except SkillFailed:
+                    continue
+                if clear_of_food and self._inside_other_food(name=name):
                     continue
                 if motion.line_plannable(
                     position=hover[:3, 3], rotation=hover[:3, :3], holding=False, step=0.005
@@ -1474,8 +1535,26 @@ class WeldedFoodSkills:
                         raise_m=(step + SNAP_MARGIN_STEPS) * SNAP_RAISE_M,
                     )
                     return
+            if clear_of_food:
+                import mujoco
+
+                WeldedFood.release(backend=self.backend)
+                data.qpos[address : address + 7] = rested
+                mujoco.mj_forward(model, data)
+                raise SkillFailed(f"{SNAP_INTO_FOOD}: {name} cannot be taken clear of the others")
         finally:
             self.food.carried = None
+
+    def _inside_other_food(self, *, name: str) -> bool:
+        """Whether `name`, as posed now, penetrates another dumpling."""
+        model, data = self.backend.model(), self.backend.data()
+        body = model.body(name).id
+        food = {model.body(other).id for other in self.backend.cube_names}
+        for contact in data.contact[: data.ncon]:
+            pair = {int(model.geom_bodyid[geom]) for geom in (contact.geom1, contact.geom2)}
+            if len(pair) == 2 and body in pair and pair <= food and contact.dist < 0:
+                return True
+        return False
 
     def _slot_spot(
         self, *, name: str, slot: tuple[float, float, float], rotation: np.ndarray
@@ -1575,14 +1654,7 @@ class WeldedFoodSkills:
                 )
                 food._follow(plan=plan, pose=payload["hover"], label="food_place")  # noqa: SLF001
             reached, hover, spot = payload["reached"], payload["hover"], payload["extra"]
-            motion.line(
-                position=reached[:3, 3],
-                rotation=reached[:3, :3],
-                label="food_lower",
-                holding=False,
-                step=0.005,
-                steps_per=5,
-            )
+            self._descend(pose=reached, label="food_lower", steps_per=5)
             food._require_held(name=name)  # noqa: SLF001
             WeldedFood.set_down(
                 backend=backend,

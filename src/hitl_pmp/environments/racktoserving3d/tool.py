@@ -68,6 +68,10 @@ def wiper_unwatched(*, shelf: ShelfSkills) -> Generator[None, None, None]:
 class RackShelfSkills(ShelfSkills):
     """Shelf servo aware of an optional rigid scraper grasp."""
 
+    # The chassis clearance base paths are planned with (`planning.BASE_CLEARANCE_M`):
+    # zero except while the robot's batch return runs.
+    base_clearance: float = 0.0
+
     scraper_attachment: str = "physical"
 
     def wiper_unwatched(self) -> Any:
@@ -1155,22 +1159,50 @@ class RackScraper(TableWiper):
                     return False
         return True
 
+    @contextmanager
+    def chassis_margin(self, *, clearance: float) -> Generator[None, None, None]:
+        """While open, MuJoCo reports the chassis in contact with anything nearer than
+        `clearance`, and `collision_cost` charges any contact with a fixture."""
+        if not clearance:
+            yield
+            return
+        model = self.shelf.model
+        chassis = model.body("robot_base_link").id
+        geoms = np.flatnonzero(model.geom_bodyid == chassis)
+        before = model.geom_margin[geoms].copy()
+        model.geom_margin[geoms] = clearance
+        try:
+            yield
+        finally:
+            model.geom_margin[geoms] = before
+
     def check_configuration(
-        self, *, base: np.ndarray, arm: np.ndarray, holding: bool, inflate: float = 0.0
+        self,
+        *,
+        base: np.ndarray,
+        arm: np.ndarray,
+        holding: bool,
+        inflate: float = 0.0,
+        chassis_clearance: float = 0.0,
     ) -> None:
-        """Reject robot collision and complete carried geometry in scratch kinematics."""
+        """Reject robot collision and complete carried geometry in scratch kinematics.
+
+        With `chassis_clearance` the chassis must also keep that far from the fixtures:
+        a planner's margin (`planning.BASE_CLEARANCE_M`), never the executor's check.
+        """
         shelf = self.shelf
         if shelf.ik_data is shelf.data:
             raise SkillFailed("Scraper clearance requires separate scratch data")
         if not np.isfinite(np.r_[base, arm]).all():
             raise SkillFailed("Scraper clearance requires finite joint targets")
         pose = shelf.site_at(base=base, arm=arm)
-        collision = shelf.collision_cost(d=shelf.ik_data, holding=holding)
+        with self.chassis_margin(clearance=chassis_clearance):
+            collision = shelf.collision_cost(d=shelf.ik_data, holding=holding)
         if not np.isfinite(collision) or collision > 0:
             pairs = []
             contacts = getattr(shelf.ik_data, "contact", ())
             for contact in contacts[: getattr(shelf.ik_data, "ncon", 0)]:
-                if contact.dist <= 0 and (
+                if contact.dist <= chassis_clearance and (
                     contact.geom1 in shelf.robot_geoms or contact.geom2 in shelf.robot_geoms
                 ):
                     names = [
