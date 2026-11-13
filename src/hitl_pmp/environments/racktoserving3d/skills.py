@@ -2,8 +2,9 @@
 
 Pick/place delivery and pick/return recovery remain available without a scraper.
 Food is ready from the start (Josh, 2026-11-03): there is no cooling and no Wait.
-AnyFoodOnRack/AnyFoodOffRack are conservatively retained across single-food moves;
-the backend refreshes these summaries from measured locations after each action.
+AnyFoodOnRack is conservatively retained when PickFood takes the last food off the
+rack; ReturnFoodToRack declares AnyFoodOffRack exactly (`_STILL_OFF_RACK`). The
+backend refreshes both summaries from measured locations after each action.
 """
 
 from typing import ClassVar, Literal
@@ -94,6 +95,26 @@ _CHAIN = frozenset(
     _atom(predicate=FOOD_ORDER, variables=(first, second))
     for first, second in zip(_SLOTS, _SLOTS[1:], strict=False)
 )
+# ReturnFoodToRack turns AnyFoodOffRack off only when it returns the last food off the
+# rack. No guard can say "no other food is off the rack" with positive conditions, so the
+# skill deletes the atom and these put it back whenever some food rests off the rack. The
+# returned food is held, so it has no resting place and never matches. Food with no
+# measured location at all (in flight, `classify_food`) is not seen here.
+_OTHER = Variable(name="other_food", type=Objects.food_type)
+_THE_TRAY = Variable(name="the_tray", type=Objects.tray_type)
+_STILL_OFF_RACK = frozenset(
+    ConditionalAddEffect(
+        conditions=frozenset({resting}),
+        add_effects=frozenset({_ANY_OFF}),
+        constant_bindings=((_OTHER, food), (_THE_TRAY, Objects.tray)),
+    )
+    for food in Objects.food
+    for resting in (
+        _atom(predicate=ON_TRAY, variables=(_OTHER, _THE_TRAY)),
+        _atom(predicate=SPILLED_COUNTER, variables=(_OTHER,)),
+        _atom(predicate=SPILLED_FLOOR, variables=(_OTHER,)),
+    )
+)
 
 
 class RackServing3DSkills:
@@ -174,7 +195,8 @@ class RackServing3DSkills:
             _ANY_ON,
             _atom(predicate=ON_RACK, variables=(_FOOD, _RACK)),
         }),
-        delete_effects=frozenset({_HELD_FOOD}),
+        delete_effects=frozenset({_HELD_FOOD, _ANY_OFF}),
+        conditional_add_effects=_STILL_OFF_RACK,
         param_dim=0,
     )
     HUMAN_BATCH_RETURN: ClassVar[Skill] = Skill(
