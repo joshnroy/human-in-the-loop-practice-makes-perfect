@@ -1,7 +1,7 @@
 """Counter-height variant facade; original SweepOffShelf3D remains unchanged."""
 
 from collections.abc import Callable
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import numpy as np
 from pydantic import Field, PrivateAttr
@@ -11,6 +11,7 @@ from hitl_pmp.environments.pouring3d.kitchen.types import PickRefusal
 from hitl_pmp.environments.sweepoffshelf3d.environment import SweepOffShelf3DEnvironment
 from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import SkillFailed
 from hitl_pmp.environments.sweepoffshelf3d.types import HumanEvent, SkillNote, SweepOffShelf3DState
+from hitl_pmp.environments.tossing3d.simulation_checkpoint import capture_engine, restore_engine
 
 from .backend import RackServingBackend
 from .config import RackServingConfig
@@ -19,6 +20,7 @@ from .food import RackFoodController
 from .objects import RackServing3DObjects as Objects
 from .pick_plannable import RackPickPlannable
 from .predicates import AbstractAtom, RackServing3DAtoms
+from .simulation_checkpoint import ControllerState
 from .skills import SKILL_IDS
 
 HUMAN_RETURN_SETTLE_STEPS = 20
@@ -238,6 +240,67 @@ class RackServingEnvironment(SweepOffShelf3DEnvironment):
                 )
                 self.current_state = self._observed_state(seed=seed, steps_taken=count + 1)
         return True
+
+    def simulation_checkpoint(self) -> dict[str, Any]:
+        """The practice simulation between two skills, for another process to carry on:
+        the backend's engine and accounting, what the scripted controllers keep from
+        one skill to the next (arm and base targets, the scraper's pose in the hand,
+        the IK scratch data), and this environment's own memory of the last action."""
+        controllers = self.rack_controllers()
+        backend = self.backend()
+        return {
+            "backend": backend.simulation_checkpoint(),
+            "controllers": {
+                name: ControllerState.capture(owner=owner)
+                for name, owner in self._controller_owners().items()
+            },
+            "ik_engine": capture_engine(model=backend.model(), data=controllers.shelf.ik_data),
+            "state": self.get_current_state().model_copy(deep=True),
+            "pick_refusals": dict(self._pick_refusals),
+            "bulk_verdict": self._bulk_verdict,
+            "last_skill_error": self._last_skill_error,
+            "last_controller_steps": self._last_controller_steps,
+            "last_action": None if self._last_action is None else self._last_action.copy(),
+            "atoms_before": self._atoms_before,
+            "human_events": list(self._human_events),
+            "motion_steps": self._motion_steps,
+        }
+
+    def restore_simulation_checkpoint(self, *, checkpoint: dict[str, Any]) -> None:
+        """Rebuild the checkpoint's seeded scene and controllers, then put back
+        everything `simulation_checkpoint` saved. The rebuild's own settling steps are
+        nobody's practice: no step observer or motion recording sees them."""
+        backend = self.backend()
+        observers = (backend._before_step, backend._after_step, backend._tick_observer)
+        backend.set_step_observers(before=None, after=None)
+        backend.set_tick_observer(observer=None)
+        try:
+            self.reset_to_seed(seed=checkpoint["backend"]["seed"])
+        finally:
+            backend.set_step_observers(before=observers[0], after=observers[1])
+            backend.set_tick_observer(observer=observers[2])
+        backend.restore_simulation_checkpoint(checkpoint=checkpoint["backend"])
+        for name, owner in self._controller_owners().items():
+            ControllerState.restore(owner=owner, state=checkpoint["controllers"][name])
+        restore_engine(
+            model=backend.model(),
+            data=self.rack_controllers().shelf.ik_data,
+            checkpoint=checkpoint["ik_engine"],
+        )
+        self._pick_refusals = dict(checkpoint["pick_refusals"])
+        self._bulk_verdict = checkpoint["bulk_verdict"]
+        self._last_skill_error = checkpoint["last_skill_error"]
+        self._last_controller_steps = checkpoint["last_controller_steps"]
+        last_action = checkpoint["last_action"]
+        self._last_action = None if last_action is None else last_action.copy()
+        self._atoms_before = checkpoint["atoms_before"]
+        self._human_events = list(checkpoint["human_events"])
+        self._motion_steps = checkpoint["motion_steps"]
+        self.current_state = checkpoint["state"].model_copy(deep=True)
+
+    def _controller_owners(self) -> dict[str, Any]:
+        controllers = self.rack_controllers()
+        return {"rack": controllers, "shelf": controllers.shelf, "tool": controllers.tool}
 
     def last_skill_attempt(
         self,
