@@ -642,3 +642,47 @@ def test_per_skill_cost_priors_must_name_robot_skills_and_be_positive(*, prices)
             dp_solver="enumeration",
             dp_skill_cost_prior_steps_for=prices,
         )
+
+
+def test_a_fixed_price_is_never_replaced_by_dps_own_observation(*, monkeypatch):
+    def price_after_one_execution(*, field):
+        method, pick, _back, _cube = _two_skill_setup(monkeypatch=monkeypatch, budget=20.0)
+        setattr(method, field, {"PickWiper": 800.0})
+        assert method.dp_expected_attempt_cost(ground_skill=pick) == pytest.approx(8.0)
+        _execute(method=method, ground=pick, cost=3.0)
+        method._practice_periods += 1  # noqa: SLF001 -- what get_practice_policy does
+        method.choose_practice_target()
+        return method.dp_expected_attempt_cost(ground_skill=pick), method.dp_allocation()[pick]
+
+    # Fixed: the next allocation still prices the skill at the table value, so the
+    # remaining budget (20 - 3) buys 2 more tries at 8.
+    assert price_after_one_execution(field="dp_skill_cost_steps_for") == (pytest.approx(8.0), 2)
+    # A starting value: the observation replaces it, and at 3 a try the 17 left buys
+    # all 4 tries PickWiper wants (no outcome was observed, so it still wants 4).
+    price, attempts = price_after_one_execution(field="dp_skill_cost_prior_steps_for")
+    assert price == pytest.approx(3.0)
+    assert attempts == 4
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"dp_skill_cost_steps_for": {"NoSuchSkill": 100.0}},
+        {"dp_skill_cost_steps_for": {"PickWiper": 0.0}},
+        # One skill cannot have both a fixed price and a starting value.
+        {
+            "dp_skill_cost_steps_for": {"PickWiper": 100.0},
+            "dp_skill_cost_prior_steps_for": {"PickWiper": 200.0},
+        },
+    ],
+)
+def test_fixed_prices_must_name_robot_skills_be_positive_and_not_also_be_starting_values(*, fields):
+    env = SweepOffShelf3DEnvironment()
+    with pytest.raises(ValueError, match="fixed cost steps"):
+        DpMethod(
+            env=env,
+            skill_provider=SweepOffShelf3DSkillProvider(env=env),
+            dp_budget=10.0,
+            dp_solver="enumeration",
+            **fields,
+        )

@@ -951,6 +951,16 @@ class DpCli(EesCli):
             "it is this project's adaptation: the paper's DP counts episodes.",
         )
         parser.add_argument(
+            "--dp-skill-cost-steps-for",
+            action=DpCli.SkillValues,
+            default={},
+            metavar="SKILL=STEPS",
+            help="Control steps one robot skill's attempt is priced at for the whole run "
+            "(repeatable, one per skill): a known input, never replaced by DP's own "
+            "observation. A skill takes this or --dp-skill-cost-prior-steps-for, not both. "
+            "Only the cost-unit budget reads it; this project's adaptation, like that budget.",
+        )
+        parser.add_argument(
             "--dp-initial-learning-rate-for",
             action=DpCli.SkillValues,
             default={},
@@ -1056,6 +1066,7 @@ class DpCli(EesCli):
                 dp_initial_competence=args.dp_initial_competence,
                 dp_initial_learning_rate_for=args.dp_initial_learning_rate_for,
                 dp_skill_cost_prior_steps_for=args.dp_skill_cost_prior_steps_for,
+                dp_skill_cost_steps_for=args.dp_skill_cost_steps_for,
                 dp_solver_log=(
                     args.output_dir / "dp_allocations.jsonl" if args.output_dir else None
                 ),

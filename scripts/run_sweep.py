@@ -321,6 +321,17 @@ class SweepRunner:
         return list(range(num_seeds))
 
     @staticmethod
+    def selected_seeds(*, num_seeds: int, seeds: list[int] | None) -> list[int]:
+        """The seeds named with `--seeds`, in the order given, or `default_seeds`. Named
+        seeds are still fixed integers, never drawn: they let one cell of a larger
+        design (a seed-major budget sweep) be its own invocation."""
+        if seeds is None:
+            return SweepRunner.default_seeds(num_seeds=num_seeds)
+        if any(seed < 0 for seed in seeds) or len(set(seeds)) != len(seeds):
+            raise ValueError(f"--seeds must be distinct and non-negative, got {seeds}")
+        return list(seeds)
+
+    @staticmethod
     def parse_method_args(*, raw: list[str]) -> dict[str, list[str]]:
         """Parses repeated `--method-args "method=--flag value"` entries."""
         parsed: dict[str, list[str]] = {}
@@ -601,6 +612,13 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--methods", nargs="+", required=True)
     parser.add_argument("--num-seeds", type=int, default=10)
+    parser.add_argument(
+        "--seeds",
+        type=int,
+        nargs="+",
+        default=None,
+        help="Run exactly these seeds instead of 0..num-seeds-1.",
+    )
     parser.add_argument("--results-root", type=Path, required=True)
     parser.add_argument(
         "--shared-args", default="", help="Flags applied to every run, as one string."
@@ -644,7 +662,7 @@ def main() -> int:
     runs = SweepRunner.plan(
         env=args.env,
         methods=args.methods,
-        seeds=SweepRunner.default_seeds(num_seeds=args.num_seeds),
+        seeds=SweepRunner.selected_seeds(num_seeds=args.num_seeds, seeds=args.seeds),
         results_root=args.results_root,
         shared_args=shared,
         method_args=SweepRunner.parse_method_args(raw=args.method_args),

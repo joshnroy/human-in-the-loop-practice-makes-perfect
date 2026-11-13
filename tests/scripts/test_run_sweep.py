@@ -733,3 +733,13 @@ def test_sweep_output_round_trips_through_the_analysis_layout(*, tmp_path: Path)
         json.dumps({"evaluations": [[0, 1, 2]], "task_name": "default"})
     )
     assert sorted(tmp_path.glob("*/*/stats.json")) == [run.output_dir / "stats.json"]
+
+
+def test_named_seeds_replace_the_contiguous_range() -> None:
+    assert SweepRunner.selected_seeds(num_seeds=10, seeds=None) == list(range(10))
+    # One cell of a larger design: exactly the seeds named, in the order given.
+    assert SweepRunner.selected_seeds(num_seeds=10, seeds=[3]) == [3]
+    assert SweepRunner.selected_seeds(num_seeds=10, seeds=[4, 0]) == [4, 0]
+    for bad in ([-1], [2, 2]):
+        with pytest.raises(ValueError, match="seeds"):
+            SweepRunner.selected_seeds(num_seeds=10, seeds=bad)

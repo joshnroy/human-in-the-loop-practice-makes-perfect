@@ -77,6 +77,10 @@ class DpMethod(EesMethod):
     # cost-unit budget itself this is this project's adaptation: the paper's DP counts
     # episodes and prices nothing.
     dp_skill_cost_prior_steps_for: dict[str, float] = Field(default_factory=dict)
+    # Control steps a named robot skill's attempt is priced at for the whole run: a known
+    # input like the goal rewards, never replaced by DP's own observation. A skill takes
+    # either this or a starting value above, not both. Also this project's adaptation.
+    dp_skill_cost_steps_for: dict[str, float] = Field(default_factory=dict)
 
     _dp_costs: dict[GroundSkill, list[float]] = PrivateAttr(default_factory=dict)
     _dp_pending_costs: dict[GroundSkill, float] = PrivateAttr(default_factory=dict)
@@ -130,6 +134,19 @@ class DpMethod(EesMethod):
             for name, steps in self.dp_skill_cost_prior_steps_for.items():
                 if not math.isfinite(steps) or steps <= 0.0:
                     raise ValueError(f"cost prior steps of {name} must be finite and positive")
+        if self.dp_skill_cost_steps_for:
+            unknown = set(self.dp_skill_cost_steps_for) - {skill.name for skill in self.skills()}
+            if unknown:
+                raise ValueError(f"fixed cost steps name not robot skills: {sorted(unknown)}")
+            both = set(self.dp_skill_cost_steps_for) & set(self.dp_skill_cost_prior_steps_for)
+            if both:
+                raise ValueError(
+                    f"fixed cost steps and cost prior steps both name {sorted(both)}: a skill's "
+                    "price is either fixed or a starting value"
+                )
+            for name, steps in self.dp_skill_cost_steps_for.items():
+                if not math.isfinite(steps) or steps <= 0.0:
+                    raise ValueError(f"fixed cost steps of {name} must be finite and positive")
         if self.dp_initial_competence:
             if self.dp_prior_calibration is not None:
                 raise ValueError(
@@ -273,6 +290,9 @@ class DpMethod(EesMethod):
         self._dp_forced_reset_pending = True
 
     def dp_expected_attempt_cost(self, *, ground_skill: GroundSkill) -> float:
+        fixed = self.dp_skill_cost_steps_for.get(ground_skill.skill.name)
+        if fixed is not None:
+            return max(1e-12, fixed * self._require_accounting().robot_charge().cost)
         observed = self._dp_costs.get(ground_skill, [])
         pending = self._dp_pending_costs.get(ground_skill, 0.0)
         if observed:

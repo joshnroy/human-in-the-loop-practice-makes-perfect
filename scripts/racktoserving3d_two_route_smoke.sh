@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
-# Two-route Serving smoke runs: EES, DP (cost budget), DP (episode budget) and the
-# belief-space method, one seed each, Beta(1, 3) on every skill for every method.
+# Two-route Serving smoke runs: EES, three DP arms and the belief-space method, one
+# seed each, Beta(1, 3) on every skill for every method.
+#
+# DP's arms, by results directory:
+#   dp-episodes/           the paper's DP: an episode budget, nothing priced.
+#   dp-cost-fixed-prices/  our cost accounting on DP's decision rule: a cost budget
+#                          with the per-skill price table fixed for the whole run.
+#   main/dp                the same, with the table only a starting value that DP
+#                          replaces with its own observed cost (prices estimated online).
 #
 #   LAYOUT_FLAGS="<start-layout and plate flags>" scripts/racktoserving3d_two_route_smoke.sh <results-root>
 #
@@ -8,12 +15,8 @@
 #   LAYOUT_FLAGS="--start-layout middle_three --side-offset 0.10"
 # plus whatever plate-position flag the chosen setup needs.
 #
-# Two invocations of scripts.run_sweep, because both DP arms are `--method dp`: the
-# first runs EES, DP's cost-budget arm and the belief-space method side by side, the
-# second runs DP's episode-budget arm. Each goes through run-heavy on agni.
-#
-# DP's cost-unit budget and its per-skill prior prices are this project's adaptation;
-# the paper's DP counts episodes, which is what the second arm does.
+# Three invocations of scripts.run_sweep, because every DP arm is `--method dp`. Each
+# goes through run-heavy on agni; five simulator runs at once.
 set -euo pipefail
 
 ROOT=${1:?usage: LAYOUT_FLAGS="..." $0 <results-root>}
@@ -36,14 +39,14 @@ SHARED="--two-route-rewards 1 $LAYOUT_FLAGS --evaluation-policy method --bulk-tr
 --practice-cost-config src/hitl_pmp/presets/racktoserving3d_tick_priced_costs.json"
 EES="--ees-prior-alpha 1 --ees-prior-beta 3 --practice-groundings all --goal-pursuit-horizon 0"
 DP="--ees-prior-alpha 1 --ees-prior-beta 3 --goal-pursuit-horizon 0 --dp-solver gurobi"
-# Mean control steps of a successful execution, the rack value model's own table
-# (RACK_SKILL_STEPS, run tag rack-prior2x2-b406ad8-20261106).
-DP_PRICES="--dp-skill-cost-prior-steps-for PickScraper=449 \
---dp-skill-cost-prior-steps-for GatherAndSweep=3916 \
---dp-skill-cost-prior-steps-for ReturnScraper=874 \
---dp-skill-cost-prior-steps-for PickFood=645 \
---dp-skill-cost-prior-steps-for ReturnFoodToRack=499 \
---dp-skill-cost-prior-steps-for Sweep=969"
+# Mean control steps of each skill's uninterrupted executions in the setup-A smoke runs
+# of 2026-11-12 (small samples; see scripts/racktoserving3d_two_route_budget_sweep.sh).
+DP_PRICES="--dp-skill-cost-prior-steps-for PickScraper=424 \
+--dp-skill-cost-prior-steps-for GatherAndSweep=3400 \
+--dp-skill-cost-prior-steps-for ReturnScraper=488 \
+--dp-skill-cost-prior-steps-for PickFood=728 \
+--dp-skill-cost-prior-steps-for ReturnFoodToRack=466 \
+--dp-skill-cost-prior-steps-for Sweep=737"
 OURS="--pomdp-solver determinized_astar --pomdp-determinized-variant curtis \
 --pomdp-observation-probability-weight 0.01 --pomdp-linear-cost-lambda 0.0015 \
 --pomdp-competence-prior 1 3 --stop-on-no-practice-action"
@@ -62,6 +65,8 @@ sweep --methods ees dp pomdp --max-workers 3 --results-root "$ROOT/main" \
   --method-args "ees=$EES" \
   --method-args "dp=$DP --dp-budget $DP_COST_BUDGET --dp-budget-unit cost $DP_PRICES" \
   --method-args "pomdp=$OURS" &
+sweep --methods dp --max-workers 1 --results-root "$ROOT/dp-cost-fixed-prices" \
+  --method-args "dp=$DP --dp-budget $DP_COST_BUDGET --dp-budget-unit cost ${DP_PRICES//--dp-skill-cost-prior-steps-for/--dp-skill-cost-steps-for}" &
 sweep --methods dp --max-workers 1 --results-root "$ROOT/dp-episodes" \
   --method-args "dp=$DP --dp-budget $DP_EPISODE_BUDGET --dp-budget-unit episodes --dp-allocation-schedule once" &
 wait
