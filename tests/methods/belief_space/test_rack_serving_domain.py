@@ -1,11 +1,13 @@
 """Rack-specific value, belief routing, and CLI composition without native physics."""
 
+import json
 from unittest.mock import Mock
 
 import numpy as np
 import pytest
 
 from hitl_pmp.cli import Cli
+from hitl_pmp.core.practice_costs import PracticeAccounting, PracticeCosts
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.racktoserving3d.cli import RackServingCli
 from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
@@ -24,6 +26,7 @@ from hitl_pmp.methods.belief_space.practice_domain import SWEEP_OFF_SHELF_DOMAIN
 from hitl_pmp.methods.belief_space.rack_serving_domain import (
     RACK_HUMAN_SKILLS,
     RACK_NUM_FOOD,
+    RACK_ROBOT_RESET_SKILLS,
     RACK_ROBOT_SKILLS,
     RACK_SERVING_DOMAIN,
     RACK_SWEEP_SKILLS,
@@ -42,6 +45,7 @@ from hitl_pmp.methods.belief_space.types.practice_example_source import Practice
 from hitl_pmp.methods.belief_space.types.skill_belief import SkillHypothesis
 from hitl_pmp.methods.practice_makes_perfect.cli import Tossing3DPomdpCli
 from hitl_pmp.step_protocol import StepPracticeRunner, StepProtocolEntry
+from tests.environments.racktoserving3d.test_declared_effects import BEFORE_SWEEP, _after_sweep
 from tests.practice_cost_fixtures import CostFixtures
 
 
@@ -91,6 +95,7 @@ def test_domain_matches_rack_skill_names_horizon_and_observation_sources():
     assert RACK_SERVING_DOMAIN.failure_effect_skills == frozenset((
         *RACK_ROBOT_SKILLS,
         *RACK_HUMAN_SKILLS,
+        *RACK_ROBOT_RESET_SKILLS,
     ))
     assert not RACK_SERVING_DOMAIN.deterministic_skills
     assert not RACK_SERVING_DOMAIN.shared_beliefs
@@ -321,6 +326,7 @@ def test_sweep_appends_after_every_existing_belief_so_prior_seeds_do_not_move():
         "human_batch_return",
         "human_tool_recovery",
         "Sweep",
+        "RobotBatchReturn",
     ]
 
 
@@ -645,3 +651,147 @@ def test_ours_starting_learning_rate_prior_scales_with_the_skills_parameter_coun
         )
         is RACK_SERVING_DOMAIN
     )
+
+
+# The robot's own batch return (`RackServingConfig.robot_batch_return`), in setup A's
+# layout. The domain as it was before the skill existed is this one without it.
+SLOTTED_CONFIG = RackServingConfig(
+    bulk_transfer_only=True, two_route_rewards=True, start_layout="middle_three"
+)
+ROBOT_RETURN_CONFIG = SLOTTED_CONFIG.model_copy(update={"robot_batch_return": True})
+DOMAIN_BEFORE_THE_ROBOT_RETURN = RACK_SERVING_DOMAIN.model_copy(
+    update={
+        "belief_sources": RACK_SERVING_DOMAIN.belief_sources[:-1],
+        "optional_skill_names": frozenset({"Sweep", "PlaceFoodOnTray"}),
+        "failure_effect_skills": frozenset((*RACK_ROBOT_SKILLS, *RACK_HUMAN_SKILLS)),
+    }
+)
+
+
+def _ours(*, config, decision_log, domain=RACK_SERVING_DOMAIN, offer_human=True):
+    env = RackServingEnvironment(config=config)
+    provider = RackServingSkillProvider(env=env, offer_human_reset=offer_human)
+    method = Tossing3DPomdpMethod(
+        env=env,
+        skill_provider=provider,
+        pomdp_domain=Tossing3DPomdpCli.with_goal_rewards(domain=domain, provider=provider),
+        pomdp_solver="determinized_astar",
+        pomdp_determinized_variant="curtis",
+        pomdp_observation_probability_weight=0.01,
+        pomdp_inference_engine="grid",
+        pomdp_grid_competence_bins=9,
+        pomdp_grid_learning_rate_bins=4,
+        pomdp_max_search_iterations=3,
+        pomdp_num_samples=8,
+        decision_log=decision_log,
+    )
+    method.configure_practice_accounting(
+        accounting=PracticeAccounting(
+            costs=PracticeCosts.model_validate_json(
+                CostFixtures.BY_ENV["racktoserving3d"].read_text()
+            )
+        )
+    )
+    assert env._backend is None
+    return method
+
+
+def _decision(*, method, atoms):
+    method.observe_practice_action_budget(remaining_actions=10)
+    chosen = method.select_skill_to_practice(true_atoms=atoms)
+    decision = json.loads(
+        method.decision_log.read_text().splitlines()[-1],
+        # Wall-clock fields are the only ones that differ between two identical searches.
+        object_hook=lambda record: {
+            key: value
+            for key, value in record.items()
+            if key != "timestamp" and not key.endswith("seconds")
+        },
+    )
+    return chosen, decision
+
+
+def test_without_the_robot_return_ours_searches_exactly_as_before_it_existed(*, tmp_path):
+    """Flag off: the provider does not offer the skill, its belief is dropped, and the
+    whole decision record is the one the domain without it produces."""
+    assert "RobotBatchReturn" not in dict(DOMAIN_BEFORE_THE_ROBOT_RETURN.belief_sources)
+    now = _ours(config=SLOTTED_CONFIG, decision_log=tmp_path / "now.jsonl")
+    before = _ours(
+        config=SLOTTED_CONFIG,
+        decision_log=tmp_path / "before.jsonl",
+        domain=DOMAIN_BEFORE_THE_ROBOT_RETURN,
+    )
+    assert now.pomdp_domain.belief_sources == before.pomdp_domain.belief_sources
+    assert now.pomdp_domain.failure_effect_skills == before.pomdp_domain.failure_effect_skills
+    assert "RobotBatchReturn" not in now.pomdp_state.skill_beliefs
+    assert now.pomdp_state.skill_beliefs.keys() == before.pomdp_state.skill_beliefs.keys()
+    # From a served plate, where the robot return would be applicable if offered.
+    start = _after_sweep(outer=("OnRack", "OnRack"))
+    chosen_now, record_now = _decision(method=now, atoms=start)
+    chosen_before, record_before = _decision(method=before, atoms=start)
+    assert chosen_now == chosen_before
+    assert record_now["search"]
+    assert json.dumps(record_now, sort_keys=True) == json.dumps(record_before, sort_keys=True)
+
+
+def test_ours_can_plan_through_the_robot_return_and_prices_it_from_its_observed_steps(*, tmp_path):
+    method = _ours(
+        config=ROBOT_RETURN_CONFIG, decision_log=tmp_path / "ours.jsonl", offer_human=False
+    )
+    assert "RobotBatchReturn" in method.pomdp_state.skill_beliefs
+    assert "RobotBatchReturn" in method.pomdp_domain.failure_effect_skills
+    after_sweep = _after_sweep(outer=("OnRack", "OnRack"))
+    # The FoodOrder chain admits one grounding.
+    (robot_return,) = (
+        ground
+        for ground in method._pomdp_model.ground_skills
+        if ground.skill.name == "RobotBatchReturn" and ground.preconditions <= after_sweep
+    )
+    # Untried, it costs what any untried robot skill does.
+    untried = method.pomdp_state.expected_execution_costs[str(robot_return)]
+    assert untried == pytest.approx(method.skill_cost_prior_steps * 0.01)
+    # The model's forecast of it: it works with its inferred competence and restores
+    # the state both bulk skills start from; failing, it leaves the scene as it was.
+    # Either way its price is charged.
+    state = method.pomdp_state
+    competence = state.skill_beliefs["RobotBatchReturn"].mean_competence()
+    outcomes = transition_outcomes(
+        environment_state=make_tossing3d_search_state(state=state, true_atoms=after_sweep),
+        state=state,
+        action=robot_return,
+        ground_skills=(robot_return,),
+        effects={
+            robot_return: (
+                robot_return.add_effects,
+                robot_return.delete_effects,
+                robot_return.ignore_effects,
+            )
+        },
+        exploration_epsilon=0.0,
+        random_toss_competence=0.0,
+        domain=method.pomdp_domain,
+    )
+    assert [weight for weight, _, _ in outcomes] == pytest.approx([competence, 1 - competence])
+    assert outcomes[0][2] == BEFORE_SWEEP
+    assert outcomes[1][2] == after_sweep
+    assert all(successor.accumulated_cost == untried for _, successor, _ in outcomes)
+    bulk = {
+        ground.skill.name
+        for ground in method._pomdp_model.ground_skills
+        if ground.preconditions <= outcomes[0][2]
+    }
+    assert {"Sweep", "GatherAndSweep"} <= bulk
+    # With no person to ask, the planner's own search weighs it from a served plate.
+    _, record = _decision(method=method, atoms=after_sweep)
+    weighed = {
+        event["action"]["skill"]["name"]: event["value"]
+        for event in record["search"]
+        if event["event"] == "action_value" and event["node"] == 0
+    }
+    assert np.isfinite(weighed["RobotBatchReturn"])
+    # Two completed tries of 3,900 and 4,100 control steps: priced at their mean.
+    for steps in (3900, 4100):
+        method.record_action_cost(ground_skill=robot_return)
+        method.observe_execution_cost(cost=steps * 0.01, steps=steps, complete=True)
+    assert method.pomdp_state.expected_execution_costs[str(robot_return)] == pytest.approx(40.0)
+    assert method.forecast_action_steps(ground_skill=robot_return) == pytest.approx(4000.0)

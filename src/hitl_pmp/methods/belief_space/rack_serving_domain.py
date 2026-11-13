@@ -34,6 +34,11 @@ RACK_ROBOT_SKILLS = (
 # Two ways to empty the rack with the scraper held, both all-or-nothing in this model.
 RACK_SWEEP_SKILLS = ("GatherAndSweep", "Sweep")
 RACK_HUMAN_SKILLS = ("human_batch_return", "human_tool_recovery")
+# The robot's own batch return (`RackServingConfig.robot_batch_return`): offered in
+# practice only, so it is never a deployment transition and not in RACK_ROBOT_SKILLS.
+# Its competence is inferred from its outcomes and its price from its observed steps,
+# like any robot skill's; a provider that does not offer it drops its belief.
+RACK_ROBOT_RESET_SKILLS = ("RobotBatchReturn",)
 RACK_EXPECTATION_SAMPLES = 4096
 RACK_EXPECTATION_SEED = 0
 RackDeploymentState = tuple[int, str, bool]
@@ -276,8 +281,8 @@ class RackServingPracticeDomain(PracticeDomain):
     initial_competence_alpha: float | None = 1.0
     initial_competence_beta: float | None = 3.0
     sampler_skill: str = "GatherAndSweep"
-    # Sweep is appended after the human skills, so every older belief keeps its
-    # prior-seed slot.
+    # Sweep is appended after the human skills, and the robot's batch return after
+    # Sweep, so every older belief keeps its prior-seed slot.
     belief_sources: tuple[tuple[str, PracticeExampleSource], ...] = tuple(
         (
             name,
@@ -285,12 +290,26 @@ class RackServingPracticeDomain(PracticeDomain):
             if name in RACK_SWEEP_SKILLS
             else PracticeExampleSource.OUTCOME,
         )
-        for name in (*RACK_ROBOT_SKILLS[:-1], *RACK_HUMAN_SKILLS, RACK_ROBOT_SKILLS[-1])
+        for name in (
+            *RACK_ROBOT_SKILLS[:-1],
+            *RACK_HUMAN_SKILLS,
+            RACK_ROBOT_SKILLS[-1],
+            *RACK_ROBOT_RESET_SKILLS,
+        )
     )
     # `RackServingConfig.sweep_skill=False` removes Sweep from the provider.
-    # `bulk_transfer_only=True` removes PlaceFoodOnTray.
-    optional_skill_names: frozenset[str] = frozenset({"Sweep", "PlaceFoodOnTray"})
-    failure_effect_skills: frozenset[str] = frozenset((*RACK_ROBOT_SKILLS, *RACK_HUMAN_SKILLS))
+    # `bulk_transfer_only=True` removes PlaceFoodOnTray. `robot_batch_return=True`
+    # is what offers RobotBatchReturn at all.
+    optional_skill_names: frozenset[str] = frozenset({
+        "Sweep",
+        "PlaceFoodOnTray",
+        *RACK_ROBOT_RESET_SKILLS,
+    })
+    failure_effect_skills: frozenset[str] = frozenset((
+        *RACK_ROBOT_SKILLS,
+        *RACK_HUMAN_SKILLS,
+        *RACK_ROBOT_RESET_SKILLS,
+    ))
     human_skill_names: frozenset[str] = frozenset(RACK_HUMAN_SKILLS)
     # Bulk skill name -> the reward of the outcome its success reaches; empty unless
     # the provider prices goals (`RackServingConfig.two_route_rewards`).
