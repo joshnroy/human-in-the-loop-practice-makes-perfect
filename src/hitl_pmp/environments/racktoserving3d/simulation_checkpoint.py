@@ -110,11 +110,14 @@ class ControllerState:
 
     @staticmethod
     def restore(*, owner: Any, state: dict[str, Any]) -> None:
-        absent = sorted(set(state) - set(vars(owner)))
-        if absent:
+        """Onto a freshly rebuilt controller. A skill may have added attributes since
+        construction (the food controller's `finger_force_default`), so the checkpoint
+        may hold more than the rebuilt controller; never less."""
+        unknown = sorted(set(vars(owner)) - set(state) - ControllerState.HANDLES)
+        if unknown:
             raise ValueError(
-                f"simulation checkpoint has {type(owner).__name__} state the rebuilt "
-                f"controller lacks: {absent}"
+                f"simulation checkpoint lacks state the rebuilt {type(owner).__name__} "
+                f"holds: {unknown}"
             )
         for name, value in state.items():
             setattr(owner, name, copy.deepcopy(value))

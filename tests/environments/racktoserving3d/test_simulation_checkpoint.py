@@ -23,6 +23,7 @@ from hitl_pmp.environments.tossing3d.simulation_checkpoint import (
     model_fingerprint,
     restore_engine,
 )
+from hitl_pmp.step_protocol import RngStates
 
 WELDED = """<mujoco><option timestep="0.002"/><worldbody>
 <geom type="plane" size="1 1 .1"/>
@@ -124,8 +125,16 @@ def test_controller_state_refuses_what_it_cannot_carry():
         ControllerState.capture(owner=SimpleNamespace(grip=0.0, planner_cache=object()))
     with pytest.raises(ValueError, match="held_cube"):
         ControllerState.restore(
-            owner=SimpleNamespace(grip=0.0), state={"grip": 1.0, "held_cube": None}
+            owner=SimpleNamespace(grip=0.0, held_cube=None), state={"grip": 1.0}
         )
+
+
+def test_controller_state_restores_what_a_skill_added_after_construction():
+    """`finger_force_default` exists only once a food skill has run, so a rebuilt
+    controller does not have it yet (the DP arm's first resume, 2026-11-13)."""
+    rebuilt = SimpleNamespace(grip=0.0)
+    ControllerState.restore(owner=rebuilt, state={"grip": 1.0, "finger_force_default": 255.0})
+    assert (rebuilt.grip, rebuilt.finger_force_default) == (1.0, 255.0)
 
 
 def test_the_step_protocol_offers_serving_simulation_checkpoints():
@@ -220,17 +229,34 @@ def _assert_same(*, left: object, right: object, at: str) -> None:
         assert left == right, at
 
 
+def _both(*, envs, step, at: str) -> None:
+    """Run `step` on each simulator from the same process-global RNG state (practice
+    restores those streams with the checkpoint), then require identical outcomes."""
+    streams = RngStates.capture_global()
+    for env in envs:
+        RngStates.restore_global(states=streams)
+        step(env)
+    _assert_identical(left=_observed(env=envs[0]), right=_observed(env=envs[1]), at=at)
+
+
 @pytest.mark.skipif(importlib.util.find_spec("kinder") is None, reason="KINDER simulator")
 def test_a_restored_serving_simulation_steps_exactly_as_the_one_it_was_saved_from():
-    """Saved with the scraper welded in the hand after a Sweep, restored into a second
-    simulator, then both driven through a person's batch return, a Sweep and a
-    ReturnScraper: every float of the engine state and every observed fact is equal,
-    bit for bit, after each."""
+    """Saved after a food pick and return (planned in PyBullet) and with the scraper
+    welded in the hand after a Sweep, restored into a second simulator, then both
+    driven through a person's batch return, a Sweep, a ReturnScraper and a planned
+    PickFood: every float of the engine state and every observed fact is equal, bit
+    for bit, after each."""
     original, restored = _environment(), _environment()
     try:
         original.reset_to_seed(seed=0)
-        _skill(env=original, name="PickScraper")
-        _skill(env=original, name="Sweep", d=0.06)
+        for name, d in (
+            ("PickFood", 0.0),
+            ("ReturnFoodToRack", 0.0),
+            ("PickScraper", 0.0),
+            ("Sweep", 0.06),
+        ):
+            _skill(env=original, name=name, d=d)
+            assert original.last_skill_error() is None, name
         assert original.backend().held(name="wiper_0")
         saved = pickle.dumps(original.simulation_checkpoint())
         restored.restore_simulation_checkpoint(checkpoint=pickle.loads(saved))
@@ -238,16 +264,16 @@ def test_a_restored_serving_simulation_steps_exactly_as_the_one_it_was_saved_fro
         _assert_same(
             left=pickle.loads(saved), right=restored.simulation_checkpoint(), at="checkpoint"
         )
-
-        for env in (original, restored):
-            env.reset_movables(destination="human_batch_return")
-        _assert_identical(
-            left=_observed(env=original), right=_observed(env=restored), at="batch return"
+        envs = (original, restored)
+        _both(
+            envs=envs,
+            step=lambda env: env.reset_movables(destination="human_batch_return"),
+            at="batch return",
         )
-        for name, d in (("Sweep", 0.10), ("ReturnScraper", 0.0), ("PickScraper", 0.0)):
-            for env in (original, restored):
-                _skill(env=env, name=name, d=d)
-            _assert_identical(left=_observed(env=original), right=_observed(env=restored), at=name)
+        for name, d in (("Sweep", 0.10), ("ReturnScraper", 0.0), ("PickFood", 0.0)):
+            _both(
+                envs=envs, step=lambda env, name=name, d=d: _skill(env=env, name=name, d=d), at=name
+            )
         assert original.backend().control_steps() > 1000
     finally:
         original.close()
