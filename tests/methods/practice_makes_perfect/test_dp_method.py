@@ -721,3 +721,78 @@ def test_a_starting_learning_rate_is_the_base_rate_over_the_skills_parameter_cou
     plain = _rack_dp()
     for name in ("Sweep", "GatherAndSweep", "PickScraper"):
         assert plain.initial_learning_rate(skill_name=name) == 0.1
+
+
+def _step_priced(*, monkeypatch, budget: float, pick: float = 300.0, back: float = 3000.0):
+    """The two-skill setup under a budget in practice steps: PickWiper (weak, wants 4
+    tries to saturate) at `pick` steps an episode, ReturnWiper (strong, wants 1) at
+    `back`; every other robot skill at 100."""
+    method, pick_skill, back_skill, _cube = _two_skill_setup(monkeypatch=monkeypatch)
+    method.dp_budget_unit = "steps"
+    method.dp_budget = budget
+    method.dp_skill_cost_steps_for = {
+        **{skill.name: 100.0 for skill in method.skills()},
+        "PickWiper": pick,
+        "ReturnWiper": back,
+    }
+    return method, pick_skill, back_skill
+
+
+@pytest.mark.parametrize(
+    ("budget", "expected"),
+    # 1000 steps hold three 300-step episodes and no 3000-step one; 2999 hold every
+    # episode the short skill wants and still not the long one; 4200 hold both.
+    [(299.0, (0, 0)), (1000.0, (3, 0)), (2999.0, (4, 0)), (4199.0, (4, 0)), (4200.0, (4, 1))],
+)
+def test_a_step_budget_buys_episodes_at_each_skills_own_length(*, monkeypatch, budget, expected):
+    method, pick, back = _step_priced(monkeypatch=monkeypatch, budget=budget)
+    method.choose_practice_target()
+    allocation = method.dp_allocation()
+    assert (allocation[pick], allocation[back]) == expected
+    lengths = method.dp_skill_cost_steps_for
+    assert sum(lengths[g.skill.name] * n for g, n in allocation.items() if n) <= budget
+
+
+def test_a_step_budget_is_spent_in_practice_steps_not_cost_or_episodes(*, monkeypatch):
+    method, pick, _back = _step_priced(monkeypatch=monkeypatch, budget=1000.0)
+    accounting = method._practice_accounting  # noqa: SLF001
+    # 400 robot steps and one human step are 401 practice steps, whatever they cost.
+    accounting.robot_steps = 400
+    accounting.human_steps = 1
+    accounting.human_cost = 1e6
+    method.choose_practice_target()
+    assert method.dp_allocation()[pick] == 1  # 599 steps left hold one 300-step episode
+    assert not method.practice_complete()
+    # Every episode still counts as one practice attempt, whatever its length.
+    _execute(method=method, ground=pick)
+    assert method.dp_episodes() == 1
+    accounting.robot_steps = 999
+    assert method.practice_completion_reason() == "budget_spent"
+    assert method.choose_practice_target() == [STOP_SKILL]
+
+
+def test_a_step_budget_logs_its_unit_and_the_episode_lengths_it_priced(*, monkeypatch, tmp_path):
+    method, pick, _back = _step_priced(monkeypatch=monkeypatch, budget=1000.0)
+    method.dp_solver_log = tmp_path / "allocations.jsonl"
+    method.choose_practice_target()
+    record = json.loads(method.dp_solver_log.read_text().splitlines()[0])
+    assert record["budget_unit"] == "steps"
+    assert record["budget"] == 1000.0
+    row = next(row for row in record["allocation"] if row["skill"] == pick.skill.name)
+    assert (row["attempts"], row["attempt_price"]) == (3, 300.0)
+
+
+def test_a_step_budget_needs_a_measured_length_for_every_robot_skill():
+    env = SweepOffShelf3DEnvironment()
+    provider = SweepOffShelf3DSkillProvider(env=env)
+    with pytest.raises(ValueError, match=r"step budget.*ReturnWiper"):
+        DpMethod(
+            env=env,
+            skill_provider=provider,
+            dp_budget=1000.0,
+            dp_budget_unit="steps",
+            dp_solver="enumeration",
+            dp_skill_cost_steps_for={
+                skill.name: 100.0 for skill in provider.skills() if skill.name != "ReturnWiper"
+            },
+        )
