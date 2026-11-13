@@ -2,8 +2,9 @@
 
 Pick/place delivery and pick/return recovery remain available without a scraper.
 Food is ready from the start (Josh, 2026-11-03): there is no cooling and no Wait.
-AnyFoodOnRack/AnyFoodOffRack are conservatively retained across single-food moves;
-the backend refreshes these summaries from measured locations after each action.
+AnyFoodOnRack is conservatively retained when PickFood takes the last food off the
+rack; ReturnFoodToRack declares AnyFoodOffRack exactly (`_STILL_OFF_RACK`). The
+backend refreshes both summaries from measured locations after each action.
 """
 
 from typing import ClassVar, Literal
@@ -94,6 +95,26 @@ _CHAIN = frozenset(
     _atom(predicate=FOOD_ORDER, variables=(first, second))
     for first, second in zip(_SLOTS, _SLOTS[1:], strict=False)
 )
+# ReturnFoodToRack turns AnyFoodOffRack off only when it returns the last food off the
+# rack. No guard can say "no other food is off the rack" with positive conditions, so the
+# skill deletes the atom and these put it back whenever some food rests off the rack. The
+# returned food is held, so it has no resting place and never matches. Food with no
+# measured location at all (in flight, `classify_food`) is not seen here.
+_OTHER = Variable(name="other_food", type=Objects.food_type)
+_THE_TRAY = Variable(name="the_tray", type=Objects.tray_type)
+_STILL_OFF_RACK = frozenset(
+    ConditionalAddEffect(
+        conditions=frozenset({resting}),
+        add_effects=frozenset({_ANY_OFF}),
+        constant_bindings=((_OTHER, food), (_THE_TRAY, Objects.tray)),
+    )
+    for food in Objects.food
+    for resting in (
+        _atom(predicate=ON_TRAY, variables=(_OTHER, _THE_TRAY)),
+        _atom(predicate=SPILLED_COUNTER, variables=(_OTHER,)),
+        _atom(predicate=SPILLED_FLOOR, variables=(_OTHER,)),
+    )
+)
 
 
 class RackServing3DSkills:
@@ -174,7 +195,8 @@ class RackServing3DSkills:
             _ANY_ON,
             _atom(predicate=ON_RACK, variables=(_FOOD, _RACK)),
         }),
-        delete_effects=frozenset({_HELD_FOOD}),
+        delete_effects=frozenset({_HELD_FOOD, _ANY_OFF}),
+        conditional_add_effects=_STILL_OFF_RACK,
         param_dim=0,
     )
     HUMAN_BATCH_RETURN: ClassVar[Skill] = Skill(
@@ -228,10 +250,21 @@ class RackServing3DSkills:
     )
 
     # `RackServingConfig.two_route_rewards`: the same two bulk skills and batch return,
-    # with success restated. Sweep promises three on the plate (Served, ServedThree)
-    # and no longer every OnTray; GatherAndSweep promises all five as before, and so
-    # Served and ServedFive. Both still clear the rack symbolically, so a practice try
-    # of either is followed by the person's batch return, which withdraws the outcome.
+    # with success restated. GatherAndSweep promises all five as before, and so Served
+    # and ServedFive. Sweep promises Served, ServedThree and the middle three slots on
+    # the plate, and nothing about the outer two (Josh, 2026-11-12): spilled or still on
+    # the rack, either is the declared outcome. So OnRack and AnyFoodOnRack are forgotten
+    # (`ignore_effects`) rather than deleted: the model takes the rack as cleared, as it
+    # did, and a measured outer piece still on it contradicts nothing. An ignore effect
+    # is predicate-wide; that names exactly the outer two here because every OnRack atom
+    # is one of the five the skill requires and the middle three are deleted anyway.
+    # Either bulk try is still followed by the person's batch return, which withdraws
+    # the outcome.
+    # Known limit: the middle three slots are the middle three pieces only where the
+    # start lines the pieces up in slot order (`start_layout` spaced, middle_three). On
+    # a scattered start, or once a PickFood/ReturnFoodToRack has moved a piece, the model
+    # still names slots 1-3, so a Sweep that lands a different three is Served for the
+    # environment and a failed try for a method scoring by these effects.
     TWO_ROUTE_GATHER_AND_SWEEP: ClassVar[Skill] = GATHER_AND_SWEEP.model_copy(
         update={
             "add_effects": GATHER_AND_SWEEP.add_effects
@@ -240,7 +273,13 @@ class RackServing3DSkills:
     )
     TWO_ROUTE_SWEEP: ClassVar[Skill] = SWEEP.model_copy(
         update={
-            "add_effects": SWEEP.add_effects | {_atom(predicate=p) for p in (SERVED, SERVED_THREE)},
+            "add_effects": SWEEP.add_effects
+            | {_atom(predicate=p) for p in (SERVED, SERVED_THREE)}
+            | {_atom(predicate=ON_TRAY, variables=(food, _TRAY)) for food in _SLOTS[1:4]},
+            "delete_effects": frozenset(
+                _atom(predicate=ON_RACK, variables=(food, _RACK)) for food in _SLOTS[1:4]
+            ),
+            "ignore_effects": frozenset({ON_RACK, ANY_FOOD_ON_RACK}),
             "conditional_add_effects": frozenset(),
         }
     )
