@@ -467,8 +467,19 @@ class LearnedSkillSampler(BaseModel):
         sampler_inputs: list[list[float]],
         candidates: list[np.ndarray],
         explore: bool,
+        break_ties_among_best: bool = False,
     ) -> "SamplerChoice":
         """Choose one candidate parameter vector; return it alongside how it was chosen.
+
+        `break_ties_among_best` (off by default, Josh 2026-11-13) narrows deviation 6's
+        fallback to the case it was written for. A best score shared by more than
+        `uninformative_tie_fraction` of the candidates but not by all of them is a
+        classifier that has saturated over a good region wider than that fraction, not
+        one that cannot discriminate: RackToServing3D's Sweep succeeds over about two
+        thirds of its depth range, and the fallback's uniform draw over ALL candidates
+        deployed a failing depth about one time in three from an accurate sampler. With
+        the switch on such a pick takes the ordinary greedy branch, a uniform draw among
+        the tied-best; a tie over every candidate keeps the fallback, draw for draw.
 
         `candidates[i]` is the raw parameter vector (what the caller will realize into
         an action) and `sampler_inputs[i]` is its already-built classifier input row --
@@ -516,7 +527,11 @@ class LearnedSkillSampler(BaseModel):
         # score vector nothing can be ranked by, so it takes the fallback rather than
         # indexing into an empty array.
         best = np.flatnonzero(scores == scores.max())
-        if len(best) == 0 or len(best) > self.uninformative_tie_fraction * len(candidates):
+        ranked_above_the_rest = break_ties_among_best and 0 < len(best) < len(candidates)
+        if len(best) == 0 or (
+            len(best) > self.uninformative_tie_fraction * len(candidates)
+            and not ranked_above_the_rest
+        ):
             # Deviation 6: no discrimination, so no greedy branch to deviate from.
             # `was_random` stays False so the competence models still count this
             # outcome -- a skill whose sampler has learned nothing is a skill whose

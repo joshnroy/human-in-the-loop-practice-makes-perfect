@@ -326,6 +326,9 @@ class EesMethod(Method):
     # Running at the paper config's 100000 reproduces predicators' own score
     # (89.0 +- 16.0 against its 91.0 +- 12.0) -- a positive control on the port.
     sampler_max_train_iters: int = 10000
+    # Opt-in (Josh, 2026-11-13): `LearnedSkillSampler.sample`'s `break_ties_among_best`,
+    # in practice and in evaluation alike. Off reproduces every earlier run.
+    sampler_break_ties_among_best: bool = False
 
     _practice_accounting: PracticeAccounting | None = PrivateAttr(default=None)
     _execution_ground_skill: GroundSkill | None = PrivateAttr(default=None)
@@ -1515,7 +1518,11 @@ class EesMethod(Method):
             ]
             sampler = self.sampler(skill_name=skill.name, param_dim=skill.param_dim)
             choice = sampler.sample(
-                sampler_inputs=sampler_inputs, candidates=candidates, explore=explore
+                sampler_inputs=sampler_inputs,
+                candidates=candidates,
+                explore=explore,
+                # Only when on, so a run with it off calls `sample` as it always did.
+                **({"break_ties_among_best": True} if self.sampler_break_ties_among_best else {}),
             )
             self.record_parameter_sampling(
                 ground_skill=ground_skill, explore=explore, diagnostics=diagnostics, choice=choice
