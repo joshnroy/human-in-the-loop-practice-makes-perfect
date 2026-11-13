@@ -55,7 +55,16 @@ SKILL_IDS = {
 # stop that lifts cleanly on the arm is 0.5 cm from c; 0 cm failed. The range is the
 # 2026-11-03 calibration's stops (then 0.045 m minus delta, delta in [-0.03, 0.04]),
 # made absolute (Josh, 2026-11-04) so a food's size no longer moves them.
-GATHER_AND_SWEEP_BOUNDS = ((0.03, 0.14), (0.005, 0.075), (0.04, 0.12))
+# d floor 0 (Josh, 2026-11-12), the planner's own limit, so that wrong values of d
+# exist once the plate is tucked under the rack (`RackServingConfig.plate_tuck`). The
+# blade stops at rack front + plate_tuck - d: with the well under the rack's front edge
+# every stroke that reaches that edge delivers, and only one that stops short of it
+# fails. Measured on middle_three (sides 130 mm), tuck 40 mm, 20 env seeds per d:
+# Sweep lands exactly three on 0/20 at d = 0, 0.01, 0.02, 0.03 and 0.035 (the pieces
+# stay on the rack or overhang its edge), and on 20/20 at every d from 0.04 to 0.20;
+# 0.24 is refused by the fixture-collision check. No refusal and no scraper-rack
+# contact anywhere in [0, 0.20]. About 0.69 of [0, 0.12] works.
+GATHER_AND_SWEEP_BOUNDS = ((0.03, 0.14), (0.005, 0.075), (0.0, 0.12))
 # Sweep(d): GatherAndSweep's final stroke alone, over the same d bounds; offered unless
 # `RackServingConfig.sweep_skill` is False.
 SWEEP_BOUNDS = (GATHER_AND_SWEEP_BOUNDS[2],)
