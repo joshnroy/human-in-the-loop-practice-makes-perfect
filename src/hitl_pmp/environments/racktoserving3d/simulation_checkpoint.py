@@ -60,6 +60,105 @@ class ModelArrays:
                 live[name][...] = saved
 
 
+class DerivedData:
+    """Everything in `MjData` beyond the integration state, as the last step left it.
+
+    MuJoCo computes positions, bias forces, contacts and constraint forces on the way
+    into a step, so after it they are one step behind the state. Serving's controllers
+    and KINDER's arm torques read them before their next step. A restore that only
+    recomputes them (`mj_forward`) hands those readers numbers about 1e-14 away from the
+    original's, which is enough for the two runs to part at the first tick whenever
+    the scene is still moving (it is right after a scene reset). So they are carried
+    and written back over the recomputed ones.
+    """
+
+    # Sparse-matrix index tables: the layout of the constraint Jacobian, which follows
+    # from the contact list and is recomputed with it. With a dense Jacobian (this
+    # scene's) most are never written and read back as whatever memory held.
+    SPARSE_INDEX_SUFFIXES: ClassVar[tuple[str, ...]] = (
+        "_rowadr",
+        "_rownnz",
+        "_rowsuper",
+        "_colind",
+    )
+    CONTACT_FIELDS: ClassVar[tuple[str, ...]] = (
+        "dist",
+        "pos",
+        "frame",
+        "includemargin",
+        "friction",
+        "solref",
+        "solreffriction",
+        "solimp",
+        "mu",
+        "H",
+        "dim",
+        "geom1",
+        "geom2",
+        "geom",
+        "flex",
+        "elem",
+        "vert",
+        "exclude",
+        "efc_address",
+    )
+
+    @staticmethod
+    def arrays(*, data: Any) -> dict[str, np.ndarray]:
+        found = {}
+        for name in sorted(dir(data)):
+            if name.startswith("_"):
+                continue
+            value = getattr(data, name)
+            if (
+                isinstance(value, np.ndarray)
+                and value.flags.writeable
+                and not name.endswith(DerivedData.SPARSE_INDEX_SUFFIXES)
+            ):
+                found[name] = value
+        return found
+
+    @staticmethod
+    def capture(*, data: Any) -> dict[str, Any]:
+        contact = {}
+        for name in DerivedData.CONTACT_FIELDS:
+            value = getattr(data.contact, name, None)
+            if isinstance(value, np.ndarray):
+                contact[name] = value.copy()
+        return {
+            "ncon": int(data.ncon),
+            "nefc": int(data.nefc),
+            "arrays": {name: value.copy() for name, value in DerivedData.arrays(data=data).items()},
+            "contact": contact,
+        }
+
+    @staticmethod
+    def restore(*, data: Any, saved: dict[str, Any]) -> None:
+        """Onto data whose integration state is already the checkpoint's and has been
+        recomputed once, so its contact and constraint lists have their sizes. A list
+        of another size cannot be written back: the checkpointed scene would then have
+        had a contact the recomputed one lacks, and the restore says so instead of
+        carrying on from a different scene."""
+        if (int(data.ncon), int(data.nefc)) != (saved["ncon"], saved["nefc"]):
+            raise ValueError(
+                "simulation checkpoint contacts differ from the rebuilt scene's: "
+                f"{saved['ncon']} contacts and {saved['nefc']} constraint rows saved, "
+                f"{int(data.ncon)} and {int(data.nefc)} recomputed"
+            )
+        live = DerivedData.arrays(data=data)
+        unfit = sorted(
+            name
+            for name, value in saved["arrays"].items()
+            if name not in live or live[name].shape != value.shape
+        )
+        if unfit:
+            raise ValueError(f"simulation checkpoint data arrays do not fit: {unfit}")
+        for name, value in saved["arrays"].items():
+            live[name][...] = value
+        for name, value in saved["contact"].items():
+            getattr(data.contact, name)[...] = value
+
+
 class ControllerState:
     """A scripted controller's own data, by attribute name, without its live handles.
 

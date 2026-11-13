@@ -14,6 +14,7 @@ import pytest
 from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
 from hitl_pmp.environments.racktoserving3d.simulation_checkpoint import (
     ControllerState,
+    DerivedData,
     ModelArrays,
 )
 from hitl_pmp.environments.racktoserving3d.skills import SKILL_IDS
@@ -76,6 +77,37 @@ def test_a_weld_written_into_the_compiled_model_travels_with_the_checkpoint():
         np.testing.assert_array_equal(
             capture_engine(model=rebuilt, data=rebuilt_data)["integration"], state
         )
+
+
+def test_what_the_last_step_left_in_the_data_travels_with_the_checkpoint():
+    """After a step, positions, bias forces and contacts in `MjData` are the ones that
+    step computed on the way in: one step behind the state. A restore that only
+    recomputes them hands a controller that reads them before its first step numbers
+    1e-14 away from the original's, and the two runs part from the first tick (ours'
+    resume from the before-practice checkpoint, 2026-11-13)."""
+    import mujoco
+
+    model = mujoco.MjModel.from_xml_string(WELDED)
+    data = mujoco.MjData(model)
+    data.qvel[0] = 0.7
+    data.qvel[4] = 2.0
+    for _ in range(25):
+        mujoco.mj_step(model, data)
+    engine, derived = capture_engine(model=model, data=data), DerivedData.capture(data=data)
+    stale = {name: getattr(data, name).copy() for name in ("xpos", "qfrc_bias", "qacc", "cvel")}
+
+    rebuilt = mujoco.MjModel.from_xml_string(WELDED)
+    rebuilt_data = mujoco.MjData(rebuilt)
+    restore_engine(model=rebuilt, data=rebuilt_data, checkpoint=engine)
+    assert not np.array_equal(rebuilt_data.xpos, stale["xpos"])
+    DerivedData.restore(data=rebuilt_data, saved=pickle.loads(pickle.dumps(derived)))
+    for name, value in stale.items():
+        np.testing.assert_array_equal(getattr(rebuilt_data, name), value, err_msg=name)
+    assert rebuilt_data.ncon == data.ncon
+    np.testing.assert_array_equal(rebuilt_data.contact.pos, data.contact.pos)
+    np.testing.assert_array_equal(
+        capture_engine(model=rebuilt, data=rebuilt_data)["integration"], engine["integration"]
+    )
 
 
 def test_model_arrays_refuse_a_scene_of_another_shape():
@@ -251,6 +283,21 @@ def test_a_restored_serving_simulation_steps_exactly_as_the_one_it_was_saved_fro
     original, restored = _environment(), _environment()
     try:
         original.reset_to_seed(seed=0)
+        # The before-practice checkpoint: the scene has only just been reset, and its
+        # last settling step left data one step behind the state.
+        restored.restore_simulation_checkpoint(
+            checkpoint=pickle.loads(pickle.dumps(original.simulation_checkpoint()))
+        )
+        _both(
+            envs=(original, restored),
+            step=lambda env: _skill(env=env, name="PickScraper"),
+            at="PickScraper from the just-reset scene",
+        )
+        _both(
+            envs=(original, restored),
+            step=lambda env: _skill(env=env, name="ReturnScraper"),
+            at="ReturnScraper",
+        )
         for name, d in (
             ("PickFood", 0.0),
             ("ReturnFoodToRack", 0.0),

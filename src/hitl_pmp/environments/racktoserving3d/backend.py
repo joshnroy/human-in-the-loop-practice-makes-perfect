@@ -41,7 +41,7 @@ from .semantics import (
     WellSupport,
     classify_food,
 )
-from .simulation_checkpoint import ModelArrays
+from .simulation_checkpoint import DerivedData, ModelArrays
 from .welded_food import WeldedFood
 
 FOOTPRINT_SAMPLES = 64
@@ -169,6 +169,7 @@ class RackServingBackend(SweepOffShelf3DBackend):
             "seed": self._scene_seed,
             "model": ModelArrays.capture(model=self.model()),
             "engine": capture_engine(model=self.model(), data=self.data()),
+            "derived": DerivedData.capture(data=self.data()),
             "runtime": [
                 (type(owner).__module__, type(owner).__qualname__, capture_runtime(owner=owner))
                 for owner in self._checkpoint_owners()
@@ -199,6 +200,7 @@ class RackServingBackend(SweepOffShelf3DBackend):
             raise ValueError("simulation checkpoint Gym/KINDER runtime topology differs")
         ModelArrays.restore(model=self.model(), arrays=checkpoint["model"])
         restore_engine(model=self.model(), data=self.data(), checkpoint=checkpoint["engine"])
+        DerivedData.restore(data=self.data(), saved=checkpoint["derived"])
         for owner, (_, _, state) in zip(owners, runtime, strict=True):
             restore_runtime(owner=owner, checkpoint=state)
         if checkpoint["scene_state"] is not None:
