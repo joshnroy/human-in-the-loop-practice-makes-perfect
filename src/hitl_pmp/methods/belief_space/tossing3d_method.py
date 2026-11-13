@@ -171,6 +171,7 @@ class Tossing3DPomdpMethod(EesMethod):
     # The practice steps left in the whole run, and what one action is forecast to
     # take of them: the step count its planning price is made from.
     _remaining_practice_steps: int | None = PrivateAttr(default=None)
+    _remaining_practice_episodes: int | None = PrivateAttr(default=None)
     _expected_execution_steps: dict[str, float] = PrivateAttr(default_factory=dict)
     _human_execution_steps: dict[tuple[str, str | None], list[int]] = PrivateAttr(
         default_factory=dict
@@ -466,6 +467,7 @@ class Tossing3DPomdpMethod(EesMethod):
         """Start a practice session without resetting the learned skill state."""
         self._remaining_practice_actions = None
         self._remaining_practice_steps = None
+        self._remaining_practice_episodes = None
         # G scores the current session, so its accumulated cost starts at zero.
         previous_session_cost = self._pomdp_state.accumulated_cost
         self._pomdp_state = self._pomdp_state.model_copy(update={"accumulated_cost": 0.0})
@@ -521,14 +523,29 @@ class Tossing3DPomdpMethod(EesMethod):
             )
 
     def observe_practice_action_budget(
-        self, *, remaining_actions: int, remaining_steps: int | None = None
+        self,
+        *,
+        remaining_actions: int,
+        remaining_steps: int | None = None,
+        remaining_episodes: int | None = None,
     ) -> None:
         assert remaining_actions >= 0, "remaining_actions must be non-negative"
         assert remaining_steps is None or remaining_steps >= 0, (
             "remaining_steps must be non-negative"
         )
+        assert remaining_episodes is None or remaining_episodes >= 0, (
+            "remaining_episodes must be non-negative"
+        )
         self._remaining_practice_actions = remaining_actions
         self._remaining_practice_steps = remaining_steps
+        self._remaining_practice_episodes = remaining_episodes
+
+    @staticmethod
+    def action_episodes(*, ground_skill: GroundSkill) -> float:
+        """What one planned action takes from an episode budget: 1 for a try of a skill
+        with learnable parameters, 0 for anything else (setup skills, a person's reset).
+        The practice loop counts by the same rule (`practice_episode_dispatched`)."""
+        return 1.0 if ground_skill.skill.param_dim > 0 else 0.0
 
     def forecast_action_steps(self, *, ground_skill: GroundSkill) -> float:
         """The control steps the planner expects one try of `ground_skill` to take: the
@@ -834,6 +851,12 @@ class Tossing3DPomdpMethod(EesMethod):
                         if self._remaining_practice_steps is None
                         else lambda action: self.forecast_action_steps(ground_skill=action)
                     ),
+                    remaining_episodes=self._remaining_practice_episodes,
+                    action_episodes=(
+                        None
+                        if self._remaining_practice_episodes is None
+                        else lambda action: self.action_episodes(ground_skill=action)
+                    ),
                 )
             else:
                 assert horizon is not None
@@ -883,6 +906,12 @@ class Tossing3DPomdpMethod(EesMethod):
             horizon=horizon,
             remaining_practice_actions=self._remaining_practice_actions,
             remaining_practice_steps=self._remaining_practice_steps,
+            # Only a run with an episode budget says so: every other log is unchanged.
+            **(
+                {}
+                if self._remaining_practice_episodes is None
+                else {"remaining_practice_episodes": self._remaining_practice_episodes}
+            ),
             solver=planner.name,
             max_search_iterations=(
                 planner.max_iterations if isinstance(planner, DeterminizedAStarPlanner) else None
