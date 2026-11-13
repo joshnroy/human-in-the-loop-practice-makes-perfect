@@ -607,6 +607,8 @@ class StepProtocolResume:
         "evaluation_policy": "None",
         "repeated_zero_step_call_limit": "20",
         "bulk_transfer_only": "False",
+        "robot_batch_return": "False",
+        "robot_batch_return_yaw": "snap",
     }
 
     @staticmethod

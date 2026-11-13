@@ -26,6 +26,9 @@ class RackServingSkillProvider(SkillProvider):
             include_sweep=self.env.config.sweep_skill,
             include_placement=not self.env.config.bulk_transfer_only,
             two_route=self.env.config.two_route_rewards,
+            # Evaluation tasks start from a full rack and never need a return.
+            include_robot_batch_return=self.env.config.robot_batch_return
+            and self.env.config.mode == "training",
         )
 
     def predicates(self) -> tuple[Predicate, ...]:

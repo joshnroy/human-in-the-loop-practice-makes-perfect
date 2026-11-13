@@ -65,6 +65,18 @@ class RackServingConfig(BaseModel):
     # given to the methods, never estimated. Needs `bulk_transfer_only`, whose one
     # bulk attempt per task is what makes each bulk skill a route.
     two_route_rewards: bool = False
+    # RobotBatchReturn (Josh, 2026-11-13), opt-in: one robot skill that puts every
+    # dumpling back on its start slot, the robot counterpart of the person's batch
+    # return, offered in training only (`robot_batch_return.py`). It needs a start
+    # layout with slots (not "scattered", whose return has no place to restore) and
+    # welded food, the only handling its slot placement is written for.
+    robot_batch_return: bool = False
+    # How a dumpling the robot's batch return sets down gets its slot's yaw. "snap":
+    # the set-down writes it, as welded handling writes the spot (an abstraction, made
+    # in `WeldedFood.set_down` alone). "hand": the hand turns the dumpling it holds to
+    # that yaw and nothing is written; measured on setup A (2026-11-13), see the
+    # skill's module docstring. Read only when `robot_batch_return` is on.
+    robot_batch_return_yaw: Literal["snap", "hand"] = "snap"
     # "spaced" (Josh, 2026-11-12): the two-route start, `RackLayout.spaced`.
     # "middle_three" (Josh, 2026-11-12): three `spaced_pitch` apart in the middle and
     # one `side_offset` out on each side, `RackLayout.middle_three`.
@@ -332,6 +344,10 @@ class RackServingConfig(BaseModel):
             raise ValueError("start_layout custom needs exactly five custom_layout offsets")
         if self.two_route_rewards and not (self.bulk_transfer_only and self.sweep_skill):
             raise ValueError("two_route_rewards needs bulk_transfer_only and sweep_skill")
+        if self.robot_batch_return and (
+            self.start_layout == "scattered" or self.food_handling != "welded"
+        ):
+            raise ValueError("robot_batch_return needs a slotted start_layout and welded food")
         if self.rack_height < self.serving_thickness:
             raise ValueError("Rack top must be at or above tray top")
         if self.serving_target == "lipped_platter":

@@ -135,6 +135,19 @@ class RackServingEnvironment(SweepOffShelf3DEnvironment):
                 controllers.place_food(name=name, destination="box_0")
             elif skill_id == SKILL_IDS["ReturnFoodToRack"]:
                 controllers.place_food(name=name, destination="rack_0")
+            elif skill_id == SKILL_IDS["RobotBatchReturn"]:
+                if not self.config.robot_batch_return:
+                    raise SkillFailed(
+                        "RobotBatchReturn is not enabled (RackServingConfig.robot_batch_return)"
+                    )
+                plate_count = backend.plate_count()
+                try:
+                    controllers.robot_batch_return()
+                finally:
+                    # As the person's return withdraws a bulk skill's outcome; a return
+                    # that failed before it took anything off the plate withdraws nothing.
+                    if backend.plate_count() < plate_count:
+                        self._bulk_verdict = frozenset()
             elif skill_id != -1:
                 raise SkillFailed("unknown robot skill; human operations are not robot actions")
         except (SkillFailed, ValueError) as error:

@@ -44,6 +44,7 @@ SKILL_IDS = {
     "PlaceFoodOnTray": 4,
     "ReturnFoodToRack": 5,
     "Sweep": 6,
+    "RobotBatchReturn": 7,
 }
 # GatherAndSweep(s, delta, d): s (m) is how far behind the rack's front edge the two
 # x-squeeze passes stop; delta (m) is how far from the line y = c (the plate centre's
@@ -299,11 +300,30 @@ class RackServing3DSkills:
         }
     )
 
+    # `RackServingConfig.robot_batch_return`: the robot's own batch return, declared
+    # exactly as the person's is, so whatever is applicable after theirs is applicable
+    # after it. It names neither the hand nor the scraper: a held scraper is put home
+    # first and picked up again at the end. A try that returns only some of the food
+    # is a failed try, and the scene stays as measured (`robot_batch_return.py`).
+    ROBOT_BATCH_RETURN: ClassVar[Skill] = HUMAN_BATCH_RETURN.model_copy(
+        update={"name": "RobotBatchReturn"}
+    )
+    TWO_ROUTE_ROBOT_BATCH_RETURN: ClassVar[Skill] = TWO_ROUTE_HUMAN_BATCH_RETURN.model_copy(
+        update={"name": "RobotBatchReturn"}
+    )
+
     @staticmethod
     def robot_skills(
-        *, include_sweep: bool = True, include_placement: bool = True, two_route: bool = False
+        *,
+        include_sweep: bool = True,
+        include_placement: bool = True,
+        two_route: bool = False,
+        include_robot_batch_return: bool = False,
     ) -> tuple[Skill, ...]:
         skills = RackServing3DSkills
+        robot_return = (
+            skills.TWO_ROUTE_ROBOT_BATCH_RETURN if two_route else skills.ROBOT_BATCH_RETURN
+        )
         return (
             skills.PICK_SCRAPER,
             skills.TWO_ROUTE_GATHER_AND_SWEEP if two_route else skills.GATHER_AND_SWEEP,
@@ -311,7 +331,11 @@ class RackServing3DSkills:
             skills.PICK_FOOD,
             *((skills.PLACE_FOOD_ON_TRAY,) if include_placement else ()),
             skills.RETURN_FOOD_TO_RACK,
-        ) + (((skills.TWO_ROUTE_SWEEP if two_route else skills.SWEEP),) if include_sweep else ())
+        ) + (
+            (((skills.TWO_ROUTE_SWEEP if two_route else skills.SWEEP),) if include_sweep else ())
+            # Last, so every older skill keeps its place.
+            + ((robot_return,) if include_robot_batch_return else ())
+        )
 
     @staticmethod
     def human_skills(
