@@ -70,6 +70,9 @@ class PracticeClock(BaseModel):
     stop_steps: int = 0
     human_invocations: int = 0
     counted_human_steps: int = 0
+    # `--practice-episode-budget`: the tries practice may take, and those completed.
+    episode_budget: int | None = Field(default=None, gt=0)
+    episodes: int = 0
     accounting: PracticeAccounting | None = None
     observation: Callable[[], Any] = lambda: None
     _robot_charge: ExecutionCharge | None = PrivateAttr(default=None)
@@ -92,6 +95,23 @@ class PracticeClock(BaseModel):
         no learning happens inside that jump, so one policy is measured at each of them,
         and each lands at its own x rather than all of them at the jump's end."""
         return self.steps if self._measuring_at is None else self._measuring_at
+
+    @property
+    def episodes_left(self) -> int | None:
+        return None if self.episode_budget is None else self.episode_budget - self.episodes
+
+    @property
+    def episode_budget_reached(self) -> bool:
+        return self.episode_budget is not None and self.episodes >= self.episode_budget
+
+    def checkpoint_fields(self) -> dict[str, int]:
+        """What a cycle checkpoint saves of this clock and a resume sets back. The tries
+        completed are saved only under an episode budget, so every other run's
+        checkpoint holds what it held before."""
+        fields = {"robot_steps", "stop_steps", "human_invocations", "counted_human_steps"}
+        if self.episode_budget is not None:
+            fields.add("episodes")
+        return self.model_dump(include=fields)
 
     def before_robot_step(self) -> None:
         if self.robot_active and self.steps >= self.budget:
@@ -156,6 +176,24 @@ class PracticeClock(BaseModel):
         crossed = self.steps // self.progress_interval - previous // self.progress_interval
         for _ in range(crossed):
             self.on_progress()
+
+
+class PracticeEpisode:
+    """The unit `--practice-episode-budget` counts: one completed execution of a skill
+    with learnable parameters (`param_dim > 0`).
+
+    Completed means the controller returned, whatever it reported: a failed try and a
+    try the controller refused (no control step, a skill error) are outcomes the method
+    observes and learns from, so they are episodes. A try the step budget cut is not:
+    no outcome exists for it. A setup skill, a STOP and a person's reset never are.
+    This is DP's own rule for `--dp-budget-unit episodes` (`DpMethod.
+    observe_execution_cost`: `complete`, the same flag) in every respect but one: DP
+    counts its *target*, so the two agree exactly when DP's targets are parameterised
+    skills and no parameterised skill runs as another target's setup."""
+
+    @staticmethod
+    def completed(*, method: Any, completed: bool) -> bool:
+        return completed and method.practice_episode_dispatched()
 
 
 class EvaluationStopping:
@@ -607,6 +645,8 @@ class StepProtocolResume:
         "evaluation_policy": "None",
         "repeated_zero_step_call_limit": "20",
         "bulk_transfer_only": "False",
+        "practice_episode_budget": "None",
+        "measurement_interval_episodes": "None",
     }
 
     @staticmethod
@@ -1176,6 +1216,10 @@ class StepProtocolValidation:
             args, "checkpoint_cycles", False
         ):
             raise ValueError("--stop-after-cycles requires --checkpoint-cycles")
+        if getattr(args, "measurement_interval_episodes", None) and not getattr(
+            args, "practice_episode_budget", None
+        ):
+            raise ValueError("--measurement-interval-episodes requires --practice-episode-budget")
         cost_path = args.practice_cost_config
         if args.human_skill_steps != 1:
             raise ValueError("Configure human durations in the cost file, not --human-skill-steps")
@@ -1466,6 +1510,12 @@ class StepPracticeRunner:
         factory built, which no reset touches."""
         evaluate_only = getattr(args, "evaluate_only", False)
         no_early_stop = getattr(args, "no_early_stop", False)
+        # `--practice-episode-budget`: practice also ends once this many tries have
+        # completed (`PracticeEpisode`); the step budget stays, as the backstop.
+        episode_budget: int | None = getattr(args, "practice_episode_budget", None)
+        episode_interval: int | None = getattr(args, "measurement_interval_episodes", None)
+        # What ended practice; `endpoint` itself becomes the run's phase at the end.
+        practice_endpoint: str | None = None
         # `--measure-after-learning-updates`: the learning-update counts measured right
         # after, beside the interval's. Only for evaluations spawned beside practice: an
         # in-process one uses the room, which only `--measure-every-cycles` puts back.
@@ -1590,6 +1640,19 @@ class StepPracticeRunner:
                     "evaluations_completed": sum(f.done() for _, f in futures),
                     "elapsed_seconds": time.monotonic() - started,
                     **(accounting.summary() if accounting else {}),
+                    # Only a run with an episode budget says so. A run the step
+                    # budget ended first reads `practice_endpoint:
+                    # practice_step_budget` and `practice_episode_budget_reached: false`.
+                    **(
+                        {}
+                        if episode_budget is None
+                        else {
+                            "practice_episodes": clock.episodes,
+                            "practice_episode_budget": episode_budget,
+                            "practice_episode_budget_reached": clock.episode_budget_reached,
+                            "practice_endpoint": practice_endpoint,
+                        }
+                    ),
                 },
             )
 
@@ -1617,6 +1680,7 @@ class StepPracticeRunner:
                 "session_index": cycle,
                 **PolicyFileHash.record(raw=raw),
                 **(accounting.summary() if accounting else {}),
+                **({} if episode_budget is None else {"practice_episodes": clock.episodes}),
                 # Only a cycle-end measurement says so: every other record is unchanged.
                 **({} if after_cycle is None else {"after_cycle": after_cycle}),
             }
@@ -1645,6 +1709,7 @@ class StepPracticeRunner:
             interval=args.measurement_interval_steps,
             extra_thresholds=frozenset(getattr(args, "extra_measurement_steps", None) or ()),
             human_steps=args.human_skill_steps,
+            episode_budget=episode_budget,
             on_measure=lambda: measure() if clock.measurement_steps < clock.budget else None,
             on_progress=status,
             accounting=accounting,
@@ -1799,14 +1864,7 @@ class StepPracticeRunner:
                     "zero_step_call_streak": zero_step_call_streak,
                     "no_robot_action_streak": no_robot_action_streak,
                     "elapsed_seconds": time.monotonic() - started,
-                    "clock": clock.model_dump(
-                        include={
-                            "robot_steps",
-                            "stop_steps",
-                            "human_invocations",
-                            "counted_human_steps",
-                        }
-                    ),
+                    "clock": clock.checkpoint_fields(),
                     "env_state": problem.get_current_state(),
                     **(
                         {
@@ -1838,6 +1896,16 @@ class StepPracticeRunner:
                 path=output / "step_protocol.json",
                 value={
                     "practice_step_budget": args.practice_step_budget,
+                    **(
+                        {}
+                        if episode_budget is None
+                        else {
+                            "practice_episode_budget": episode_budget,
+                            "practice_episode": "one completed execution of a skill with "
+                            "learnable parameters; the step budget is the backstop",
+                            "measurement_interval_episodes": episode_interval,
+                        }
+                    ),
                     "no_early_stop": no_early_stop,
                     "evaluate_only": evaluate_only,
                     "measurement_interval_steps": clock.interval,
@@ -1909,6 +1977,8 @@ class StepPracticeRunner:
                 ).model_dump(mode="json"),
             )
         budget_reached = False
+        # The try count the last `--measurement-interval-episodes` measurement was at.
+        measured_at_episodes = clock.episodes
         # The scene a human reset starts from: set by every session before one can run.
         state: Any = None
 
@@ -2038,7 +2108,11 @@ class StepPracticeRunner:
                     )
                 else:
                     restore_practice(scene=saved["practice_scene"])
-            while not evaluate_only and clock.steps < clock.budget:
+            while (
+                not evaluate_only
+                and clock.steps < clock.budget
+                and not clock.episode_budget_reached
+            ):
                 if (output / "STOP").exists():
                     endpoint = "external_stop"
                     break
@@ -2084,6 +2158,11 @@ class StepPracticeRunner:
                     method.observe_practice_action_budget(
                         remaining_actions=args.max_steps_per_interaction - action_index,
                         remaining_steps=clock.budget - clock.steps,
+                        **(
+                            {}
+                            if episode_budget is None
+                            else {"remaining_episodes": clock.episodes_left}
+                        ),
                     )
                     try:
                         action = policy(state)
@@ -2176,6 +2255,10 @@ class StepPracticeRunner:
                     actions += 1
                     robot_skills += 1
                     last_try_completed = completed
+                    if episode_budget is not None and PracticeEpisode.completed(
+                        method=method, completed=completed
+                    ):
+                        clock.episodes += 1
                     skill_error = environment.last_skill_error(problem=problem)
                     robot_cost = accounting.total_cost - before_cost if accounting else None
                     StepFiles.event(
@@ -2195,6 +2278,8 @@ class StepPracticeRunner:
                             if observed_cost is not None
                             else {}
                         ),
+                        # The tries completed once this action has run.
+                        **({} if episode_budget is None else {"practice_episodes": clock.episodes}),
                         **StepFiles.trace(environment=environment, problem=problem),
                     )
                     StepFiles.timing(
@@ -2220,6 +2305,19 @@ class StepPracticeRunner:
                     if interruption is not None:
                         budget_reached = True
                         break
+                    if clock.episode_budget_reached:
+                        # The last try: nothing more is dispatched, not even the
+                        # person's return. Its outcome is observed by `learn`.
+                        break
+                    if (
+                        episode_interval is not None
+                        and clock.episodes > measured_at_episodes
+                        and clock.episodes % episode_interval == 0
+                    ):
+                        # As a step threshold inside a session is: the policy as it
+                        # stands, before this session's learning update.
+                        measured_at_episodes = clock.episodes
+                        measure()
                     # Counted across sessions; a STOP is not a robot call, so it neither
                     # extends nor breaks this.
                     moved = clock.robot_steps > before_robot_steps
@@ -2229,6 +2327,12 @@ class StepPracticeRunner:
                         break
                 if early_stop:
                     endpoint = "three_perfect_evaluations"
+                    break
+                if clock.episode_budget_reached:
+                    # Before the step budget: a last try that lands on both was the
+                    # episode budget's. Learned from, as the cycle a step budget ends is.
+                    endpoint = "practice_episode_budget"
+                    learn(actions=actions, reason=endpoint)
                     break
                 if budget_reached or clock.steps >= clock.budget:
                     endpoint = "practice_step_budget"
@@ -2375,8 +2479,13 @@ class StepPracticeRunner:
                 and (not records or records[-1]["practice_steps"] != clock.steps)
             ):
                 measure()
+            practice_endpoint = endpoint
             StepFiles.event(
-                path=events, event="practice_end", practice_steps=clock.steps, reason=endpoint
+                path=events,
+                event="practice_end",
+                practice_steps=clock.steps,
+                reason=endpoint,
+                **({} if episode_budget is None else {"practice_episodes": clock.episodes}),
             )
             if not evaluate_only:
                 recorder.end_segment(outcome=endpoint, steps=clock.steps)

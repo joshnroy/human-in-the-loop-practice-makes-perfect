@@ -581,6 +581,11 @@ class EesMethod(Method):
     def record_action_cost(self, *, ground_skill: GroundSkill) -> None:
         self._execution_ground_skill = ground_skill
 
+    def practice_episode_dispatched(self) -> bool:
+        # Every practice action is recorded by `record_action_cost` as it is dispatched.
+        dispatched = self._execution_ground_skill
+        return dispatched is not None and dispatched.skill.param_dim > 0
+
     def observe_execution_cost(self, *, cost: float, steps: int, complete: bool) -> None:
         """Receive host-measured execution cost independently of outcome learning."""
         del cost, steps, complete
