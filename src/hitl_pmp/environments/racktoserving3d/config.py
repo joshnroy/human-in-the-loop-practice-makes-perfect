@@ -68,9 +68,15 @@ class RackServingConfig(BaseModel):
     # "spaced" (Josh, 2026-11-12): the two-route start, `RackLayout.spaced`.
     # "middle_three" (Josh, 2026-11-12): three `spaced_pitch` apart in the middle and
     # one `side_offset` out on each side, `RackLayout.middle_three`.
-    start_layout: Literal["scattered", "pile2col", "stack", "row", "spaced", "middle_three"] = (
-        "scattered"
-    )
+    # "custom" (2026-11-12 measurement study): `RackLayout.custom`, one explicit
+    # offset per dumpling in `custom_layout`.
+    start_layout: Literal[
+        "scattered", "pile2col", "stack", "row", "spaced", "middle_three", "custom"
+    ] = "scattered"
+    # start_layout custom only: per dumpling, in slot order, (metres along the row from
+    # the plate's centre line, metres up the rack away from the plate from the rack's x
+    # centre line, radians of yaw added to `spaced_long_axis`).
+    custom_layout: tuple[tuple[float, float, float], ...] = ()
     spaced_pitch: Positive = Field(
         default=0.04, description="start_layout spaced and middle_three only"
     )
@@ -85,6 +91,13 @@ class RackServingConfig(BaseModel):
     rack_mass: Positive = Field(default=0.5, description="UNVERIFIED mass assumption")
     tray_thickness: Positive = 0.012
     gap: Nonnegative = 0.010
+    # Opt-in (2026-11-12 measurement study), Corelle plate only: how far the plate's
+    # outer near edge sits under the rack's front edge, replacing `gap`. Past the rim's
+    # 35 mm width the rack's front edge overhangs the scored well. 0 is off.
+    plate_tuck: Nonnegative = 0.0
+    # Opt-in (2026-11-12 measurement study): speed (m/s) of Sweep's stroke and of
+    # GatherAndSweep's final stroke. None is the constant `SWEEP_SPEED_M_S`.
+    final_sweep_speed: Positive | None = None
     human_interruption_cost: Positive = 5
 
     rack_width: Positive = 0.375
@@ -260,7 +273,7 @@ class RackServingConfig(BaseModel):
 
     @property
     def tray_center_x(self) -> float:
-        return self.rack_front_x - self.gap - self.serving_depth / 2
+        return self.tray_back_x - self.serving_depth / 2
 
     @property
     def tray_center_y(self) -> float:
@@ -272,6 +285,8 @@ class RackServingConfig(BaseModel):
 
     @property
     def tray_back_x(self) -> float:
+        if self.plate_tuck > 0:
+            return self.rack_front_x + self.plate_tuck
         return self.rack_front_x - self.gap
 
     @property
@@ -301,6 +316,8 @@ class RackServingConfig(BaseModel):
     @model_validator(mode="after")
     def validate_layout(self) -> "RackServingConfig":
         """Reject unsupported layouts rather than silently clipping hardware."""
+        if (self.start_layout == "custom") != (len(self.custom_layout) == 5):
+            raise ValueError("start_layout custom needs exactly five custom_layout offsets")
         if self.two_route_rewards and not (self.bulk_transfer_only and self.sweep_skill):
             raise ValueError("two_route_rewards needs bulk_transfer_only and sweep_skill")
         if self.rack_height < self.serving_thickness:
@@ -322,6 +339,15 @@ class RackServingConfig(BaseModel):
                 raise ValueError("Plate must nest foot ring inside well inside rim")
             if self.corelle_foot_height + self.corelle_glass_thickness >= self.corelle_height:
                 raise ValueError("Plate well must sit below the rim top")
+        if self.plate_tuck > 0:
+            if self.serving_target != "corelle_plate" or self.surface_kind == "concept":
+                raise ValueError("plate_tuck needs the Corelle plate under a wire rack")
+            if self.corelle_rim_top_z >= self.rack_top_z - 2 * self.rack_wire_radius:
+                raise ValueError("Plate rim must fit under the rack's deck to be tucked")
+            foot_dx = self.rack_front_x - self.tray_center_x
+            foot_dy = self.rack_width / 2 - self.rack_leg_width
+            if foot_dx**2 + foot_dy**2 <= (self.corelle_diameter / 2) ** 2:
+                raise ValueError("A tucked plate must stay clear of the rack's front feet")
         if not self.counter_x_min <= self.tray_front_x < self.rack_back_x <= self.counter_x_max:
             raise ValueError("Rack and tray must fit on the counter in x")
         if (

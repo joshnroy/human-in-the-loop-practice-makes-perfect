@@ -106,6 +106,13 @@ class TwoRouteProbeSafety:
         self.model, self.data = backend.model(), backend.data()
         self.scraper = self.model.body("wiper_0").id
         self.plate = self.model.body("box_0").id
+        self.rack = self.model.body("rack_0").id
+        self.front_x = float(backend.support(name="rack_0").x_min)
+        self.rack_top = float(backend.support(name="rack_0").top_z)
+        self.rack_contact_ticks = 0
+        self.deepest_rack = 0.0
+        self.crossing: list[tuple[float, float]] = []
+        self.crossed = False
         self.near_x = backend.serving_near_edge_x()
         self.lowest = float("inf")
         self.contact_ticks = 0
@@ -113,9 +120,15 @@ class TwoRouteProbeSafety:
 
     def tick(self) -> None:
         ends = self.tool.blade_edge()
-        if float(ends[:, 0].mean()) <= self.near_x:
+        edge_x = float(ends[:, 0].mean())
+        # Only while pushing: the carried blade also passes this x on the way round.
+        pushing = float(ends[:, 2].mean()) < self.rack_top + 0.015
+        if pushing and not self.crossed and abs(edge_x - self.front_x) <= 0.02:
+            self.crossing.append((float(self.data.time), edge_x))
+        self.crossed = self.crossed or (pushing and edge_x < self.front_x - 0.02)
+        if edge_x <= self.near_x:
             self.lowest = min(self.lowest, float(ends[:, 2].min()))
-        touched = False
+        touched = on_rack = False
         for contact in self.data.contact[: self.data.ncon]:
             bodies = {
                 int(self.model.geom_bodyid[contact.geom1]),
@@ -124,12 +137,23 @@ class TwoRouteProbeSafety:
             if bodies == {self.scraper, self.plate} and contact.dist <= 0:
                 touched = True
                 self.deepest = max(self.deepest, float(-contact.dist))
+            if bodies == {self.scraper, self.rack} and contact.dist <= 0:
+                on_rack = True
+                self.deepest_rack = max(self.deepest_rack, float(-contact.dist))
         self.contact_ticks += touched
+        self.rack_contact_ticks += on_rack
         if self.also is not None:
             self.also()
 
     def report(self) -> dict[str, Any]:
+        speed = None
+        if len(self.crossing) >= 2 and self.crossing[-1][0] > self.crossing[0][0]:
+            (t0, x0), (t1, x1) = self.crossing[0], self.crossing[-1]
+            speed = round((x0 - x1) / (t1 - t0), 4)
         return {
+            "blade_speed_across_rack_front_m_s": speed,
+            "scraper_rack_contact_ticks": self.rack_contact_ticks,
+            "deepest_scraper_rack_penetration_m": round(self.deepest_rack, 5),
             "blade_lowest_z_over_plate": None
             if self.lowest == float("inf")
             else round(self.lowest, 4),
@@ -213,9 +237,38 @@ def main() -> None:
     parser.add_argument(
         "--scraper-tilt-degrees", type=float, default=RackServingConfig().scraper_tilt_degrees
     )
+    parser.add_argument("--plate-tuck", type=float, default=0.0)
+    parser.add_argument(
+        "--custom-layout",
+        type=float,
+        nargs=15,
+        default=None,
+        help="start_layout custom: five (along row, up the rack, yaw) triples.",
+    )
+    parser.add_argument("--final-sweep-speed", type=float, default=None)
+    parser.add_argument(
+        "--widen-bounds",
+        type=float,
+        nargs=6,
+        default=None,
+        metavar=("S_LO", "S_HI", "DELTA_LO", "DELTA_HI", "D_LO", "D_HI"),
+        help="Measurement only: replace the controllers' parameter bounds for this probe.",
+    )
     args = parser.parse_args()
+    if args.widen_bounds is not None:
+        from hitl_pmp.environments.racktoserving3d import controllers
+
+        low_high = args.widen_bounds
+        controllers.GATHER_AND_SWEEP_BOUNDS = tuple(  # type: ignore[assignment]
+            (low_high[i], low_high[i + 1]) for i in (0, 2, 4)
+        )
+        controllers.SWEEP_BOUNDS = (controllers.GATHER_AND_SWEEP_BOUNDS[2],)
+    custom = args.custom_layout
     config = RackServingConfig(
-        start_layout=args.start_layout,
+        start_layout="custom" if custom is not None else args.start_layout,
+        custom_layout=()
+        if custom is None
+        else tuple((custom[i], custom[i + 1], custom[i + 2]) for i in range(0, 15, 3)),
         spaced_pitch=args.pitch,
         spaced_long_axis=args.long_axis,
         side_offset=args.side_offset,
@@ -224,6 +277,8 @@ def main() -> None:
         bulk_transfer_only=True,
         blade_height_feedback_limit=args.blade_height_feedback_limit,
         scraper_tilt_degrees=args.scraper_tilt_degrees,
+        plate_tuck=args.plate_tuck,
+        final_sweep_speed=args.final_sweep_speed,
     )
     env = RackServingEnvironment(
         config=config, scene_bg=args.video is not None, skill_step_limit=12000
@@ -238,6 +293,8 @@ def main() -> None:
                 "skill": args.skill,
                 "params": list(args.params),
                 "start_kind": backend.start_kind(),
+                "plate_tuck": args.plate_tuck,
+                "final_sweep_speed": args.final_sweep_speed,
                 "start_y": [round(y, 4) for _, y in start],
             }
             video = None

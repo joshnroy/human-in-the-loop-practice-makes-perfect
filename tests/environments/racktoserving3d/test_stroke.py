@@ -218,3 +218,13 @@ def test_a_lifted_blade_is_commanded_back_down_by_no_more_than_the_limit(
 
     lowered = BladeHeightFeedback.lowering(planned_z=0.9271, actual_z=actual, limit=limit)
     assert lowered == pytest.approx(expected)
+
+
+def test_sweep_accepts_a_plate_tucked_under_the_racks_front_edge_only_when_told():
+    tucked = {"plate_center_x": 1.3725 + 0.035 - 0.1302}
+    with pytest.raises(ValueError):
+        _sweep(**tucked)
+    plan = _sweep(plate_tuck=0.035, **tucked)
+    assert plan.end[0] == pytest.approx(1.3725 + 0.035 - 0.10)
+    with pytest.raises(ValueError):
+        _sweep(plate_tuck=0.02, **tucked)
