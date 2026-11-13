@@ -609,3 +609,36 @@ def test_the_learning_rate_floor_must_be_positive():
             dp_budget=10.0,
             dp_min_learning_rate=0.0,
         )
+
+
+def test_a_named_skill_is_priced_at_its_own_prior_until_dp_has_observed_its_cost(*, monkeypatch):
+    method, pick, back, _cube = _two_skill_setup(monkeypatch=monkeypatch, budget=20.0)
+    method.dp_skill_cost_prior_steps_for = {"PickWiper": 800.0}
+
+    def price(*, ground):
+        return method.dp_expected_attempt_cost(ground_skill=ground)
+
+    assert price(ground=pick) == pytest.approx(800 * STEP_PRICE)
+    # A skill not named keeps the shared prior (one control step by default).
+    assert price(ground=back) == pytest.approx(STEP_PRICE)
+    method.choose_practice_target()
+    allocation = method.dp_allocation()
+    # PickWiper would take 4 attempts to saturate; at 8 each a budget of 20 buys 2.
+    assert allocation[pick] == 2
+    assert sum(count * price(ground=ground) for ground, count in allocation.items()) <= 20.0
+    # Once executed, the observed cost replaces the prior.
+    _execute(method=method, ground=pick, cost=3.0)
+    assert price(ground=pick) == pytest.approx(3.0)
+
+
+@pytest.mark.parametrize("prices", [{"NoSuchSkill": 100.0}, {"PickWiper": 0.0}])
+def test_per_skill_cost_priors_must_name_robot_skills_and_be_positive(*, prices):
+    env = SweepOffShelf3DEnvironment()
+    with pytest.raises(ValueError, match="cost prior"):
+        DpMethod(
+            env=env,
+            skill_provider=SweepOffShelf3DSkillProvider(env=env),
+            dp_budget=10.0,
+            dp_solver="enumeration",
+            dp_skill_cost_prior_steps_for=prices,
+        )

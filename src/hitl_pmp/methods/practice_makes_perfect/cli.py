@@ -941,6 +941,16 @@ class DpCli(EesCli):
             "named keep the EES prior. Excludes --dp-prior-calibration.",
         )
         parser.add_argument(
+            "--dp-skill-cost-prior-steps-for",
+            action=DpCli.SkillValues,
+            default={},
+            metavar="SKILL=STEPS",
+            help="Control steps one robot skill's attempt is priced at until DP has observed "
+            "its own cost for it (repeatable, one per skill); skills not named keep "
+            "--skill-cost-prior-steps. Only the cost-unit budget reads it. Like that budget, "
+            "it is this project's adaptation: the paper's DP counts episodes.",
+        )
+        parser.add_argument(
             "--dp-initial-learning-rate-for",
             action=DpCli.SkillValues,
             default={},
@@ -1045,6 +1055,7 @@ class DpCli(EesCli):
                 dp_prior_calibration=args.dp_prior_calibration,
                 dp_initial_competence=args.dp_initial_competence,
                 dp_initial_learning_rate_for=args.dp_initial_learning_rate_for,
+                dp_skill_cost_prior_steps_for=args.dp_skill_cost_prior_steps_for,
                 dp_solver_log=(
                     args.output_dir / "dp_allocations.jsonl" if args.output_dir else None
                 ),

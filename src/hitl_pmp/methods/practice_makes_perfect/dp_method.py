@@ -72,6 +72,11 @@ class DpMethod(EesMethod):
     dp_max_allocations: int = Field(default=200_000, ge=1)
     dp_max_states: int = Field(default=4096, ge=1)
     skill_cost_prior_steps: float = Field(default=1.0, gt=0.0, allow_inf_nan=False)
+    # Control steps a named robot skill's attempt is priced at until DP has observed
+    # its own cost for it; skills not named keep skill_cost_prior_steps. Like the
+    # cost-unit budget itself this is this project's adaptation: the paper's DP counts
+    # episodes and prices nothing.
+    dp_skill_cost_prior_steps_for: dict[str, float] = Field(default_factory=dict)
 
     _dp_costs: dict[GroundSkill, list[float]] = PrivateAttr(default_factory=dict)
     _dp_pending_costs: dict[GroundSkill, float] = PrivateAttr(default_factory=dict)
@@ -116,6 +121,15 @@ class DpMethod(EesMethod):
                     raise ValueError(
                         f"initial learning rate of {name} must be finite and non-negative"
                     )
+        if self.dp_skill_cost_prior_steps_for:
+            unknown = set(self.dp_skill_cost_prior_steps_for) - {
+                skill.name for skill in self.skills()
+            }
+            if unknown:
+                raise ValueError(f"cost prior steps name not robot skills: {sorted(unknown)}")
+            for name, steps in self.dp_skill_cost_prior_steps_for.items():
+                if not math.isfinite(steps) or steps <= 0.0:
+                    raise ValueError(f"cost prior steps of {name} must be finite and positive")
         if self.dp_initial_competence:
             if self.dp_prior_calibration is not None:
                 raise ValueError(
@@ -264,7 +278,10 @@ class DpMethod(EesMethod):
         if observed:
             return max(1e-12, (sum(observed) + pending) / len(observed))
         accounting = self._require_accounting()
-        prior = self.skill_cost_prior_steps * accounting.robot_charge().cost
+        steps = self.dp_skill_cost_prior_steps_for.get(
+            ground_skill.skill.name, self.skill_cost_prior_steps
+        )
+        prior = steps * accounting.robot_charge().cost
         return max(1e-12, prior + pending)
 
     def select_skill_to_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
