@@ -645,3 +645,59 @@ def test_ours_starting_learning_rate_prior_scales_with_the_skills_parameter_coun
         )
         is RACK_SERVING_DOMAIN
     )
+
+
+def _initial_rate_beliefs(*, base: float | None, enabled: bool = True, num_particles: int):
+    provider = RackServingSkillProvider(env=RackServingEnvironment(config=TWO_ROUTE_CONFIG))
+    domain = Tossing3DPomdpCli.with_learning_rates_by_parameters(
+        domain=RACK_SERVING_DOMAIN, provider=provider, enabled=enabled, base=base
+    )
+    return make_default_tossing3d_belief(
+        domain=domain,
+        model="local_trend",
+        engine="particle",
+        num_particles=num_particles,
+        seed=0,
+    ).skill_beliefs
+
+
+def test_ours_learning_rate_prior_base_sets_each_skills_starting_mean_to_dps():
+    """With base 0.1, a robot skill's starting learning-rate belief has mean
+    0.1 / param_dim, DP's own starting rate (Josh, 2026-11-13). A half-normal's sample
+    mean over 20000 particles has a relative standard error of about 0.5%; the
+    tolerance is 3%."""
+    beliefs = _initial_rate_beliefs(base=0.1, num_particles=20000)
+    plain = _initial_rate_beliefs(base=None, enabled=False, num_particles=20000)
+    assert beliefs["Sweep"].mean_learning_rate() == pytest.approx(0.100, rel=0.03)
+    assert beliefs["GatherAndSweep"].mean_learning_rate() == pytest.approx(0.1 / 3, rel=0.03)
+    assert beliefs["PickScraper"].mean_learning_rate() == pytest.approx(0.0, abs=1e-9)
+    # Still a half-normal: its standard deviation is its mean times sqrt(pi / 2 - 1).
+    rates = beliefs["Sweep"].arrays()[0][:, 1]
+    assert rates.std() == pytest.approx(0.1 * np.sqrt(np.pi / 2 - 1), rel=0.03)
+    # The person's skills keep the shared prior, particle for particle, and no
+    # competence prior moves.
+    for name in RACK_HUMAN_SKILLS:
+        assert beliefs[name].latent_values == plain[name].latent_values
+    for name in beliefs:
+        assert np.array_equal(beliefs[name].arrays()[0][:, 0], plain[name].arrays()[0][:, 0])
+
+
+def test_ours_learning_rate_prior_without_a_base_is_todays_particles():
+    """Digests of every initial belief's bytes, recorded from the code before the base
+    existed (2026-11-13), with and without the scaling by parameters."""
+    import hashlib
+
+    def digest(*, beliefs) -> str:
+        hashed = hashlib.sha256()
+        for name in sorted(beliefs):
+            hashed.update(name.encode())
+            hashed.update(beliefs[name].latent_values)
+            hashed.update(beliefs[name].state_weights)
+        return hashed.hexdigest()
+
+    assert digest(beliefs=_initial_rate_beliefs(base=None, num_particles=2000)) == (
+        "4ede892340ffdb8f2f20feb43df8eb0d61df43e42a5f3c4060300fa8de69163b"
+    )
+    assert digest(beliefs=_initial_rate_beliefs(base=None, enabled=False, num_particles=2000)) == (
+        "92528eda5564791c3be08ace8742211d5a4d5cc267c5d5451ffd24931ec1b364"
+    )

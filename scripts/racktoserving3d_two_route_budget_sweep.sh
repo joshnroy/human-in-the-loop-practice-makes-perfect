@@ -30,6 +30,11 @@
 # `--pomdp-learning-rate-by-parameters`): Sweep has 1 parameter, GatherAndSweep 3,
 # PickScraper and the other skills 0. This is our addition to both planners, the
 # episode arm included; EES has no learning-rate prior and is unchanged.
+# The base is the same for both since 2026-11-13 (Josh: "raise ours to DP's level"):
+# ours passes `--pomdp-learning-rate-prior-base $OURS_LR_BASE` (default 0.1, DP's
+# `--dp-initial-learning-rate`), so its starting learning-rate belief has mean 0.100
+# for Sweep and 0.033 for GatherAndSweep, as DP's starting rates. Before that date
+# ours started at means 0.040 and 0.013; OURS_LR_BASE= (empty) restores that.
 #
 # Practice sessions are SESSION_ACTIONS (default 10) actions long, robot skills and
 # human resets alike, instead of the usual 150: a skill's sampler is refitted, and DP
@@ -114,6 +119,7 @@ export LAYOUT="--start-layout middle_three --side-offset 0.13 --plate-tuck 0.035
 export INITIAL_MEASUREMENT=${INITIAL_MEASUREMENT:-1}
 export SAMPLER_TIES=${SAMPLER_TIES:-best}
 export SAMPLER_FEATURES=${SAMPLER_FEATURES:-parameters}
+export OURS_LR_BASE=${OURS_LR_BASE-0.1}
 # DP's per-skill prices, in control steps: the mean of each skill's uninterrupted
 # executions in the setup-A smoke runs of 2026-11-12 (seed 0, 40000 steps). Small
 # samples: PickScraper 424 (n=9) and GatherAndSweep 3362, rounded to 3400 (n=8), from
@@ -155,7 +161,8 @@ cell_arguments() {  # <budget> <arm>: prints "<method>" then "<shared args>" the
       flags="--pomdp-solver determinized_astar --pomdp-determinized-variant curtis \
 --pomdp-observation-probability-weight 0.01 --pomdp-linear-cost-lambda 0.0015 \
 --pomdp-competence-prior 1 3 --stop-on-no-practice-action \
---pomdp-learning-rate-by-parameters" ;;
+--pomdp-learning-rate-by-parameters"
+      [ -z "$OURS_LR_BASE" ] || flags="$flags --pomdp-learning-rate-prior-base $OURS_LR_BASE" ;;
     dp-episodes)
       method=dp
       flags="$dp --dp-budget $(( (steps + 937) / 1875 )) --dp-budget-unit episodes --dp-allocation-schedule once" ;;

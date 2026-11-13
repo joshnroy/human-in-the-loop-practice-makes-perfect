@@ -80,6 +80,9 @@ class PracticeDomain(BaseModel, abc.ABC):
     # (belief name, scale): that skill's starting learning-rate prior is the shared one
     # with its scale multiplied by this; 0 puts all of it at a rate of zero.
     learning_rate_prior_scales: tuple[tuple[str, float], ...] = ()
+    # When set, a skill in learning_rate_prior_scales starts from the half-normal whose
+    # MEAN is this times its scale, rather than the shared prior's width times its scale.
+    learning_rate_prior_mean: float | None = Field(default=None, gt=0.0, allow_inf_nan=False)
     # Expectimax depth when the run does not set one.
     default_search_depth: int = Field(default=3, ge=0)
     # Reduce expectimax by exact object symmetry and count-keyed beliefs

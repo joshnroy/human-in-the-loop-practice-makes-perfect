@@ -1,5 +1,6 @@
 """Belief initialization and observation updates for Tossing3D skills."""
 
+import math
 from typing import ClassVar, Literal
 
 from hitl_pmp.core.method.types import GroundSkill, Skill
@@ -246,10 +247,17 @@ def make_default_tossing3d_belief(
             # prior's width is negligible, so the grid puts all its mass in the zero-rate
             # bin and every particle is drawn at (numerically) zero; the rate's process
             # noise is switched off with it, or the rate would drift up from zero.
+            # With a prior mean, the half-normal's width is set from it: its mean is
+            # sigma * sqrt(2 / pi), exactly so for the (untruncated) particle prior.
             scale = rate_scales[name]
+            sigma = (
+                config.initial_eta_sigma
+                if domain.learning_rate_prior_mean is None
+                else domain.learning_rate_prior_mean * math.sqrt(math.pi / 2)
+            )
             config = config.model_copy(
                 update=(
-                    {"initial_eta_sigma": config.initial_eta_sigma * scale}
+                    {"initial_eta_sigma": sigma * scale}
                     if scale > 0
                     else {"initial_eta_sigma": 1e-12, "sigma_eta": 0.0}
                 )
