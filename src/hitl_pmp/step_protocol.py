@@ -644,6 +644,7 @@ class StepProtocolResume:
         "evaluation_policy": "None",
         "practice_episode_budget": "None",
         "measurement_interval_episodes": "None",
+        "pomdp_plan_beyond_session": "False",
     }
 
     @staticmethod
