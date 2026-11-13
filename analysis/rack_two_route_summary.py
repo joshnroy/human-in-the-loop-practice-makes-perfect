@@ -72,6 +72,7 @@ class RackTwoRouteSummary:
                 others[name] = others.get(name, 0) + 1
         ends = [e for e in events if e.get("event") == "practice_end"]
         return {
+            "episodes": RackTwoRouteSummary.episodes(run=run, bulk=bulk),
             "bulk": bulk,
             "other_robot_skills": others,
             "human_resets": resets,
@@ -83,6 +84,33 @@ class RackTwoRouteSummary:
             "interrupted": sum(bool(e.get("interrupted")) for e in robot),
             "practice_end": ends[-1] if ends else None,
         }
+
+    @staticmethod
+    def episodes(*, run: Path, bulk: dict[str, Any]) -> dict[str, Any]:
+        """Practice episodes completed, by skill: one completed execution of a skill
+        with learnable parameters, which in Serving is Sweep and GatherAndSweep. Read
+        from the events, so it is there for a run with a step budget alone. Under
+        `--practice-episode-budget` the run's own count, budget and endpoint are beside
+        it, and for DP its own counter with whether the two agree (DP counts its target,
+        the practice loop a parameterised skill)."""
+        by_skill = {name: bulk[name]["attempts"] for name in BULK}
+        summary: dict[str, Any] = {"completed": sum(by_skill.values()), "by_skill": by_skill}
+        status_path = run / "status.json"
+        status = json.loads(status_path.read_text()) if status_path.exists() else {}
+        if "practice_episode_budget" in status:
+            summary.update(
+                budget=status["practice_episode_budget"],
+                budget_reached=status["practice_episode_budget_reached"],
+                practice_endpoint=status["practice_endpoint"],
+                loop_count=status["practice_episodes"],
+            )
+        allocations = RackTwoRouteSummary.lines(path=run / "dp_allocations.jsonl")
+        if allocations:
+            summary.update(
+                dp_count=allocations[-1]["episodes"],
+                dp_count_agrees=allocations[-1]["episodes"] == summary["completed"],
+            )
+        return summary
 
     @staticmethod
     def evaluation(*, directory: Path) -> dict[str, Any]:
