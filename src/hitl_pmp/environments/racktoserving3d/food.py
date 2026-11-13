@@ -67,6 +67,9 @@ STANCE_TURNS_RAD = (0.0, 0.3, -0.3)
 ARM_MOUNT_AHEAD_M = 0.12
 ARM_REACH_M = 0.85
 PLAN_DEADLINE_S = 60.0
+# Carried food whose lowest point is no more than this below a support's top rests on
+# it rather than colliding with it.
+SUPPORT_REST_M = 0.003
 # Holding food, the tuck before the base moves raises the hand by this.
 CARRY_RAISE_M = 0.10
 # A held-food skill starting in contact first rises this far before it plans.
@@ -191,7 +194,7 @@ class _FoodMotion(RackScraper):
                 )
                 top = other_center[2] + np.abs(other_rotation[2]) @ other_size
                 support = obstacle in shelf.cupboard_geoms | shelf.box_geoms
-                if overlap > 0 and not (support and bottom >= top - 0.003):
+                if overlap > 0 and not (support and bottom >= top - SUPPORT_REST_M):
                     if self._measuring_departure:
                         self.departing_food[geom, obstacle] = overlap
                         continue
@@ -288,16 +291,107 @@ class _FoodMotion(RackScraper):
         MuJoCo's own narrow phase on the real shapes: an ellipsoid dumpling is not its
         bounding box, so two neighbours with a visible gap do not count as colliding.
         """
+        distance = self._distance(
+            scratch=scratch,
+            geom=geom,
+            obstacle=obstacle,
+            center=center,
+            rotation=rotation,
+            distmax=0.01,
+        )
+        return max(0.0, -distance)
+
+    def _distance(
+        self,
+        *,
+        scratch: Any,
+        geom: int,
+        obstacle: int,
+        center: np.ndarray,
+        rotation: np.ndarray,
+        distmax: float,
+    ) -> float:
+        """Signed distance, up to `distmax`, of the carried geom at a pose to `obstacle`."""
         import mujoco
 
         saved_pos, saved_mat = scratch.geom_xpos[geom].copy(), scratch.geom_xmat[geom].copy()
         try:
             scratch.geom_xpos[geom] = center
             scratch.geom_xmat[geom] = rotation.reshape(9)
-            distance = mujoco.mj_geomDistance(self.shelf.model, scratch, geom, obstacle, 0.01, None)
+            distance = mujoco.mj_geomDistance(
+                self.shelf.model, scratch, geom, obstacle, distmax, None
+            )
         finally:
             scratch.geom_xpos[geom], scratch.geom_xmat[geom] = saved_pos, saved_mat
-        return max(0.0, -float(distance))
+        return float(distance)
+
+    def held_food_gaps(
+        self, *, name: str, body: np.ndarray, reach: float
+    ) -> dict[tuple[int, int], tuple[float, float, float, bool]]:
+        """Each (geom of `name`, fixture) pair within `reach` of one another with the
+        dumpling's body at the world pose `body`, in scratch kinematics as they stand:
+        its distance, the geom's lowest point, the fixture's top, and whether the
+        fixture is a support. Nothing moves; the food itself is never an obstacle here,
+        as it is not for welded handling (`ignores_food`).
+
+        The obstacles and the lowest point and top are `check_configuration`'s own.
+        """
+        shelf, model = self.shelf, self.shelf.model
+        scratch = shelf.ik_data
+        supports = shelf.cupboard_geoms | shelf.box_geoms
+        obstacles = list(supports | set(shelf.wiper_geoms))
+        other_centers = scratch.geom_xpos[obstacles]
+        other_rotations = scratch.geom_xmat[obstacles].reshape(-1, 3, 3)
+        other_reach = np.einsum(
+            "nij,nj->ni",
+            np.abs(other_rotations),
+            geoms_half_extents(model=model, geoms=np.asarray(obstacles)),
+        )
+        gaps: dict[tuple[int, int], tuple[float, float, float, bool]] = {}
+        for geom in self.food.backend.body_geoms(name=name):
+            local = np.zeros(9)
+            shelf.mujoco.mju_quat2Mat(local, model.geom_quat[geom])
+            center = body[:3, :3] @ model.geom_pos[geom] + body[:3, 3]
+            rotation = body[:3, :3] @ local.reshape(3, 3)
+            box_center, size, bottom = CarriedGeom.bounds(
+                model=model, geom=geom, center=center, rotation=rotation
+            )
+            near = np.all(
+                np.abs(box_center - other_centers) <= np.abs(rotation) @ size + other_reach + reach,
+                axis=1,
+            )
+            for index in np.flatnonzero(near):
+                obstacle = obstacles[index]
+                other_size = geom_half_extents(model=model, geom=obstacle)
+                top = other_centers[index][2] + np.abs(other_rotations[index][2]) @ other_size
+                distance = self._distance(
+                    scratch=scratch,
+                    geom=geom,
+                    obstacle=obstacle,
+                    center=center,
+                    rotation=rotation,
+                    distmax=reach,
+                )
+                if distance == 0.0:
+                    # MuJoCo 3.3.7's distance between the dumpling's hull mesh and a
+                    # box returns exactly 0.0 at some poses where they are millimetres
+                    # apart (a lift sample 10 mm from the rack's slab; 10 µm away the
+                    # same query gives 10.0 mm). A pose 10 µm off on each axis decides.
+                    nudged = [
+                        self._distance(
+                            scratch=scratch,
+                            geom=geom,
+                            obstacle=obstacle,
+                            center=center + offset,
+                            rotation=rotation,
+                            distmax=reach,
+                        )
+                        for offset in 1e-5 * np.eye(3)
+                    ]
+                    distance = min((value for value in nudged if value != 0.0), default=0.0)
+                if distance < reach:
+                    gaps[geom, obstacle] = (distance, bottom, float(top), obstacle in supports)
+        return gaps
 
     def pad_fixture_contacts(self) -> dict[tuple[int, int], float]:
         """Closest distance of each (pad, fixture) pair among scratch data's contacts."""
@@ -1266,6 +1360,15 @@ WELDED_DESCENT_STEP_M = 0.01
 SNAP_RAISE_M = 0.002
 SNAP_RAISE_STEPS = 15
 SNAP_MARGIN_STEPS = 2
+# How near a welded pick's planned lift may carry the dumpling to a fixture it does not
+# start nearer to: more than the execution guard's own step, checked from the measured
+# arm, strays from the planned one (under 0.05 mm where none was kept). The lift is
+# checked at the guard's joint resolution (`RackScraper.check_arm_segment`) and at
+# least every millimetre of hand travel, finer than the clearance: passing a slab's
+# edge, the stretch where the guard refuses can be shorter than a waypoint's 5 mm.
+LIFT_CLEARANCE_M = 0.002
+LIFT_JOINT_STEP_RAD = 0.025
+LIFT_SAMPLE_M = 0.001
 # With `clear_of_food`, how far a snapped dumpling may be raised to clear the other
 # food: twice a dumpling's height, enough to clear one lying against it or on it.
 SNAP_FOOD_RAISE_STEPS = 30
@@ -1296,6 +1399,7 @@ class WeldedFoodSkills:
         """The candidate's contact check: the hover is reachable, and the vertical
         descent is followed as far as the fixtures allow (`payload["reached"]`)."""
         hover, down = payload["hover"], payload["down"]
+        lifted = payload.get("lift_of")
 
         def contact(stance: np.ndarray, seed: np.ndarray) -> str | None:  # noqa: PLR0917 -- ReachCandidate callback
             try:
@@ -1304,7 +1408,7 @@ class WeldedFoodSkills:
                 return str(exc)[:70]
             # Stopped short of the fixtures, the descent ends one check before the
             # last clear one: tracking error eats a few millimetres of a near miss.
-            clear = [hover]
+            clear, arms = [hover], [arm]
             for pose in Frames.line(start=hover, end=down, step=WELDED_DESCENT_STEP_M):
                 try:
                     following = self.food._checked_arm(pose=pose, base=stance, seed=arm)  # noqa: SLF001
@@ -1316,10 +1420,97 @@ class WeldedFoodSkills:
                     break
                 arm = following
                 clear.append(pose)
+                arms.append(arm)
             payload["reached"] = clear[-1]
+            if lifted is not None:
+                return self._lift_refusal(name=lifted, base=stance, arms=arms[: len(clear)][::-1])
             return None
 
         return contact
+
+    def _lift_refusal(self, *, name: str, base: np.ndarray, arms: list[np.ndarray]) -> str | None:
+        """Why the lift of `name`, snapped into the hand at the end of the descent
+        (`arms[0]`) and carried back up it to the hover (`arms[-1]`), is refused, or None.
+
+        The lift is the descent run backwards, but with the dumpling in the hand, and
+        a leaned hand's lift runs up and away from the base. Checked only once the
+        dumpling was in the hand, a lift from the plate tucked under the rack's front
+        edge, planned from the rack's far side, ran the dumpling into that edge with no
+        clearance at all: clear at the waypoints, refused 0.04 mm into the slab in
+        execution (robot batch return after a Sweep, seed 10, 2026-11-13).
+
+        So the plan poses the dumpling as the snap will (`WeldedFood.held_pose`), at each
+        height `WeldedFoodSkills._snap_clear` may take (one whose start the guard
+        accepts, up to the lowest whose lift it accepts as well, then `SNAP_MARGIN_STEPS`
+        higher), and requires the lift, along the straight joint segments the guard
+        checks, to come no nearer than `LIFT_CLEARANCE_M` to any fixture it does not
+        start nearer to, nor nearer to one it does. Resting on a support stays allowed
+        only that far above where the guard allows it. A refusal sends the planner on to
+        the next grasp, as a blocked descent does.
+        """
+        from .welded_food import WeldedFood
+
+        shelf = self.shelf
+        samples = [arms[0]]
+        for start, target in zip(arms[:-1], arms[1:], strict=True):
+            delta = (target - start + np.pi) % (2 * np.pi) - np.pi
+            travel = np.linalg.norm(
+                shelf.site_at(base=base, arm=target)[:3, 3]
+                - shelf.site_at(base=base, arm=start)[:3, 3]
+            )
+            count = max(
+                1,
+                int(np.ceil(np.max(np.abs(delta)) / LIFT_JOINT_STEP_RAD)),
+                int(np.ceil(travel / LIFT_SAMPLE_M)),
+            )
+            fractions = np.linspace(0, 1, count + 1)[1:]
+            samples.extend(start + fraction * delta for fraction in fractions)
+        hands = [shelf.site_at(base=base, arm=arm) for arm in samples]
+        reach = LIFT_CLEARANCE_M + 0.01
+
+        def held(*, raise_m: float) -> np.ndarray:
+            position, rotation = WeldedFood.held_pose(site=hands[0], raise_m=raise_m)
+            return np.linalg.inv(hands[0]) @ Frames.pose(rotation=rotation, position=position)
+
+        # The fixtures stand where they do whatever the arm: `site_at` has posed them.
+        def gaps(*, index: int, in_hand: np.ndarray) -> Any:
+            return self.motion.held_food_gaps(
+                name=name, body=hands[index] @ in_hand, reach=reach
+            ).items()
+
+        def touches(*, index: int, in_hand: np.ndarray) -> bool:
+            return any(
+                distance < 0 and not (support and bottom >= top - SUPPORT_REST_M)
+                for _, (distance, bottom, top, support) in gaps(index=index, in_hand=in_hand)
+            )
+
+        def too_near(*, step: int) -> str | None:
+            in_hand = held(raise_m=(step + SNAP_MARGIN_STEPS) * SNAP_RAISE_M)
+            start = {pair: gap[0] for pair, gap in gaps(index=0, in_hand=in_hand)}
+            for index in range(1, len(samples)):
+                for pair, (distance, bottom, top, support) in gaps(index=index, in_hand=in_hand):
+                    if support and bottom >= top - SUPPORT_REST_M + LIFT_CLEARANCE_M:
+                        continue
+                    allowed = min(LIFT_CLEARANCE_M, start.get(pair, reach))
+                    if distance < allowed - DEPARTURE_TOLERANCE:
+                        fixture = shelf.model.geom(pair[1]).name
+                        return f"Lift of {name} passes {distance * 1000:.2f} mm from {fixture}"
+            return None
+
+        # Every height the snap may start from is one the executor may take: it checks
+        # the lift at its own waypoints, from the measured hand, so a lift these samples
+        # find touching can pass there (Sweep seed 14: planned from 4 mm, taken from 0).
+        startable = []
+        for step in range(SNAP_FOOD_RAISE_STEPS + 1):
+            in_hand = held(raise_m=step * SNAP_RAISE_M)
+            if touches(index=0, in_hand=in_hand):
+                continue
+            startable.append(step)
+            if not any(touches(index=index, in_hand=in_hand) for index in range(1, len(samples))):
+                return next(
+                    (why for why in (too_near(step=each) for each in startable) if why), None
+                )
+        return f"Lift of {name}: no snap height clears the fixtures"
 
     def _plan(
         self,
@@ -1329,16 +1520,19 @@ class WeldedFoodSkills:
         carry_height: float,
         what: str,
         refusal: str,
+        lift_of: str | None = None,
     ) -> tuple[Any, dict[str, Any]]:
         """Plan a reach to the first reachable (centre, down pose, base forward, extra)
-        target, from stances behind the centre along the forward direction."""
+        target, from stances behind the centre along the forward direction. With
+        `lift_of`, a pick's, the dumpling's lift back to the hover must be clear too
+        (`_lift_refusal`)."""
         from .planning import PlanningRefused, ReachCandidate, ScraperMotionPlanner
 
         def candidates() -> Generator[Any, None, None]:
             for centre, down, forward, extra in targets:
                 hover = down.copy()
                 hover[:3, 3] -= WELDED_HOVER_M * down[:3, 2]
-                payload = {"hover": hover, "down": down, "extra": extra}
+                payload = {"hover": hover, "down": down, "extra": extra, "lift_of": lift_of}
                 contact = self._descent(payload=payload)
                 for stance in self.food._stances(  # noqa: SLF001
                     centre=centre, approach=forward, hover=hover[:3, 3]
@@ -1397,6 +1591,7 @@ class WeldedFoodSkills:
             what="the food pre-grasp",
             # PickPlannable's planning refusal (`pick_plannable.PLANNING_PREFIXES`).
             refusal="No collision-free food grasp",
+            lift_of=name,
         )
 
     def pick(self, *, name: str, clear_of_food: bool = False) -> None:
