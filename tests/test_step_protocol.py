@@ -400,7 +400,9 @@ class ScriptedMethod(EesMethod):
 
         return policy
 
-    def observe_practice_action_budget(self, *, remaining_actions: int) -> None:
+    def observe_practice_action_budget(
+        self, *, remaining_actions: int, remaining_steps: int | None = None
+    ) -> None:
         pass
 
     def observe_help_granted(self, *, state) -> None:

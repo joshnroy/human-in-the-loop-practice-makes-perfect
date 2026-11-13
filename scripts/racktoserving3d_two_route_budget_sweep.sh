@@ -27,7 +27,11 @@
 # Arms (results under <results-root>/budget-<steps>/<arm>/<method>/<seed>/):
 #   ees                     EES, `--practice-groundings all`; reward-blind, no cost estimate.
 #   ours                    the belief-space method (Curtis determinized planner,
-#                           lambda 0.0015), its current pricing of untried skills.
+#                           lambda 0.0015), its current pricing of untried skills. Its
+#                           plans may only spend the practice steps that are left: the
+#                           step protocol tells it the remaining step budget before every
+#                           action. Ours cells run before that change are kept beside
+#                           the new ones as <seed>.no-step-budget-<time>.
 #   dp-episodes             the paper's DP: an episode budget, nothing priced.
 #   dp-cost-fixed-prices    our cost accounting on DP's decision rule: a cost budget with
 #                           the per-skill price table fixed for the whole run.
@@ -53,8 +57,12 @@
 # set well above the pool (HEAVY_SLOTS, default 40) so other sessions' jobs holding
 # slots do not block these; run-heavy's own memory check before each run still applies,
 # but several runs can pass it at once, so size the pool to the memory that is free.
-# A cell whose run finished successfully is skipped; an unfinished one's directory is
-# moved aside (`<seed>.partial-<time>`, never deleted) and the cell is run again.
+# A cell whose run finished successfully is skipped; so is one whose run is still going
+# (a run outlives the pool that started it, so a relaunched pool must not move a live
+# run's directory from under it). Any other unfinished cell's directory is moved aside
+# (`<seed>.partial-<time>`, never deleted) and the cell is run again.
+# FIRST (default empty) names "<seed>:<arm>" pairs whose cells are queued before
+# everything else, e.g. FIRST="0:ours"; the rest keep the seed-major order.
 #
 # Estimate, from the setup-A smoke runs on a loaded machine (about 30 control steps/s
 # for DP, 20 for EES, 12 for ours; an evaluation of 10 tasks is roughly 30000 steps in a
@@ -148,6 +156,11 @@ run_cell() {  # <seed> <budget> <arm>
     echo "[skip] seed $seed budget $steps $arm: finished"
     return 0
   fi
+  # hitl_pmp.cli carries its run directory on its command line.
+  if pgrep -f -- "--output-dir $run( |\$)" > /dev/null; then
+    echo "[skip] seed $seed budget $steps $arm: a run is still writing $run"
+    return 0
+  fi
   [ -e "$run" ] && mv "$run" "$run.partial-$(date +%s)"
   mkdir -p "$ROOT/logs"
   cd "$REPO"
@@ -165,8 +178,12 @@ run_cell() {  # <seed> <budget> <arm>
 export -f cell_arguments run_cell
 
 cells() {
-  local seed steps arm
+  local seed steps arm pair
+  for pair in ${FIRST:-}; do for steps in $BUDGETS; do
+    echo "${pair%%:*} $steps ${pair#*:}"
+  done; done
   for seed in $SEEDS; do for steps in $BUDGETS; do for arm in $ARMS; do
+    case " ${FIRST:-} " in *" $seed:$arm "*) continue ;; esac
     echo "$seed $steps $arm"
   done; done; done
 }
