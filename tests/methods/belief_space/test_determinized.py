@@ -1076,3 +1076,213 @@ def test_step_counts_that_differ_only_by_summation_order_share_a_node() -> None:
     assert key(steps=0.0) != planner.node_key(
         model=model, environment_state=MID, summed_cost=0.0, belief_state=belief, horizon=None
     )
+
+
+# An episode budget: practice tries left, a try being one action of weight 1 (a skill
+# with learnable parameters) and every other action weighing 0.
+SETUP = Action(name="setup")
+TRY = Action(name="try")
+READY = EnvironmentState(name="ready")
+TRIES = {SETUP: 0.0, TRY: 1.0}
+
+
+def _tries_model() -> BeliefKeyedModel:
+    """A free setup, then a skill worth a little more with each of three tries."""
+    return BeliefKeyedModel(
+        transitions={
+            (ROOT, SETUP): [(READY, 0.0, 1.0)],
+            (READY, TRY): [(TRIED_ONCE, 0.0, 1.0)],
+            (TRIED_ONCE, TRY): [(TRIED_TWICE, 0.0, 1.0)],
+            (TRIED_TWICE, TRY): [(TRIED_THRICE, 0.0, 1.0)],
+        },
+        beliefs={
+            READY: BeliefState(value=0.2),
+            TRIED_ONCE: BeliefState(value=0.3),
+            TRIED_TWICE: BeliefState(value=0.4),
+            TRIED_THRICE: BeliefState(value=0.5),
+        },
+    )
+
+
+def _solve_tries(
+    *, remaining_episodes: float | None, remaining_steps: float | None = None
+) -> tuple[float, object, list[dict]]:
+    trace = SearchTrace()
+    value, action = DeterminizedAStarPlanner(
+        max_iterations=100, seed=0, observation_probability_weight=0.0, variant="curtis"
+    ).solve(
+        environment_state=ROOT,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.2),
+        model=_tries_model(),
+        num_samples=1,
+        trace=trace,
+        remaining_steps=remaining_steps,
+        action_steps=None if remaining_steps is None else {SETUP: 5.0, TRY: 10.0}.__getitem__,
+        remaining_episodes=remaining_episodes,
+        action_episodes=None if remaining_episodes is None else TRIES.__getitem__,
+    )
+    return value, action, trace.events
+
+
+def _selected_plan(*, events: list[dict]) -> list[str]:
+    choice = next(e for e in events if e["event"] == "choice")
+    return [
+        [step["name"] for step in e["best_action_path"]]
+        for e in events
+        if e["event"] == "action_value" and e["action"] == choice["action"]
+    ][0]
+
+
+@pytest.mark.parametrize(("remaining", "tries"), [(3, 3), (2, 2), (1, 1)])
+def test_no_plan_holds_more_tries_than_remain_and_the_plan_chosen_fits(
+    *, remaining: int, tries: int
+) -> None:
+    value, action, events = _solve_tries(remaining_episodes=remaining)
+    summary = _summary(events=events)
+    assert action == SETUP
+    assert value == pytest.approx([0.3, 0.4, 0.5][tries - 1])
+    # The setup is an action of the plan and not a try.
+    assert _selected_plan(events=events) == ["setup", *["try"] * tries]
+    assert summary["selected_path_depth"] == tries + 1
+    assert summary["remaining_episodes"] == remaining
+    assert summary["selected_path_episodes"] == tries
+    for event in events:
+        if event["event"] == "action_value":
+            assert event["forecast_episodes"] <= remaining
+
+
+def test_a_node_that_has_spent_every_try_is_valued_and_not_expanded() -> None:
+    value, _, events = _solve_tries(remaining_episodes=1)
+    summary = _summary(events=events)
+    assert value == pytest.approx(0.3)
+    assert summary["episode_budget_terminal_nodes"] == 1
+    assert summary["termination_reason"] == "episode_budget_exhausted"
+    assert summary["action_transitions_evaluated"] == 2  # the setup and the one try.
+
+
+def test_an_episode_budget_every_plan_fits_leaves_the_search_unchanged() -> None:
+    free_value, free_action, free_events = _solve_tries(remaining_episodes=None)
+    value, action, events = _solve_tries(remaining_episodes=1_000)
+    assert (value, action) == (free_value, free_action) == (pytest.approx(0.5), SETUP)
+    assert "remaining_episodes" not in _summary(events=free_events)
+    assert "forecast_episodes" not in next(e for e in free_events if e["event"] == "action_value")
+
+    def choices(*, events: list[dict]) -> list[dict]:
+        return [
+            {
+                k: v
+                for k, v in e.items()
+                if k not in ("forecast_episodes", "timestamp", "elapsed_seconds")
+            }
+            for e in events
+            if e["event"] in ("action_value", "choice")
+        ]
+
+    assert choices(events=events) == choices(events=free_events)
+
+
+def test_a_step_budget_and_an_episode_budget_each_cut_the_plan() -> None:
+    # 25 steps fit the setup (5) and two tries (10 each); three tries remain.
+    value, _, events = _solve_tries(remaining_episodes=3, remaining_steps=25)
+    assert value == pytest.approx(0.4)
+    assert _selected_plan(events=events) == ["setup", "try", "try"]
+    # 1000 steps fit everything; one try remains.
+    value, _, events = _solve_tries(remaining_episodes=1, remaining_steps=1_000)
+    assert value == pytest.approx(0.3)
+    summary = _summary(events=events)
+    assert (summary["selected_path_steps"], summary["selected_path_episodes"]) == (15.0, 1.0)
+
+
+def test_a_first_action_that_would_overshoot_the_tries_left_is_rejected_by_name() -> None:
+    trace = SearchTrace()
+    DeterminizedAStarPlanner(max_iterations=100, seed=0).solve(
+        environment_state=ROOT,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.2),
+        model=_priced_model(),
+        num_samples=1,
+        trace=trace,
+        remaining_episodes=1,
+        action_episodes={CHEAP: 1.0, DEAR: 2.0}.__getitem__,
+    )
+    rejected = [e for e in trace.events if e["event"] == "action_rejected"]
+    assert [(e["action"]["name"], e["reason"]) for e in rejected] == [
+        ("dear", "exceeds_remaining_episodes")
+    ]
+    assert (rejected[0]["forecast_episodes"], rejected[0]["remaining_episodes"]) == (2.0, 1)
+
+
+def test_an_episode_budget_needs_each_actions_weight() -> None:
+    with pytest.raises(ValueError, match="action_episodes"):
+        DeterminizedAStarPlanner(max_iterations=5, seed=0).solve(
+            environment_state=ROOT,
+            summed_cost=0.0,
+            belief_state=BeliefState(value=0.2),
+            model=_priced_model(),
+            num_samples=1,
+            remaining_episodes=2,
+        )
+
+
+DIAMOND_TRIES = {SLOW: 1.0, QUICK: 0.0, FINISH: 1.0}
+
+
+def _solve_diamond_tries(*, variant: str, remaining_episodes: float) -> tuple[float, object, dict]:
+    trace = SearchTrace()
+    value, action = DeterminizedAStarPlanner(
+        max_iterations=100,
+        seed=0,
+        observation_probability_weight=0.0,
+        variant=variant,
+        log_full_search_tree=True,
+    ).solve(
+        environment_state=ROOT,
+        summed_cost=0.0,
+        belief_state=BeliefState(value=0.2),
+        model=_diamond_model(),
+        num_samples=1,
+        trace=trace,
+        remaining_episodes=remaining_episodes,
+        action_episodes=DIAMOND_TRIES.__getitem__,
+    )
+    return value, action, _summary(events=trace.events)
+
+
+@pytest.mark.parametrize("variant", ["algorithm3", "curtis"])
+def test_paths_of_equal_belief_and_different_tries_spent_are_separate_nodes(
+    *, variant: str
+) -> None:
+    _, _, summary = _solve_diamond_tries(variant=variant, remaining_episodes=1_000)
+    assert summary["unique_nodes"] == 5
+    assert summary["merged_nodes"] == 0
+    assert summary["stop_value_evaluations"] == 3
+    # One try left: the route that spent it on the way cannot finish, the route that
+    # reached the same belief without a try can. Merged, the shared state kept the
+    # first route's one try and the finish was cut for both.
+    value, action, summary = _solve_diamond_tries(variant=variant, remaining_episodes=1)
+    assert (value, action) == (pytest.approx(0.9), QUICK)
+    assert summary["selected_path_episodes"] == 1.0
+
+
+def test_the_tries_spent_join_the_node_key_beside_the_steps() -> None:
+    planner = DeterminizedAStarPlanner(max_iterations=1, seed=0)
+    model = _diamond_model()
+    belief = BeliefState(value=0.3)
+
+    def key(**spent: float) -> object:
+        return planner.node_key(
+            model=model,
+            environment_state=MID,
+            summed_cost=0.0,
+            belief_state=belief,
+            horizon=None,
+            **spent,
+        )
+
+    assert key(episodes=1.0) != key(episodes=2.0)
+    assert key(episodes=1.0) != key()
+    assert key(steps=10.0, episodes=1.0) != key(steps=10.0, episodes=2.0)
+    assert key(steps=10.0, episodes=1.0) != key(steps=20.0, episodes=1.0)
+    # A step budget alone keys exactly as it did.
+    assert key(steps=10.0) == (key(), planner.steps_key(steps=10.0))
