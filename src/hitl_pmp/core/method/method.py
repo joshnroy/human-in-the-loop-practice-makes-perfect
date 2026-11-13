@@ -180,12 +180,21 @@ class Method(BaseModel, abc.ABC):
         `practice_reset_interval` is trying to isolate.
 
         Concrete no-op by default, for the same reason as end_cycle: a Method
-        with nothing in flight has nothing to settle. NOT called at the
-        interaction period's own boundary -- that would change long-standing
-        behaviour (the last skill of a period has always gone unobserved), and
-        keeping it uncalled there is what makes every arm of a reset-interval
-        sweep drop exactly one observation per period rather than a number that
-        varies with the interval."""
+        with nothing in flight has nothing to settle. Not called at the
+        interaction period's own boundary: `observe_session_end` is."""
+
+    def observe_session_end(self, *, state: State) -> None:
+        """Called by the practice harness when a practice session ends on a completed
+        action, before `end_cycle`, handing over the state that action produced -- so
+        the session's last try is scored like every other one.
+
+        A Method that reads a try's outcome on its next policy call has no next call
+        for a session's last action, and until 2026-11-13 that try was dropped: one
+        observation lost per session, from the sampler's training rows and from the
+        competence counts alike. Not called when the session's last action was cut
+        part-way (the step budget interrupting a skill): that is not a completed try.
+
+        Concrete no-op by default, as `observe_environment_reset` is."""
 
     def may_request_human_help(self) -> bool:
         """Whether this Method's *practice* policy can raise

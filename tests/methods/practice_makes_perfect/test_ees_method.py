@@ -849,11 +849,12 @@ def test_the_number_of_observed_outcomes_does_not_depend_on_the_reset_interval()
     must learn from the same number of skill outcomes, so the arms differ only in
     how often the robot is rescued.
 
-    A period of n steps yields n - 1 observations at every interval -- the last
-    skill of a period is still never observed (this port's deviation 2), and every
+    A period of n steps yields n observations at every interval -- every
     mid-period reset settles its in-flight skill instead of dropping or
-    mislabelling it. If this count moved with the interval, the manipulation would
-    be confounded with how much training data each arm collected."""
+    mislabelling it, and the period's end settles its last one (this port's
+    deviation 2; until 2026-11-13 that one was dropped and the count was n - 1).
+    If this count moved with the interval, the manipulation would be confounded
+    with how much training data each arm collected."""
     import argparse
 
     from hitl_pmp.environments.lightswitch.problem import LightSwitchProblem
@@ -884,7 +885,7 @@ def test_the_number_of_observed_outcomes_does_not_depend_on_the_reset_interval()
         # fewer steps to observe for reasons unrelated to the reset interval.
         assert metrics.evaluations[-1][0] == 16
         observed[interval] = method.observe_outcome_calls
-    assert set(observed.values()) == {2 * (8 - 1)}, observed
+    assert set(observed.values()) == {2 * 8}, observed
 
 
 def test_the_no_plan_no_op_really_leaves_the_environment_alone() -> None:

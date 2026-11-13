@@ -71,6 +71,9 @@ class Method:
     def practice_complete(self):
         return False
 
+    def observe_session_end(self, *, state):
+        pass
+
     def get_practice_policy(self, *, task):
         def policy(state):  # noqa: PLR0917 -- positional Policy API
             action = float(self._rng.integers(1, 3))

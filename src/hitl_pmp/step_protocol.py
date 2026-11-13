@@ -1657,8 +1657,16 @@ class StepPracticeRunner:
         # The real robot's wall-clock pricing: what the planner observes per second.
         wall_clock_rate: float | None = getattr(args, "wall_clock_cost_per_second", None)
 
+        # Whether the session's last act was a robot skill that ran to completion: the
+        # one case in which a try is still in flight when the session ends.
+        last_try_completed = False
+
         def learn(*, actions: int, reason: str) -> None:
             nonlocal learning_updates
+            # The session's last try has no next policy call to be scored on. One the
+            # step budget cut part-way is not a completed try and stays unobserved.
+            if last_try_completed:
+                method.observe_session_end(state=state)
             method.end_cycle()
             learning_updates += 1
             # Every update's policy, so a cycle no evaluation measured can be evaluated
@@ -2049,6 +2057,7 @@ class StepPracticeRunner:
                 session_robot_steps = clock.robot_steps
                 session_human_invocations = clock.human_invocations
                 session_start_steps = clock.steps
+                last_try_completed = False
                 StepFiles.event(
                     path=events, event="session_start", cycle=cycle, practice_steps=clock.steps
                 )
@@ -2084,6 +2093,8 @@ class StepPracticeRunner:
                         assert destination is not None
                         if not grant_human(destination=destination, request_cost=request.cost):
                             break
+                        # The reset settled whatever was in flight.
+                        last_try_completed = False
                         actions += 1
                         continue
                     except InteractionComplete as completion:
@@ -2161,6 +2172,7 @@ class StepPracticeRunner:
                         )
                     actions += 1
                     robot_skills += 1
+                    last_try_completed = completed
                     skill_error = environment.last_skill_error(problem=problem)
                     robot_cost = accounting.total_cost - before_cost if accounting else None
                     StepFiles.event(
