@@ -99,17 +99,19 @@ class WeldedFood:
     def snap_into_hand(*, backend: Any, shelf: Any, name: str, raise_m: float = 0.0) -> None:
         """Move `name` upright into the hand, at rest, its short axis across the pads,
         `raise_m` above where the hand holds it, and engage its weld."""
-        site = shelf.site_pose()
-        across = site[:3, 0]
-        rotation = WeldedFood.yawed(yaw=float(np.arctan2(across[1], across[0])))
-        WeldedFood._set_pose(
-            backend=backend,
-            name=name,
-            position=site[:3, 3] + HELD_CENTRE_M * site[:3, 2] + [0.0, 0.0, raise_m],
-            rotation=rotation,
-        )
+        position, rotation = WeldedFood.held_pose(site=shelf.site_pose(), raise_m=raise_m)
+        WeldedFood._set_pose(backend=backend, name=name, position=position, rotation=rotation)
         model, data = backend.model(), backend.data()
         GraspWeld.attach(model=model, data=data, hand=HAND, name=name)
+
+    @staticmethod
+    def held_pose(*, site: np.ndarray, raise_m: float = 0.0) -> tuple[np.ndarray, np.ndarray]:
+        """Where `snap_into_hand` puts a dumpling for the pinch site at `site`: its
+        position and rotation. A pick's planner poses the dumpling it will hold by this
+        too, before any is snapped."""
+        across = site[:3, 0]
+        rotation = WeldedFood.yawed(yaw=float(np.arctan2(across[1], across[0])))
+        return site[:3, 3] + HELD_CENTRE_M * site[:3, 2] + [0.0, 0.0, raise_m], rotation
 
     @staticmethod
     def set_down(
