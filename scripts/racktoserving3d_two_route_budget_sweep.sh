@@ -45,6 +45,13 @@
 #                           action. Ours cells run before that change are kept beside
 #                           the new ones as <seed>.no-step-budget-<time>.
 #   dp-episodes             the paper's DP: an episode budget, nothing priced.
+#   dp-steps                DP on the run's own step budget (Josh, 2026-11-13; the DP
+#                           arm of every sweep from that date): the budget is the
+#                           practice step budget itself, an episode of a skill is priced
+#                           at that skill's measured length (STEP_LENGTHS, fixed for the
+#                           run), and DP re-solves for the steps that are left at the
+#                           start of every session. Not in the default ARMS, which stay
+#                           the 2026-11-12 sweep's.
 #   dp-cost-fixed-prices    our cost accounting on DP's decision rule: a cost budget with
 #                           the per-skill price table fixed for the whole run.
 #   dp-cost-learned-prices  the same with the table only a starting value, replaced by
@@ -114,6 +121,8 @@ export SAMPLER_FEATURES=${SAMPLER_FEATURES:-parameters}
 # and ReturnFoodToRack 466 (n=4) from EES's run. They are bare skill steps; DP's own
 # observed price also folds in any setup it executes for a try, of which those runs
 # had none.
+# dp-steps' episode lengths, in control steps: its own table, not PRICES above.
+export STEP_LENGTHS="Sweep=347 GatherAndSweep=3284 PickScraper=431 ReturnScraper=488 PickFood=728 ReturnFoodToRack=466"
 export PRICES="PickScraper=424 GatherAndSweep=3400 ReturnScraper=488 PickFood=728 ReturnFoodToRack=466 Sweep=737"
 
 cell_arguments() {  # <budget> <arm>: prints "<method>" then "<shared args>" then "<method args>"
@@ -150,6 +159,10 @@ cell_arguments() {  # <budget> <arm>: prints "<method>" then "<shared args>" the
     dp-episodes)
       method=dp
       flags="$dp --dp-budget $(( (steps + 937) / 1875 )) --dp-budget-unit episodes --dp-allocation-schedule once" ;;
+    dp-steps)
+      method=dp
+      for pair in $STEP_LENGTHS; do table="$table --dp-skill-cost-steps-for $pair"; done
+      flags="$dp --dp-budget $steps --dp-budget-unit steps --dp-allocation-schedule period$table" ;;
     dp-cost-fixed-prices | dp-cost-learned-prices)
       method=dp
       flag=--dp-skill-cost-steps-for
