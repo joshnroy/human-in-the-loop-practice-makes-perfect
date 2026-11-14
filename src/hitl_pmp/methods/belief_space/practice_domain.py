@@ -83,6 +83,8 @@ class PracticeDomain(BaseModel, abc.ABC):
     # (belief name, start, rate): perfect information. That skill's competence after n
     # tries is min(1, start + rate * n), believed with certainty, so no outcome moves it.
     known_competence_curves: tuple[tuple[str, float, float], ...] = ()
+    # (belief name, rate): that skill's learning rate is known; its competence is not.
+    known_learning_rates: tuple[tuple[str, float], ...] = ()
     # Expectimax depth when the run does not set one.
     default_search_depth: int = Field(default=3, ge=0)
     # Reduce expectimax by exact object symmetry and count-keyed beliefs

@@ -35,6 +35,21 @@ class TestKnownCompetenceCurve:
         assert belief.refit(training_examples=5).mean_competence() == pytest.approx(1.0)
 
     @staticmethod
+    def test_a_known_rate_alone_leaves_competence_to_be_inferred() -> None:
+        domain = DOMAIN.model_copy(
+            update={"known_competence_curves": (), "known_learning_rates": (("RouteA", 0.25),)}
+        )
+        belief = make_default_tossing3d_belief(
+            domain=domain, model="local_trend", engine="grid"
+        ).skill_beliefs["RouteA"]
+        assert belief.mean_competence() == pytest.approx(0.25, abs=0.01)
+        assert belief.mean_learning_rate() == pytest.approx(0.25)
+        assert belief.refit(training_examples=1).mean_competence() > 0.45
+        succeeded = belief.condition_outcome(success=True).mean_competence()
+        failed = belief.condition_outcome(success=False).mean_competence()
+        assert failed < belief.mean_competence() < succeeded
+
+    @staticmethod
     def test_deployment_reads_the_curve_at_the_try_count() -> None:
         ground = SimpleNamespace(skill=SimpleNamespace(name="RouteA"))
         history = SimpleNamespace(cycle_observations=[[0, 0], [1]])

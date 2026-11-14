@@ -2,6 +2,9 @@
 
 from typing import ClassVar, Literal
 
+import numpy as np
+from scipy.stats import beta as beta_distribution
+
 from hitl_pmp.core.method.types import GroundSkill, Skill
 from hitl_pmp.methods.belief_space.types.belief_state import (
     ConcreteSkillBelief,
@@ -24,6 +27,8 @@ from .belief_digest import BeliefDigest
 from .bounded_memo import BoundedMemo
 from .competence_inference import BayesianSkillBelief, InferenceConfig, create_bayesian_prior
 from .practice_domain import TOSSING3D_DOMAIN, PracticeDomain
+
+KNOWN_RATE_GRID = 101
 
 
 class SearchForecastCache:
@@ -236,7 +241,8 @@ def make_default_tossing3d_belief(
     overrides = {name: (alpha, beta) for name, alpha, beta in domain.competence_prior_overrides}
     rate_scales = dict(domain.learning_rate_prior_scales)
     known_curves = {name: (start, rate) for name, start, rate in domain.known_competence_curves}
-    if unknown := sorted(set(known_curves) - set(names)):
+    known_rates = dict(domain.known_learning_rates)
+    if unknown := sorted((set(known_curves) | set(known_rates)) - set(names)):
         raise ValueError(f"no belief for {unknown}; the domain infers {sorted(set(names))}")
     for name in dict.fromkeys(names):
         index = seed_offsets[name]
@@ -269,6 +275,27 @@ def make_default_tossing3d_belief(
                         hypothesis=SkillHypothesis(competence=start, learning_rate=rate),
                         probability=1.0,
                     ),
+                )
+            )
+            continue
+        if name in known_rates:
+            # The rate is known; competence is inferred, from the skill's Beta prior on
+            # a grid, every hypothesis carrying that one rate.
+            grid = (np.arange(KNOWN_RATE_GRID) + 0.5) / KNOWN_RATE_GRID
+            weights = beta_distribution.pdf(
+                grid, config.initial_competence_alpha, config.initial_competence_beta
+            )
+            weights = weights / weights.sum()
+            beliefs[name] = WeightedHypothesisBelief(
+                hypotheses=tuple(
+                    WeightedHypothesis(
+                        hypothesis=SkillHypothesis(
+                            competence=float(c), learning_rate=known_rates[name]
+                        ),
+                        probability=float(w),
+                    )
+                    for c, w in zip(grid, weights, strict=True)
+                    if w > 0
                 )
             )
             continue

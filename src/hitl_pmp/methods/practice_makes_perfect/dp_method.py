@@ -64,6 +64,8 @@ class DpMethod(EesMethod):
     # Skill name -> (start, rate): perfect information, nothing estimated. Competence
     # after n tries is min(1, start + rate * n) and the learning rate is `rate`.
     dp_known_competence_curves: dict[str, tuple[float, float]] = Field(default_factory=dict)
+    # Skill name -> rate: the learning rate is known; competence is still estimated.
+    dp_known_learning_rates: dict[str, float] = Field(default_factory=dict)
     dp_initial_learning_rate: float = Field(default=0.1, ge=0.0, allow_inf_nan=False)
     # Per-skill Delta priors for named robot skills; others keep dp_initial_learning_rate.
     dp_initial_learning_rate_for: dict[str, float] = Field(default_factory=dict)
@@ -417,7 +419,9 @@ class DpMethod(EesMethod):
             model = self._linear_model(history=history, ground_skill=candidate)
             competences[candidate] = model.get_current_competence()
             learning_rates[candidate] = (
-                model.learning_rate()
+                self.dp_known_learning_rates[candidate.skill.name]
+                if candidate.skill.name in self.dp_known_learning_rates and candidate not in humans
+                else model.learning_rate()
                 if self.dp_min_learning_rate is None
                 else max(model.learning_rate(), self.dp_min_learning_rate)
             )

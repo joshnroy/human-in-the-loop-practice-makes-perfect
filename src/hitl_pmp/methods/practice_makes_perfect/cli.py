@@ -121,12 +121,21 @@ class EesCli:
 
     @staticmethod
     def known_curves(*, args: argparse.Namespace) -> dict[str, tuple[float, float]]:
-        """--known-competence-start/-rate as one curve per skill; both or neither."""
+        """--known-competence-start/-rate as one curve per skill named by both. A start
+        needs a rate; a rate alone is `known_rates`."""
         starts = getattr(args, "known_competence_start", None) or {}
         rates = getattr(args, "known_competence_rate", None) or {}
-        if set(starts) != set(rates):
-            raise ValueError("--known-competence-start and -rate must name the same skills")
+        if unpaired := sorted(set(starts) - set(rates)):
+            raise ValueError(f"--known-competence-start without a rate for {unpaired}")
         return {name: (starts[name], rates[name]) for name in starts}
+
+    @staticmethod
+    def known_rates(*, args: argparse.Namespace) -> dict[str, float]:
+        """Skills given --known-competence-rate alone: the learning rate is known, the
+        competence is still estimated from outcomes."""
+        starts = getattr(args, "known_competence_start", None) or {}
+        rates = getattr(args, "known_competence_rate", None) or {}
+        return {name: rate for name, rate in rates.items() if name not in starts}
 
     @staticmethod
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:
@@ -514,6 +523,7 @@ class Tossing3DPomdpCli(EesCli):
         provider: SkillProvider,
         enabled: bool,
         curves: Mapping[str, tuple[float, float]] | None = None,
+        rates: Mapping[str, float] | None = None,
     ) -> PracticeDomain:
         """The domain with each robot skill's starting learning-rate prior scaled by one
         over its number of continuous parameters, and by zero for a skill with none
@@ -527,6 +537,8 @@ class Tossing3DPomdpCli(EesCli):
                     )
                 }
             )
+        if rates:
+            domain = domain.model_copy(update={"known_learning_rates": tuple(rates.items())})
         if not enabled:
             return domain
         believed = {name for name, _ in domain.belief_sources}
@@ -907,6 +919,7 @@ class Tossing3DPomdpCli(EesCli):
                     provider=ctx.skill_provider,
                     enabled=args.pomdp_learning_rate_by_parameters,
                     curves=EesCli.known_curves(args=args),
+                    rates=EesCli.known_rates(args=args),
                     domain=Tossing3DPomdpCli.with_prior_means(
                         means=args.pomdp_competence_prior_for,
                         domain=Tossing3DPomdpCli.with_competence_prior(
@@ -1174,6 +1187,7 @@ class DpCli(EesCli):
                 dp_prior_calibration=args.dp_prior_calibration,
                 dp_initial_competence=args.dp_initial_competence,
                 dp_known_competence_curves=EesCli.known_curves(args=args),
+                dp_known_learning_rates=EesCli.known_rates(args=args),
                 dp_initial_learning_rate_for=args.dp_initial_learning_rate_for,
                 dp_learning_rate_by_parameters=args.dp_learning_rate_by_parameters,
                 dp_skill_cost_prior_steps_for=args.dp_skill_cost_prior_steps_for,
