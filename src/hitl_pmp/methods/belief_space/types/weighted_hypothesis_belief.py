@@ -59,13 +59,11 @@ class WeightedHypothesisBelief(SkillBelief):
                 len(self.hypotheses), size=count, p=[item.probability for item in self.hypotheses]
             )
         )
-        return np.asarray([
-            [
-                self.hypotheses[int(i)].hypothesis.competence,
-                self.hypotheses[int(i)].hypothesis.learning_rate,
-            ]
-            for i in indexes
+        # One row per hypothesis, then index: a search node draws thousands of samples.
+        table = np.array([
+            (item.hypothesis.competence, item.hypothesis.learning_rate) for item in self.hypotheses
         ])
+        return table[indexes]
 
     def condition_outcome(self, *, success: bool) -> "WeightedHypothesisBelief":
         weighted = []
