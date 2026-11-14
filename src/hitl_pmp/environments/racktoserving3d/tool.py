@@ -10,7 +10,7 @@ return may write its home pose. Physical handling remains available.
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from itertools import product
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 from scipy.spatial.transform import Rotation, Slerp
@@ -744,7 +744,7 @@ class TableWiper:
         return min(heights, default=float("inf"))
 
     def geom_rotation(self, *, geom: int) -> np.ndarray:
-        return Rotation.from_quat(self.model.geom_quat[geom][[1, 2, 3, 0]]).as_matrix()
+        return ModelConstants.geom_rotation(model=self.model, geom=geom)
 
     @staticmethod
     def coax_hand_rotation(*, body_rotation: np.ndarray) -> np.ndarray:
@@ -973,6 +973,51 @@ class TableWiper:
             )
 
 
+class ModelConstants:
+    """Per-model constants the executor's checks read on every configuration: the
+    half extents of an obstacle set and a geom's rotation in its body. Computed once
+    per model (a reset builds a new one) and handed out read-only; nothing in this
+    package writes `geom_type`, `geom_size`, `geom_rbound` or `geom_quat`."""
+
+    MAX_ENTRIES: ClassVar[int] = 256
+    _cache: ClassVar[dict[tuple[int, str, bytes], tuple[Any, np.ndarray]]] = {}
+
+    @staticmethod
+    def half_extents(*, model: Any, geoms: np.ndarray) -> np.ndarray:
+        """`geoms_half_extents(model=model, geoms=geoms)`."""
+        geoms = np.asarray(geoms, dtype=int)
+        return ModelConstants._cached(
+            model=model,
+            kind="extents",
+            key=geoms.tobytes(),
+            compute=lambda: geoms_half_extents(model=model, geoms=geoms),
+        )
+
+    @staticmethod
+    def geom_rotation(*, model: Any, geom: int) -> np.ndarray:
+        return ModelConstants._cached(
+            model=model,
+            kind="rotation",
+            key=int(geom).to_bytes(8, "little", signed=True),
+            compute=lambda: Rotation.from_quat(model.geom_quat[geom][[1, 2, 3, 0]]).as_matrix(),
+        )
+
+    @staticmethod
+    def _cached(*, model: Any, kind: str, key: bytes, compute: Callable[[], Any]) -> np.ndarray:
+        cache = ModelConstants._cache
+        entry = cache.get((id(model), kind, key))
+        # The model itself is kept with its entry, so an id reused by a later model
+        # never matches.
+        if entry is not None and entry[0] is model:
+            return entry[1]
+        value = np.array(compute(), dtype=float)
+        value.flags.writeable = False
+        if len(cache) >= ModelConstants.MAX_ENTRIES:
+            cache.clear()
+        cache[id(model), kind, key] = (model, value)
+        return value
+
+
 SUPPORT_ALLOWANCE = 0.003
 # A box overlap this shallow is contact, not penetration: the arm tracks to millimetres,
 # and a blade leaving the rack's front edge sags below its top while its back face is
@@ -1102,7 +1147,7 @@ class RackScraper(TableWiper):
             other_reach = np.einsum(
                 "nij,nj->ni",
                 np.abs(np.asarray(data.geom_xmat)[ids].reshape(-1, 3, 3)),
-                geoms_half_extents(model=model, geoms=ids),
+                ModelConstants.half_extents(model=model, geoms=ids),
             )
             other_centers = np.asarray(data.geom_xpos)[ids]
         for geom in (self.head_geom, self.handle_geom):
@@ -1388,13 +1433,26 @@ class RackScraper(TableWiper):
                 target,
             ],
         ]
+        # Until the base moves, nothing a check reads changes, so a base configuration
+        # that passed once (a leg's repeated ends; the chosen route's first leg, checked
+        # again on leaving) is not checked again. A failure is always rechecked.
+        passed: set[bytes] = set()
+
+        def check(*, base: np.ndarray) -> None:
+            key = np.asarray(base, dtype=float).tobytes()
+            if key in passed:
+                return
+            self.check_configuration(base=base, arm=arm, holding=holding)
+            if not getattr(self, "_measuring_departure", False):
+                passed.add(key)
+
         route = None
         failure = "no candidate route"
         for candidate in candidates:
             try:
                 for begin, end in zip([start, *candidate[:-1]], candidate, strict=True):
                     for base in segment_samples(start=begin, target=end):
-                        self.check_configuration(base=base, arm=arm, holding=holding)
+                        check(base=base)
             except SkillFailed as exc:
                 failure = str(exc)
                 continue
@@ -1405,7 +1463,8 @@ class RackScraper(TableWiper):
         for waypoint in route:
             current = shelf.data.qpos[shelf.ba].copy()
             for base in segment_samples(start=current, target=waypoint):
-                self.check_configuration(base=base, arm=arm, holding=holding)
+                check(base=base)
+            passed.clear()
             shelf.base_target = waypoint.copy()
             distance = np.max(np.abs(waypoint - current))
             # SweepServo ramps a held scraper's heading across each control period,
