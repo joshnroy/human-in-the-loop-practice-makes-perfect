@@ -70,6 +70,14 @@ class RewardedRoutesPracticeDomain(PracticeDomain):
             failure_effect_skills=frozenset((*route_names, *humans)),
         )
 
+    def route_competence_prior(
+        self, *, name: str, alpha: float, beta: float
+    ) -> tuple[float, float]:
+        """The Beta prior this route's belief starts from: its own override where it has
+        one, else the shared (alpha, beta). Deployment must start from the same one."""
+        overrides = {n: (a, b) for n, a, b in self.competence_prior_overrides}
+        return overrides.get(name, (alpha, beta))
+
     def sample_thetas(
         self, *, beliefs: Mapping[str, SkillBelief], sample_skills: SampleSkills, count: int
     ) -> list[Any]:
