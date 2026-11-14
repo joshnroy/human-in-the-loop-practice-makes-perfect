@@ -76,6 +76,7 @@ class RewardedRoutesPracticeDomain(PracticeDomain):
         """The Beta prior this route's belief starts from: its own override where it has
         one, else the shared (alpha, beta). Deployment must start from the same one."""
         overrides = {n: (a, b) for n, a, b in self.competence_prior_overrides}
+        overrides.update({n: (m * k, (1 - m) * k) for n, m, k, _, _ in self.skill_priors})
         return overrides.get(name, (alpha, beta))
 
     def sample_thetas(
