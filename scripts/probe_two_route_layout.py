@@ -283,21 +283,17 @@ def main() -> None:
     )
     parser.add_argument("--final-sweep-speed", type=float, default=None)
     parser.add_argument(
+        "--config-json",
+        default="{}",
+        help="Further RackServingConfig fields, e.g. '{\"physics_timestep\": 0.002}'.",
+    )
+    parser.add_argument(
         "--widen-bounds",
         type=float,
         nargs=6,
         default=None,
         metavar=("S_LO", "S_HI", "DELTA_LO", "DELTA_HI", "D_LO", "D_HI"),
         help="Measurement only: replace the controllers' parameter bounds for this probe.",
-    )
-    parser.add_argument(
-        "--jitter-scale",
-        type=float,
-        nargs=2,
-        default=None,
-        metavar=("POSITION", "YAW"),
-        help="Scale the start layout's per-dumpling position and yaw jitter, in this "
-        "process only (0 0 removes both), to isolate what a seed changes.",
     )
     args = parser.parse_args()
     if args.jitter_scale is not None:
@@ -329,6 +325,7 @@ def main() -> None:
         scraper_tilt_degrees=args.scraper_tilt_degrees,
         plate_tuck=args.plate_tuck,
         final_sweep_speed=args.final_sweep_speed,
+        **json.loads(args.config_json),
     )
     if args.probe_bounds is not None:
         from hitl_pmp.environments.racktoserving3d import controllers
@@ -340,11 +337,6 @@ def main() -> None:
             (low_high[4], low_high[5]),
         )
         controllers.SWEEP_BOUNDS = ((low_high[4], low_high[5]),)
-    if args.jitter_scale is not None:
-        from hitl_pmp.environments.racktoserving3d.layout import RackLayout
-
-        RackLayout.LINED_UP_JITTER *= args.jitter_scale[0]
-        RackLayout.LINED_UP_YAW_JITTER *= args.jitter_scale[1]
     env = RackServingEnvironment(
         config=config, scene_bg=args.video is not None, skill_step_limit=12000
     )
