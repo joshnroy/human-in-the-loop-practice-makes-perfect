@@ -690,6 +690,7 @@ class DeploymentSnapshot:
                 source_method="dp",
                 max_states=method.dp_max_states,
                 dp_priors=method._dp_skill_priors,
+                known_curves=method.dp_known_competence_curves,
             )
         elif method_specific and isinstance(method, Tossing3DPomdpMethod):
             source = f"{method.pomdp_determinized_variant}/{method.pomdp_solver}"
@@ -707,6 +708,9 @@ class DeploymentSnapshot:
                     source_method=source,
                     horizon=domain.deployment_horizon,
                     dp_priors={name: prior for name, _ in domain.route_rewards},
+                    known_curves={
+                        name: (start, rate) for name, start, rate in domain.known_competence_curves
+                    },
                 )
             elif isinstance(domain, RackServingPracticeDomain) and domain.bulk_rewards:
                 # What the planner's STOP value is computed from: the rack value model

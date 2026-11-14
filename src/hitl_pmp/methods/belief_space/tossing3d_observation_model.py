@@ -13,7 +13,11 @@ from hitl_pmp.methods.belief_space.types.particle_filter_belief import (
     create_broad_particle_prior,
 )
 from hitl_pmp.methods.belief_space.types.practice_example_source import PracticeExampleSource
-from hitl_pmp.methods.belief_space.types.skill_belief import SkillBelief
+from hitl_pmp.methods.belief_space.types.skill_belief import (
+    SkillBelief,
+    SkillHypothesis,
+    WeightedHypothesis,
+)
 from hitl_pmp.methods.belief_space.types.weighted_hypothesis_belief import WeightedHypothesisBelief
 
 from .belief_digest import BeliefDigest
@@ -231,6 +235,9 @@ def make_default_tossing3d_belief(
     }
     overrides = {name: (alpha, beta) for name, alpha, beta in domain.competence_prior_overrides}
     rate_scales = dict(domain.learning_rate_prior_scales)
+    known_curves = {name: (start, rate) for name, start, rate in domain.known_competence_curves}
+    if unknown := sorted(set(known_curves) - set(names)):
+        raise ValueError(f"no belief for {unknown}; the domain infers {sorted(set(names))}")
     for name in dict.fromkeys(names):
         index = seed_offsets[name]
         config = inference_config or InferenceConfig()
@@ -254,6 +261,17 @@ def make_default_tossing3d_belief(
                     else {"initial_eta_sigma": 1e-12, "sigma_eta": 0.0}
                 )
             )
+        if name in known_curves:
+            start, rate = known_curves[name]
+            beliefs[name] = WeightedHypothesisBelief(
+                hypotheses=(
+                    WeightedHypothesis(
+                        hypothesis=SkillHypothesis(competence=start, learning_rate=rate),
+                        probability=1.0,
+                    ),
+                )
+            )
+            continue
         beliefs[name] = (
             create_broad_particle_prior(num_particles=num_particles, seed=seed + index)
             if model is None
