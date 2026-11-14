@@ -132,6 +132,10 @@ class RackServingConfig(BaseModel):
     # At most the servo's own 0.1 per-step clip (`JointStep.LIMIT`), which keeps the
     # executed path on the checked segment.
     planned_joint_step: Annotated[float, Field(gt=0, le=0.1)] | None = None
+    # settle_until_still: each stroke's 40-step wait for the food after its lift ends
+    # once every dumpling has been still (the plate's settled speeds) for
+    # `RackControllers.STILL_STEPS` steps in a row, rather than always taking all 40.
+    settle_until_still: bool = False
     # What the learned sampler's classifier reads for Sweep and GatherAndSweep
     # (Josh, 2026-11-13), `RackServingSkillProvider.hand_selected_feature_transform`.
     # "parameters" (the default): a bias and the skill's parameters.
