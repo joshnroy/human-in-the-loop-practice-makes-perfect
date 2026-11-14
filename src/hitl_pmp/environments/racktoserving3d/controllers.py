@@ -111,9 +111,14 @@ class RackControllers:
     SETTLE_LIMIT: ClassVar[float] = 0.06
     # A food under the blade held it 4.4 mm and 5.2 mm above its levelling target.
     REST_ABOVE_LIMIT: ClassVar[float] = 0.010
+    FOOD_SETTLE_STEPS: ClassVar[int] = 40
+    STILL_STEPS: ClassVar[int] = 3
+    # `RackServingConfig.settle_until_still`, read once per instance.
+    settle_until_still: bool = False
 
     def __init__(self, *, backend: RackServingBackend, step_limit: int = 12000):
         self.backend = backend
+        self.settle_until_still = backend.config.settle_until_still
         self.shelf = RackShelfSkills(env=backend.env(), tick_limit=step_limit)
         if backend.config.base_step_limit is not None:
             self.shelf.base_step_limit = backend.config.base_step_limit
@@ -760,7 +765,30 @@ class RackControllers:
                 lifted_body[2, 3] = reached[2, 3]
         lifted_body[2, 3] += 0.06
         self.move_tool(body=lifted_body, label="sweep_lift")
-        self.shelf.hold(count=40, label="food_settle")
+        self.settle_food()
+
+    def settle_food(self) -> None:
+        """Hold still `FOOD_SETTLE_STEPS` steps for the swept food, or, with
+        `settle_until_still`, only until every dumpling has been still `STILL_STEPS`
+        steps in a row: under the linear and angular speeds `settled_on_tray` scores."""
+        if not self.settle_until_still:
+            self.shelf.hold(count=self.FOOD_SETTLE_STEPS, label="food_settle")
+            return
+        still = 0
+        for _ in range(self.FOOD_SETTLE_STEPS):
+            self.shelf.hold(count=1, label="food_settle")
+            still = still + 1 if self.food_still() else 0
+            if still >= self.STILL_STEPS:
+                return
+
+    def food_still(self) -> bool:
+        model, data = self.backend.model(), self.backend.data()
+        for name in self.backend.cube_names:
+            address = model.jnt_dofadr[model.body_jntadr[model.body(name).id]]
+            velocity = data.qvel[address : address + 6]
+            if np.linalg.norm(velocity[:3]) > 0.02 or np.linalg.norm(velocity[3:]) > 0.5:
+                return False
+        return True
 
     def pick_food(self, *, name: str) -> None:
         RackFoodController(controllers=self).pick(name=name)

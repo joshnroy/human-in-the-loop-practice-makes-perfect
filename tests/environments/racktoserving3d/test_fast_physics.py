@@ -20,6 +20,25 @@ def test_speed_settings_are_off_by_default():
     assert config.lean_control_step is False
     assert config.base_step_limit is None
     assert config.planned_joint_step is None
+    assert config.settle_until_still is False
+
+
+@needs_kinder
+@pytest.mark.parametrize(("until_still", "most"), [(False, 40), (True, 3)])
+def test_a_stroke_waits_for_food_only_until_it_is_still_when_asked(*, until_still, most):
+    env = RackServingEnvironment(config=RackServingConfig(settle_until_still=until_still))
+    try:
+        env.reset_to_seed(seed=0)
+        controllers = env.rack_controllers()
+        backend = env.backend()
+        # Let the episode's freshly placed food come to rest first.
+        controllers.shelf.hold(count=40, label="test_rest")
+        before = backend.control_steps()
+        controllers.settle_food()
+        taken = backend.control_steps() - before
+        assert taken == most if not until_still else 1 <= taken <= most
+    finally:
+        env.close()
 
 
 @needs_kinder
