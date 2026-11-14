@@ -52,6 +52,11 @@ class KitchenPyBulletSim(VisionBraceletPyBulletSim):
 
     def __init__(self, initial_state: Any, *, model: Any, data: Any, base_q: Any) -> None:  # noqa: PLR0917 -- upstream signature
         super().__init__(initial_state)
+        self._mirror_scene(state=initial_state, model=model, data=data, base_q=base_q)
+
+    def _mirror_scene(self, *, state: Any, model: Any, data: Any, base_q: Any) -> None:
+        """The mirrored bodies, for `state`, in a client that holds none of them yet."""
+        initial_state = state
         # Upstream hard-codes the arm mount (0.12, 0, 0.4); the kitchen's TidyBot model
         # mounts it 5 mm differently. Read it from MuJoCo so every link agrees.
         self._base_to_arm_pose = self.arm_mount(model=model, data=data, base_q=base_q)
