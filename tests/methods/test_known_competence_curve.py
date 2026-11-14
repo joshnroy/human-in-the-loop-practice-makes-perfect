@@ -56,6 +56,16 @@ class TestKnownCompetenceCurve:
         assert domain.route_competence_prior(name="RouteA", alpha=1.0, beta=3.0) == (1.0, 3.0)
 
     @staticmethod
+    def test_named_skills_count_as_tries_even_without_parameters() -> None:
+        from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
+
+        route = SimpleNamespace(skill=SimpleNamespace(name="RouteA", param_dim=0))
+        reset = SimpleNamespace(skill=SimpleNamespace(name="ResetA", param_dim=0))
+        assert EesMethod.counts_as_try(ground_skill=route, try_skills=frozenset({"RouteA"}))
+        assert not EesMethod.counts_as_try(ground_skill=reset, try_skills=frozenset({"RouteA"}))
+        assert not EesMethod.counts_as_try(ground_skill=route, try_skills=None)
+
+    @staticmethod
     def test_deployment_reads_the_curve_at_the_try_count() -> None:
         ground = SimpleNamespace(skill=SimpleNamespace(name="RouteA"))
         history = SimpleNamespace(cycle_observations=[[0, 0], [1]])

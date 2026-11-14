@@ -151,6 +151,15 @@ class EesCli:
                 "and deployment. EES ignores it.",
             )
         parser.add_argument(
+            "--practice-try-skills",
+            nargs="+",
+            default=None,
+            metavar="SKILL",
+            help="The skills whose completed execution counts as one practice try under "
+            "--practice-episode-budget, for the practice loop and the belief-space "
+            "planner alike. Default: every skill with learnable parameters.",
+        )
+        parser.add_argument(
             "--record-ees-decisions",
             action="store_true",
             help="Write EES target scores and selection diagnostics to ees_decisions.jsonl; "
@@ -439,6 +448,9 @@ class EesCli:
             planning_timeout=args.planning_timeout,
             competence_window_size=args.competence_window_size,
             competence_recency_size=args.competence_recency_size,
+            practice_try_skills=(
+                frozenset(args.practice_try_skills) if args.practice_try_skills else None
+            ),
             always_ask_reset=EesCli.always_ask_reset(args=args),
             prior_alpha=prior[0],
             prior_beta=prior[1],
