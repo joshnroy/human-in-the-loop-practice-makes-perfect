@@ -271,7 +271,7 @@ def make_default_tossing3d_belief(
             )
         if name in known_curves:
             start, rate = known_curves[name]
-            beliefs[name] = WeightedHypothesisBelief(
+            beliefs[name] = WeightedHypothesisBelief.of(
                 hypotheses=(
                     WeightedHypothesis(
                         hypothesis=SkillHypothesis(competence=start, learning_rate=rate),
@@ -299,7 +299,7 @@ def make_default_tossing3d_belief(
                 if weights[i, j] > 1e-9
             ]
             total = sum(w for _, _, w in kept)
-            beliefs[name] = WeightedHypothesisBelief(
+            beliefs[name] = WeightedHypothesisBelief.of(
                 hypotheses=tuple(
                     WeightedHypothesis(
                         hypothesis=SkillHypothesis(competence=c, learning_rate=r),
@@ -317,7 +317,7 @@ def make_default_tossing3d_belief(
                 grid, config.initial_competence_alpha, config.initial_competence_beta
             )
             weights = weights / weights.sum()
-            beliefs[name] = WeightedHypothesisBelief(
+            beliefs[name] = WeightedHypothesisBelief.of(
                 hypotheses=tuple(
                     WeightedHypothesis(
                         hypothesis=SkillHypothesis(

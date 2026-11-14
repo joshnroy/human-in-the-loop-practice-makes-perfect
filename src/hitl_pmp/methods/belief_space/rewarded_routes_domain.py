@@ -92,14 +92,10 @@ class RewardedRoutesPracticeDomain(PracticeDomain):
             belief = beliefs[name]
             if isinstance(belief, WeightedHypothesisBelief):
                 reaches = sorted(
-                    (
-                        min(
-                            1.0,
-                            item.hypothesis.competence + item.hypothesis.learning_rate * tries_left,
-                        ),
-                        item.probability,
+                    (min(1.0, competence + rate * tries_left), probability)
+                    for competence, rate, probability in zip(
+                        belief.competences, belief.learning_rates, belief.probabilities, strict=True
                     )
-                    for item in belief.hypotheses
                 )
                 # Exact for a known curve; for a spread-out prior its 90th percentile, since
                 # the extreme tail would make every route look perfect.
