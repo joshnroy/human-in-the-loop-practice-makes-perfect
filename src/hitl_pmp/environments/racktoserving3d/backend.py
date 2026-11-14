@@ -86,7 +86,8 @@ class RackServingBackend(SweepOffShelf3DBackend):
                 scene_render_camera="task_view",
                 config=TidyBot3DConfig(use_arm_velocities=False),
             )
-            original_step = self._env.step
+            lean = self.config.lean_control_step or self.config.physics_timestep is not None
+            original_step = self._lean_step if lean else self._env.step
 
             def observed(*args: Any, **kwargs: Any) -> Any:
                 self._notify_step(observer=self._before_step)
@@ -103,8 +104,27 @@ class RackServingBackend(SweepOffShelf3DBackend):
                 WeldedFood.install(core=self.core(), names=tuple(self.cube_names))
         return self._env
 
+    def _lean_step(self, action: Any) -> None:  # noqa: PLR0917 -- KINDER's env.step signature
+        """One control period as KINDER's `MujocoEnv.step` advances it, without the
+        observation, reward and object-centric state it builds after: the same control
+        update before each physics step, `model.opt.timestep` apart. One action row
+        only, which is all the skills here send."""
+        robot = self.core()._robot_env  # noqa: SLF001
+        action = np.asarray(action)
+        if action.ndim != 1:
+            raise ValueError("a lean control step takes one action row")
+        robot.timestep += 1
+        ctrl = robot._action_to_ctrl(action)  # noqa: SLF001
+        ticks = round(1.0 / float(robot.control_frequency) / float(self.model().opt.timestep))
+        for _ in range(ticks):
+            robot._update_ctrl(ctrl)  # noqa: SLF001
+            robot.sim.step()
+
     def reset(self, *, seed: int) -> None:
         super().reset(seed=seed)
+        if self.config.physics_timestep is not None:
+            # After KINDER's reset, which writes its own timestep into the model it builds.
+            self.model().opt.timestep = self.config.physics_timestep
         for geom in self._pads[0] | self._pads[1]:
             self.model().geom_condim[geom] = self.config.gripper_contact_dimension
         if self.config.food_handling == "welded":

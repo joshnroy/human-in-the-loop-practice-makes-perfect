@@ -115,6 +115,8 @@ class RackControllers:
     def __init__(self, *, backend: RackServingBackend, step_limit: int = 12000):
         self.backend = backend
         self.shelf = RackShelfSkills(env=backend.env(), tick_limit=step_limit)
+        if backend.config.base_step_limit is not None:
+            self.shelf.base_step_limit = backend.config.base_step_limit
         self.shelf.cupboard_geoms |= backend.body_geoms(name="rack_0")
         self.tool = RackScraper(shelf=self.shelf, config=backend.config)
         self.held_food: str | None = None
