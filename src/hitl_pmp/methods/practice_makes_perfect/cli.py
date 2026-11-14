@@ -817,6 +817,9 @@ class Tossing3DPomdpCli(EesCli):
                 skill_provider=ctx.skill_provider,
                 seed=args.seed,
                 draw_recorder=draw_recorder,
+                practice_try_skills=(
+                    frozenset(args.practice_try_skills) if args.practice_try_skills else None
+                ),
                 exploration_epsilon=args.exploration_epsilon,
                 sampler_max_train_iters=args.sampler_max_train_iters,
                 goal_pursuit_horizon=args.goal_pursuit_horizon,
