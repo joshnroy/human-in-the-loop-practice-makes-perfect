@@ -76,6 +76,7 @@ def make_belief_space_planner(
     seed: int,
     observation_probability_weight: float,
     log_full_search_tree: bool = False,
+    value_bound_heuristic: bool = False,
     draw_scope: DrawScope = "node",
     variant: DeterminizedVariant = "algorithm3",
     num_rollouts: int | None = None,
@@ -95,6 +96,7 @@ def make_belief_space_planner(
         seed=seed,
         observation_probability_weight=observation_probability_weight,
         log_full_search_tree=log_full_search_tree,
+        value_bound_heuristic=value_bound_heuristic,
         draw_scope=draw_scope,
         variant=variant,
         num_rollouts=num_rollouts,
@@ -109,6 +111,7 @@ class Tossing3DPomdpMethod(EesMethod):
     # None: the practice domain's `default_search_depth` (3 Tossing3D, 7 the shelf).
     pomdp_search_depth: int | None = Field(default=None, ge=0)
     pomdp_log_full_search_tree: bool = False
+    pomdp_value_bound_heuristic: bool = False
     pomdp_solver: Literal["expectimax", "determinized_astar"] = "expectimax"
     pomdp_max_search_iterations: int = Field(default=100, ge=1)
     # determinized_astar only. A plan may run past the end of the practice session: it
@@ -427,6 +430,7 @@ class Tossing3DPomdpMethod(EesMethod):
             seed=self.seed,
             observation_probability_weight=self.pomdp_observation_probability_weight,
             log_full_search_tree=self.pomdp_log_full_search_tree,
+            value_bound_heuristic=self.pomdp_value_bound_heuristic,
             draw_scope=self.pomdp_draw_scope,
             variant=self.pomdp_determinized_variant,
             num_rollouts=self.pomdp_num_rollouts,

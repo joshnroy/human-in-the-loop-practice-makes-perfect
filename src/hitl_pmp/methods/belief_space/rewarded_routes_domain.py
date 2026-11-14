@@ -17,6 +17,7 @@ from hitl_pmp.core.method.skill_provider import SkillProvider
 from .practice_domain import PracticeDomain, SampleSkills
 from .types.practice_example_source import PracticeExampleSource
 from .types.skill_belief import SkillBelief
+from .types.weighted_hypothesis_belief import WeightedHypothesisBelief
 
 ROUTES_EXPECTATION_SAMPLES = 4096
 ROUTES_EXPECTATION_SEED = 0
@@ -77,6 +78,28 @@ class RewardedRoutesPracticeDomain(PracticeDomain):
         one, else the shared (alpha, beta). Deployment must start from the same one."""
         overrides = {n: (a, b) for n, a, b in self.competence_prior_overrides}
         return overrides.get(name, (alpha, beta))
+
+    def optimistic_policy_value(
+        self, *, beliefs: Mapping[str, SkillBelief], tries_left: float
+    ) -> float:
+        """An upper bound on the deployment value reachable with `tries_left` more
+        practice tries: every try given to whichever single route ends worth the most,
+        at the most optimistic competence and learning rate the belief holds."""
+        best = 0.0
+        for name, reward in self.route_rewards:
+            belief = beliefs[name]
+            if isinstance(belief, WeightedHypothesisBelief):
+                reach = max(
+                    min(
+                        1.0, item.hypothesis.competence + item.hypothesis.learning_rate * tries_left
+                    )
+                    for item in belief.hypotheses
+                )
+            else:
+                rows = belief.sample(rng=np.random.default_rng(ROUTES_EXPECTATION_SEED), count=512)
+                reach = float(np.max(np.minimum(1.0, rows[:, 0] + rows[:, 1] * tries_left)))
+            best = max(best, reward * reach)
+        return best
 
     def sample_thetas(
         self, *, beliefs: Mapping[str, SkillBelief], sample_skills: SampleSkills, count: int

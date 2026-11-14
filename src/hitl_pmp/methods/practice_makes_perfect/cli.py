@@ -651,6 +651,14 @@ class Tossing3DPomdpCli(EesCli):
             "empirical frequencies; 'all' (the default) enumerates every outcome.",
         )
         parser.add_argument(
+            "--pomdp-value-bound-heuristic",
+            action=argparse.BooleanOptionalAction,
+            default=False,
+            help="Order the determinized search's open list by g minus an optimistic bound "
+            "on the deployment value the practice left could still add (the domain's "
+            "optimistic_policy_value); g alone still selects the plan.",
+        )
+        parser.add_argument(
             "--pomdp-log-full-search-tree",
             action=argparse.BooleanOptionalAction,
             default=Tossing3DPomdpMethod.model_fields["pomdp_log_full_search_tree"].default,
@@ -908,6 +916,7 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_plan_beyond_session=args.pomdp_plan_beyond_session,
                 pomdp_observation_probability_weight=args.pomdp_observation_probability_weight,
                 pomdp_log_full_search_tree=args.pomdp_log_full_search_tree,
+                pomdp_value_bound_heuristic=args.pomdp_value_bound_heuristic,
                 pomdp_draw_scope=args.pomdp_draw_scope,
                 pomdp_determinized_variant=args.pomdp_determinized_variant,
                 pomdp_num_rollouts=args.pomdp_num_rollouts,

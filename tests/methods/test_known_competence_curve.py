@@ -66,6 +66,54 @@ class TestKnownCompetenceCurve:
         assert not EesMethod.counts_as_try(ground_skill=route, try_skills=None)
 
     @staticmethod
+    def test_the_value_bound_is_the_best_single_route_with_every_try_left() -> None:
+        # Josh's simple toy: A reward 10, 0.1 + 0.1/try; B reward 5, 0.5 + 0.5/try.
+        domain = RewardedRoutesPracticeDomain(
+            route_rewards=(("RouteA", 10.0), ("RouteB", 5.0)),
+            belief_sources=(
+                ("RouteA", PracticeExampleSource.OUTCOME),
+                ("RouteB", PracticeExampleSource.OUTCOME),
+            ),
+            known_competence_curves=(("RouteA", 0.1, 0.1), ("RouteB", 0.5, 0.5)),
+        )
+        beliefs = make_default_tossing3d_belief(
+            domain=domain, model="local_trend", engine="grid"
+        ).skill_beliefs
+        assert domain.optimistic_policy_value(beliefs=beliefs, tries_left=0) == pytest.approx(2.5)
+        assert domain.optimistic_policy_value(beliefs=beliefs, tries_left=4) == pytest.approx(5.0)
+        assert domain.optimistic_policy_value(beliefs=beliefs, tries_left=5) == pytest.approx(6.0)
+        assert domain.optimistic_policy_value(beliefs=beliefs, tries_left=40) == pytest.approx(10.0)
+
+    @staticmethod
+    def test_the_open_list_orders_by_priority_when_one_is_given() -> None:
+        from hitl_pmp.methods.belief_space.types.determinized import (
+            DeterminizedNodeCacheInfo,
+            DeterminizedNodeDiagnosticInfo,
+            DeterminizedPathRecoveryInfo,
+            DeterminizedSearchBelief,
+            DeterminizedSearchQueueEntry,
+        )
+
+        def entry(*, g: float, priority: float | None, seq: int) -> DeterminizedSearchQueueEntry:
+            return DeterminizedSearchQueueEntry(
+                belief=DeterminizedSearchBelief.model_construct(
+                    environment_state=None, belief_state=None, summed_cost=0.0
+                ),
+                g=g,
+                priority=priority,
+                diagnostic_info=DeterminizedNodeDiagnosticInfo(depth=1),
+                cache_info=DeterminizedNodeCacheInfo(key=seq, stop_value=0.0, queue_sequence=seq),
+                path_recovery_info=DeterminizedPathRecoveryInfo.model_construct(
+                    first_action=None, action_path=(), observation_surprise=0.0
+                ),
+            )
+
+        a_first = entry(g=0.02, priority=-3.48, seq=1)
+        b_first = entry(g=-2.49, priority=-2.49, seq=2)
+        assert a_first < b_first
+        assert entry(g=-2.49, priority=None, seq=3) < entry(g=0.02, priority=None, seq=4)
+
+    @staticmethod
     def test_deployment_reads_the_curve_at_the_try_count() -> None:
         ground = SimpleNamespace(skill=SimpleNamespace(name="RouteA"))
         history = SimpleNamespace(cycle_observations=[[0, 0], [1]])
