@@ -56,6 +56,9 @@ class DpMethod(EesMethod):
     # A starting competence per named robot skill, set directly rather than calibrated:
     # Beta(2p, 2(1-p)), the calibration path's prior strength, with the default Delta.
     dp_initial_competence: dict[str, float] = Field(default_factory=dict)
+    # Skill name -> (start, rate): perfect information, nothing estimated. Competence
+    # after n tries is min(1, start + rate * n) and the learning rate is `rate`.
+    dp_known_competence_curves: dict[str, tuple[float, float]] = Field(default_factory=dict)
     dp_initial_learning_rate: float = Field(default=0.1, ge=0.0, allow_inf_nan=False)
     # Per-skill Delta priors for named robot skills; others keep dp_initial_learning_rate.
     dp_initial_learning_rate_for: dict[str, float] = Field(default_factory=dict)
@@ -323,6 +326,12 @@ class DpMethod(EesMethod):
                 if candidate in humans
                 else self._competence_models.get(candidate)
             )
+            curve = self.dp_known_competence_curves.get(candidate.skill.name)
+            if curve is not None and candidate not in humans:
+                tries = sum(len(c) for c in history.cycle_observations) if history else 0
+                competences[candidate] = min(1.0, curve[0] + curve[1] * tries)
+                learning_rates[candidate] = curve[1]
+                continue
             model = self._linear_model(history=history, ground_skill=candidate)
             competences[candidate] = model.get_current_competence()
             learning_rates[candidate] = (

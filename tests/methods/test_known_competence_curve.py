@@ -1,0 +1,48 @@
+"""A known competence curve: competence after n tries is min(1, start + rate * n), and
+nothing a practice outcome says moves it -- for ours' belief and for deployment."""
+
+from types import SimpleNamespace
+
+import pytest
+
+from hitl_pmp.methods.belief_space.rewarded_routes_domain import RewardedRoutesPracticeDomain
+from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
+    make_default_tossing3d_belief,
+)
+from hitl_pmp.methods.belief_space.types.practice_example_source import PracticeExampleSource
+from hitl_pmp.methods.deployment import DeploymentPolicy
+
+DOMAIN = RewardedRoutesPracticeDomain(
+    route_rewards=(("RouteA", 3.0), ("RouteB", 6.0)),
+    belief_sources=(
+        ("RouteA", PracticeExampleSource.OUTCOME),
+        ("RouteB", PracticeExampleSource.OUTCOME),
+    ),
+    known_competence_curves=(("RouteA", 0.25, 0.25), ("RouteB", 0.25, 0.02)),
+)
+
+
+class TestKnownCompetenceCurve:
+    @staticmethod
+    def test_ours_belief_is_the_curve_and_outcomes_do_not_move_it() -> None:
+        belief = make_default_tossing3d_belief(
+            domain=DOMAIN, model="local_trend", engine="grid"
+        ).skill_beliefs["RouteA"]
+        assert belief.mean_competence() == pytest.approx(0.25)
+        failed = belief.condition_outcome(success=False)
+        assert failed.mean_competence() == pytest.approx(0.25)
+        assert failed.refit(training_examples=2).mean_competence() == pytest.approx(0.75)
+        assert belief.refit(training_examples=5).mean_competence() == pytest.approx(1.0)
+
+    @staticmethod
+    def test_deployment_reads_the_curve_at_the_try_count() -> None:
+        ground = SimpleNamespace(skill=SimpleNamespace(name="RouteA"))
+        history = SimpleNamespace(cycle_observations=[[0, 0], [1]])
+        method = SimpleNamespace(
+            _competence_models=SimpleNamespace(get=lambda key: history if key is ground else None),
+            prior_alpha=1.0,
+            prior_beta=3.0,
+        )
+        policy = DeploymentPolicy(kind="dp_mdp", known_curves={"RouteA": (0.25, 0.25)})
+        assert policy.dp_competence(method=method, ground=ground) == pytest.approx(1.0)
+        assert policy.recent_competence(method=method, ground=ground) == pytest.approx(1.0)
