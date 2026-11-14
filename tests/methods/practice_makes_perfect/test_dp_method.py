@@ -796,3 +796,85 @@ def test_a_step_budget_needs_a_measured_length_for_every_robot_skill():
                 skill.name: 100.0 for skill in provider.skills() if skill.name != "ReturnWiper"
             },
         )
+
+
+def _rack_episodes(*, budget: float = 5.0) -> DpMethod:
+    method = _rack_dp(
+        dp_budget_unit="episodes",
+        dp_allocation_schedule="period",
+        dp_learning_rate_by_parameters=True,
+    )
+    method.dp_budget = budget
+    method.configure_practice_accounting(
+        accounting=PracticeAccounting(costs=PracticeCosts(robot_step=ChargeFunction(value=0.01)))
+    )
+    return method
+
+
+def _loop_counts(*, method: DpMethod, ground: GroundSkill, complete: bool) -> bool:
+    """One robot action as the step protocol runs it: the policy records the skill it
+    dispatches, the loop reports how it ended, then asks whether it was an episode."""
+    from hitl_pmp.step_protocol import PracticeEpisode
+
+    method.record_action_cost(ground_skill=ground)
+    method.observe_execution_cost(cost=1.0, steps=1, complete=complete)
+    return PracticeEpisode.completed(method=method, completed=complete)
+
+
+def test_the_practice_loops_episode_count_equals_dps_try_for_try():
+    """The loop counts a completed execution of a skill with learnable parameters; DP
+    counts a completed execution of its target. With a parameterised target the two
+    agree after every action: a setup skill and a try the step budget cut are neither's
+    episode, and a failed or refused try (which still returns) is both's."""
+    method = _rack_episodes()
+    sweep = _ground(method=method, name="Sweep")
+    scraper = _ground(method=method, name="PickScraper")
+    loop = 0
+    for ground, complete in [
+        (scraper, True),  # the target's setup
+        (sweep, False),  # cut by the step budget
+        (sweep, True),
+        (sweep, True),  # a refusal or a failure: `complete` is the same True
+        (scraper, True),
+        (sweep, True),
+    ]:
+        if method._dp_active_target is None:  # noqa: SLF001 -- as `_practice_plan` does
+            method.begin_practice_attempt(ground_skill=sweep)
+        loop += _loop_counts(method=method, ground=ground, complete=complete)
+        assert loop == method.dp_episodes()
+    assert loop == 3
+
+
+def test_dps_counter_follows_its_target_so_a_parameterless_target_is_where_the_two_part():
+    """Not reconciled, on purpose: DP's budget is its own. `--dp-learning-rate-by-
+    parameters` gives such a skill no learning rate, so DP has no reason to target it."""
+    method = _rack_episodes()
+    scraper = _ground(method=method, name="PickScraper")
+    method.begin_practice_attempt(ground_skill=scraper)
+    assert _loop_counts(method=method, ground=scraper, complete=True) is False
+    assert method.dp_episodes() == 1
+
+
+def test_a_period_schedule_re_solves_for_the_episodes_that_are_left(*, monkeypatch):
+    method, pick, _back, _cube = _two_skill_setup(monkeypatch=monkeypatch, budget=5)
+    method.dp_budget_unit = "episodes"
+    assert method.dp_allocation_schedule == "period"
+    budgets = []
+    original = DpAllocator.allocate
+
+    def counting(**kwargs):
+        budgets.append(kwargs["budget"])
+        return original(**kwargs)
+
+    monkeypatch.setattr(DpAllocator, "allocate", staticmethod(counting))
+    method.choose_practice_target()
+    for _ in range(2):
+        _execute(method=method, ground=pick)
+    method.choose_practice_target()  # the same session: no new solve
+    method._practice_periods += 1  # noqa: SLF001 -- what get_practice_policy does
+    method.choose_practice_target()
+    _execute(method=method, ground=pick)
+    method._practice_periods += 1  # noqa: SLF001
+    method.choose_practice_target()
+    assert budgets == [5, 3, 2]
+    assert sum(method.dp_allocation().values()) <= 2
