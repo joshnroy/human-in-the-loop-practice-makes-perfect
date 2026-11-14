@@ -241,6 +241,16 @@ class Tossing3DPracticeModel(BaseModel):
             return policy_value - self.linear_cost_lambda * summed_cost
         return policy_value if summed_cost <= PRACTICE_BUDGET else -np.inf
 
+    def optimistic_gain(self, *, belief_state: Tossing3DBeliefState, tries_left: float) -> float:
+        """How much more deployment value `tries_left` tries could add at best, for the
+        search's open-list order; 0 for a domain that offers no bound."""
+        bound = getattr(self._domain, "optimistic_policy_value", None)
+        if bound is None:
+            return 0.0
+        projected = refit_belief_state(state=belief_state)
+        now = self._domain.expected_policy_value(beliefs=projected.skill_beliefs)
+        return max(0.0, bound(beliefs=projected.skill_beliefs, tries_left=tries_left) - now)
+
     def J(
         self, *, belief_state: Tossing3DBeliefState, summed_cost: float, num_samples: int
     ) -> float:
