@@ -674,8 +674,9 @@ class DeterminizedAStarPlanner(
         unit = "episodes" if "episodes" in budgets else "steps" if "steps" in budgets else None
         if unit is None:
             return None
-        tries_left = max(0.0, budgets[unit][0] - spent[unit])
-        return g - gain(belief_state=belief_state, tries_left=tries_left)
+        remaining, consumes = budgets[unit]
+        tries_left = max(0.0, remaining - spent[unit])
+        return g - gain(belief_state=belief_state, tries_left=tries_left, consumes=consumes)
 
     def heuristic(self, *, node: DeterminizedSearchNode[EnvironmentStateT, BeliefStateT]) -> float:
         """Generic hook used at line 19 where Algorithm 3 adds ``alpha * h_hat``.

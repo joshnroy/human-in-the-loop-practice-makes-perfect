@@ -7,7 +7,7 @@ largest route reward.
 """
 
 from collections import OrderedDict
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from typing import Any, ClassVar
 
 import numpy as np
@@ -83,13 +83,20 @@ class RewardedRoutesPracticeDomain(PracticeDomain):
         return overrides.get(name, (alpha, beta))
 
     def optimistic_policy_value(
-        self, *, beliefs: Mapping[str, SkillBelief], tries_left: float
+        self,
+        *,
+        beliefs: Mapping[str, SkillBelief],
+        tries_left: float,
+        routes: Collection[str] | None = None,
     ) -> float:
         """An upper bound on the deployment value reachable with `tries_left` more
         practice tries: every try given to whichever single route ends worth the most,
-        at the most optimistic competence and learning rate the belief holds."""
+        at the most optimistic competence and learning rate the belief holds. With
+        `routes`, only those routes are counted."""
         best = 0.0
         for name, reward in self.route_rewards:
+            if routes is not None and name not in routes:
+                continue
             belief = beliefs[name]
             if isinstance(belief, WeightedHypothesisBelief):
                 reaches = sorted(
