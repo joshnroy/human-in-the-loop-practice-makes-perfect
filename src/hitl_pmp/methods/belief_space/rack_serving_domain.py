@@ -17,8 +17,10 @@ from numpy.typing import NDArray
 from hitl_pmp.core.method.skill_provider import SkillProvider
 
 from .practice_domain import PracticeDomain, SampleSkills
+from .rewarded_routes_domain import OPTIMISTIC_QUANTILE
 from .types.practice_example_source import PracticeExampleSource
 from .types.skill_belief import SkillBelief
+from .types.weighted_hypothesis_belief import WeightedHypothesisBelief
 
 RACK_NUM_FOOD = 5
 RACK_ROBOT_SKILLS = (
@@ -427,6 +429,47 @@ class RackServingPracticeDomain(PracticeDomain):
     def expected_deployment_cost(self, *, beliefs: Mapping[str, SkillBelief]) -> float:
         """Expected control steps per task, times the run's robot-step price."""
         return float(self._expectation(beliefs=beliefs)[1].mean()) * self.robot_step_price
+
+    def optimistic_policy_value(
+        self, *, beliefs: Mapping[str, SkillBelief], tries_left: float
+    ) -> float:
+        """An optimistic bound on the deployment value reachable with `tries_left` more
+        practice tries, for the determinized search's open-list order.
+
+        This value model at one competence vector, with no step costs: each robot skill
+        at its reach, the OPTIMISTIC_QUANTILE of min(1, competence + rate * tries_left)
+        over its belief, as if every try left went to that skill. Without step costs the
+        model's value never falls as a competence rises (it maximises over policies whose
+        every success moves to a state worth at least the one it leaves, or ends on a
+        bulk reward), so at quantile 1 this bounds every split of the tries; the
+        quantile trades that guarantee for an order the prior's tail does not flatten,
+        as in the routes toy."""
+        rng = np.random.default_rng(RACK_EXPECTATION_SEED)
+        reach = {
+            name: np.array([self._reach(belief=beliefs[name], tries_left=tries_left, rng=rng)])
+            for name in self.robot_skills()
+        }
+        deployment = self._deployment() | {"step_weight": 0.0}
+        return float(RackServingDeployment.solve(competences=reach, **deployment)[0][0])
+
+    @staticmethod
+    def _reach(*, belief: SkillBelief, tries_left: float, rng: np.random.Generator) -> float:
+        """The OPTIMISTIC_QUANTILE of a skill's competence after `tries_left` tries:
+        exact over a weighted hypothesis set, else over RACK_EXPECTATION_SAMPLES draws."""
+        if isinstance(belief, WeightedHypothesisBelief):
+            reaches = np.array([
+                min(1.0, item.hypothesis.competence + item.hypothesis.learning_rate * tries_left)
+                for item in belief.hypotheses
+            ])
+            weights = np.array([item.probability for item in belief.hypotheses])
+        else:
+            rows = belief.sample(rng=rng, count=RACK_EXPECTATION_SAMPLES)
+            reaches = np.minimum(1.0, rows[:, 0] + rows[:, 1] * tries_left)
+            weights = np.full(len(reaches), 1.0 / len(reaches))
+        order = np.argsort(reaches, kind="stable")
+        mass = np.cumsum(weights[order])
+        index = int(np.searchsorted(mass, OPTIMISTIC_QUANTILE - 1e-12))
+        return float(reaches[order][min(index, len(order) - 1)])
 
 
 RACK_SERVING_DOMAIN = RackServingPracticeDomain()

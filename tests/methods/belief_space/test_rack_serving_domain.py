@@ -795,3 +795,114 @@ def test_ours_can_plan_through_the_robot_return_and_prices_it_from_its_observed_
         method.observe_execution_cost(cost=steps * 0.01, steps=steps, complete=True)
     assert method.pomdp_state.expected_execution_costs[str(robot_return)] == pytest.approx(40.0)
     assert method.forecast_action_steps(ground_skill=robot_return) == pytest.approx(4000.0)
+
+
+def _two_route_domain():
+    from hitl_pmp.methods.belief_space.practice_domain import PracticeDomainWithoutSkills
+
+    provider = RackServingSkillProvider(env=RackServingEnvironment(config=TWO_ROUTE_CONFIG))
+    return PracticeDomainWithoutSkills.keep_offered(
+        domain=RACK_SERVING_DOMAIN.with_goal_rewards(provider=provider),
+        offered=frozenset(skill.name for skill in provider.skills()) | frozenset(RACK_HUMAN_SKILLS),
+    )
+
+
+def _curves(*, domain, **curves):
+    """One WeightedHypothesisBelief per robot skill from (competence, rate, probability)
+    rows; a skill not named is perfect."""
+    from hitl_pmp.methods.belief_space.types.skill_belief import WeightedHypothesis
+    from hitl_pmp.methods.belief_space.types.weighted_hypothesis_belief import (
+        WeightedHypothesisBelief,
+    )
+
+    return {
+        name: WeightedHypothesisBelief(
+            hypotheses=tuple(
+                WeightedHypothesis(
+                    hypothesis=SkillHypothesis(competence=c, learning_rate=r), probability=p
+                )
+                for c, r, p in curves.get(name, [(1.0, 0.0, 1.0)])
+            )
+        )
+        for name in domain.robot_skills()
+    }
+
+
+def test_the_value_bound_is_the_value_model_at_each_skills_reach_with_every_try_left():
+    """Each skill credited every try left, step costs dropped: Sweep (worth 3) at
+    0.5 + 0.1/try against GatherAndSweep (worth 5) at 0.1 + 0.1/try."""
+    domain = _two_route_domain().model_copy(
+        update={"deployment_cost_lambda": 0.0015, "robot_step_price": 0.01}
+    )
+    beliefs = _curves(domain=domain, Sweep=[(0.5, 0.1, 1.0)], GatherAndSweep=[(0.1, 0.1, 1.0)])
+    bound = domain.optimistic_policy_value
+    assert bound(beliefs=beliefs, tries_left=0) == pytest.approx(1.5)
+    assert bound(beliefs=beliefs, tries_left=4) == pytest.approx(2.7)
+    assert bound(beliefs=beliefs, tries_left=9) == pytest.approx(5.0)
+    assert bound(beliefs=beliefs, tries_left=40) == pytest.approx(5.0)
+
+
+def test_the_value_bound_reads_each_skills_90th_percentile_reach():
+    domain = _two_route_domain()
+    tail = [(0.1, 0.0, 0.85), (0.9, 0.0, 0.15)]
+    thin = [(0.1, 0.0, 0.95), (0.9, 0.0, 0.05)]
+    none = [(0.0, 0.0, 1.0)]
+    assert domain.optimistic_policy_value(
+        beliefs=_curves(domain=domain, Sweep=none, GatherAndSweep=tail), tries_left=0
+    ) == pytest.approx(4.5)
+    assert domain.optimistic_policy_value(
+        beliefs=_curves(domain=domain, Sweep=none, GatherAndSweep=thin), tries_left=0
+    ) == pytest.approx(0.5)
+
+
+def test_the_value_bound_is_above_the_value_now_and_grows_with_the_tries_left():
+    domain = _two_route_domain()
+    beliefs = make_default_tossing3d_belief(
+        domain=domain,
+        model="local_trend",
+        engine="grid",
+        num_particles=32,
+        inference_config=InferenceConfig(competence_bins=9, learning_rate_bins=4),
+    ).skill_beliefs
+    now = domain.expected_policy_value(beliefs=beliefs)
+    bounds = [domain.optimistic_policy_value(beliefs=beliefs, tries_left=t) for t in (0, 1, 5, 50)]
+    assert bounds[0] >= now
+    assert bounds == sorted(bounds)
+    assert bounds[-1] <= 5.0
+
+
+@pytest.mark.parametrize(
+    ("one_bulk_attempt", "bulk_rewards"),
+    [(False, None), (True, None), (True, {"Sweep": 3.0, "GatherAndSweep": 5.0})],
+)
+def test_without_step_costs_the_value_model_never_falls_as_a_competence_rises(
+    *, one_bulk_attempt, bulk_rewards
+):
+    """The premise the value bound rests on: raising any skill's competence never lowers
+    the step-free deployment value, so the value at each skill's best reach bounds it."""
+    rng = np.random.default_rng(0)
+    count = 256
+    competences = {name: rng.uniform(size=count) for name in RACK_ROBOT_SKILLS}
+
+    def value(*, values):
+        return RackServingDeployment.solve(
+            competences=values,
+            horizon=RACK_SERVING_DOMAIN.deployment_horizon,
+            step_weight=0.0,
+            one_bulk_attempt=one_bulk_attempt,
+            bulk_rewards=bulk_rewards,
+        )[0]
+
+    base = value(values=competences)
+    for name in RACK_ROBOT_SKILLS:
+        raised = dict(competences)
+        raised[name] = competences[name] + rng.uniform(size=count) * (1 - competences[name])
+        assert np.all(value(values=raised) >= base - 1e-12), name
+
+
+def test_ours_on_the_rack_gets_an_open_list_bound_from_the_rack_domain(*, tmp_path):
+    method = _ours(config=TWO_ROUTE_CONFIG, decision_log=tmp_path / "ours.jsonl")
+    model = method._pomdp_model
+    few = model.optimistic_gain(belief_state=method.pomdp_state, tries_left=3)
+    assert few > 0.0
+    assert model.optimistic_gain(belief_state=method.pomdp_state, tries_left=30) >= few
