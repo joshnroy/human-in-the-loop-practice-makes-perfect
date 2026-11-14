@@ -21,6 +21,11 @@ Positive = Annotated[float, Field(gt=0)]
 Nonnegative = Annotated[float, Field(ge=0)]
 Friction = tuple[Nonnegative, Nonnegative, Nonnegative]
 INCH = 0.0254
+# The control period every skill counts in (10 Hz), and the physics timesteps a
+# `physics_timestep` may take: KINDER's own 0.5 ms, up to 5 ms.
+CONTROL_PERIOD = 0.1
+MIN_PHYSICS_TIMESTEP = 0.0005
+MAX_PHYSICS_TIMESTEP = 0.005
 
 
 class RackServingConfig(BaseModel):
@@ -110,6 +115,18 @@ class RackServingConfig(BaseModel):
     # Opt-in (2026-11-12 measurement study): speed (m/s) of Sweep's stroke and of
     # GatherAndSweep's final stroke. None is the constant `SWEEP_SPEED_M_S`.
     final_sweep_speed: Positive | None = None
+    # Simulator speed (2026-11-14 speed study), each opt-in and off by default.
+    # physics_timestep: MuJoCo's timestep (s), replacing KINDER's 0.0005; one 0.1 s
+    # control period is then 0.1 / timestep physics steps, so it must tile the period.
+    # Changes the physics: what a skill delivers must be re-measured under it.
+    physics_timestep: Positive | None = None
+    # lean_control_step: advance a control period without KINDER's per-step
+    # observation, reward and object-centric state, which nothing here reads. The
+    # physics is the native step's exactly (`test_fast_physics.py`).
+    lean_control_step: bool = False
+    # base_step_limit: the most the base's x, y (m) and heading (rad) targets move per
+    # control step, replacing the shelf skills' 0.015 (0.15 m/s and 0.15 rad/s).
+    base_step_limit: Positive | None = None
     # What the learned sampler's classifier reads for Sweep and GatherAndSweep
     # (Josh, 2026-11-13), `RackServingSkillProvider.hand_selected_feature_transform`.
     # "parameters" (the default): a bias and the skill's parameters.
@@ -348,6 +365,16 @@ class RackServingConfig(BaseModel):
             self.start_layout == "scattered" or self.food_handling != "welded"
         ):
             raise ValueError("robot_batch_return needs a slotted start_layout and welded food")
+        if self.physics_timestep is not None:
+            ticks = CONTROL_PERIOD / self.physics_timestep
+            if (
+                not MIN_PHYSICS_TIMESTEP - 1e-12 <= self.physics_timestep <= MAX_PHYSICS_TIMESTEP
+                or abs(ticks - round(ticks)) > 1e-6
+            ):
+                raise ValueError(
+                    f"physics_timestep must tile the {CONTROL_PERIOD} s control period, "
+                    f"within [{MIN_PHYSICS_TIMESTEP}, {MAX_PHYSICS_TIMESTEP}] s"
+                )
         if self.rack_height < self.serving_thickness:
             raise ValueError("Rack top must be at or above tray top")
         if self.serving_target == "lipped_platter":
