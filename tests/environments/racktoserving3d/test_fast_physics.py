@@ -19,6 +19,32 @@ def test_speed_settings_are_off_by_default():
     assert config.physics_timestep is None
     assert config.lean_control_step is False
     assert config.base_step_limit is None
+    assert config.planned_joint_step is None
+
+
+@needs_kinder
+@pytest.mark.parametrize(("configured", "points"), [(None, 6), (0.1, 3)])
+def test_a_planned_arm_path_is_commanded_in_steps_of_the_planned_joint_step(
+    *, configured, points, monkeypatch
+):
+    from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import SkillFailed
+
+    env = RackServingEnvironment(config=RackServingConfig(planned_joint_step=configured))
+    try:
+        env.reset_to_seed(seed=0)
+        tool = env.rack_controllers().tool
+        shelf = tool.shelf
+        start = shelf.data.qpos[shelf.qa].copy()
+        commanded: list[tuple[float, ...]] = []
+        # The arm never moves, so each point is commanded until its catch-up runs out.
+        monkeypatch.setattr(
+            tool, "step", lambda *, arm, label: commanded.append(tuple(np.round(arm, 6)))
+        )
+        with pytest.raises(SkillFailed):
+            tool.follow_arm_path(path=[start, start + np.r_[0.3, np.zeros(6)]], label="test")
+        assert len(dict.fromkeys(commanded)) == points
+    finally:
+        env.close()
 
 
 @needs_kinder
