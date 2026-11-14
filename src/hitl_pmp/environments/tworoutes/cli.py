@@ -32,6 +32,18 @@ class TwoRoutesCli:
             parser.add_argument(flag, type=float, default=fields[field].default, help=text)
         parser.add_argument("--test-env-seed-offset", type=int, default=10000)
         parser.add_argument("--human-reset", action=argparse.BooleanOptionalAction, default=True)
+        parser.add_argument(
+            "--both-resets",
+            action="store_true",
+            help="Either route leaves the robot needing a reset, and either the robot's "
+            "own reset or the human's works after either one.",
+        )
+        parser.add_argument(
+            "--robot-reset-steps",
+            type=int,
+            default=1,
+            help="Control steps the robot's own reset takes under --both-resets.",
+        )
 
     @staticmethod
     def build_problem(*, args: argparse.Namespace, practice: bool) -> TwoRoutesProblem:
@@ -44,6 +56,8 @@ class TwoRoutesCli:
             route_b_start=args.route_b_start,
             route_b_rate=args.route_b_rate,
             competence_cap=args.competence_cap,
+            both_resets=args.both_resets,
+            robot_reset_steps=args.robot_reset_steps,
             route_a_reward=args.route_a_reward,
             route_b_reward=args.route_b_reward,
             seed=args.seed + (0 if practice else args.test_env_seed_offset),
@@ -62,7 +76,9 @@ class TwoRoutesCli:
             env=problem.env,
             oracle=TwoRoutesOracle(env=problem.env),
             skill_provider=TwoRoutesSkillProvider(
-                env=problem.env, offer_human_reset=args.human_reset
+                env=problem.env,
+                offer_human_reset=args.human_reset,
+                both_resets=args.both_resets,
             ),
             test_task_goals=(problem.tasks.goal(),),
         )

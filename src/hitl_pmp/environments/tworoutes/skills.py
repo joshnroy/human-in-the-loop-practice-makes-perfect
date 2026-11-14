@@ -2,7 +2,14 @@ from functools import lru_cache
 
 from hitl_pmp.core.method.types import LiftedAtom, Skill, Variable
 
-from .environment import HUMAN_RESET_B, RESET_A, ROUTE_A, ROUTE_B, TwoRoutesEnvironment
+from .environment import (
+    HUMAN_RESET_B,
+    RESET_A,
+    ROBOT_RESET,
+    ROUTE_A,
+    ROUTE_B,
+    TwoRoutesEnvironment,
+)
 from .predicates import TwoRoutesPredicates
 
 
@@ -45,6 +52,36 @@ class TwoRoutesSkills:
             TwoRoutesSkills.build(
                 name=RESET_A, pre=("AfterA",), add=("Ready",), delete=("AfterA", "Done", "ViaA")
             ),
+        )
+
+    @staticmethod
+    @lru_cache(maxsize=1)
+    def both_resets() -> tuple[Skill, ...]:
+        """`both_resets`: each route leaves the robot in `After`; the robot's reset
+        and the human's both start from there."""
+        return (
+            TwoRoutesSkills.build(
+                name=ROUTE_A, pre=("Ready",), add=("Done", "ViaA", "After"), delete=("Ready",)
+            ),
+            TwoRoutesSkills.build(
+                name=ROUTE_B, pre=("Ready",), add=("Done", "ViaB", "After"), delete=("Ready",)
+            ),
+            TwoRoutesSkills.build(
+                name=ROBOT_RESET,
+                pre=("After",),
+                add=("Ready",),
+                delete=("After", "Done", "ViaA", "ViaB"),
+            ),
+        )
+
+    @staticmethod
+    @lru_cache(maxsize=1)
+    def human_reset_from_after() -> Skill:
+        return TwoRoutesSkills.build(
+            name=HUMAN_RESET_B,
+            pre=("After",),
+            add=("Ready",),
+            delete=("After", "Done", "ViaA", "ViaB"),
         )
 
     @staticmethod
