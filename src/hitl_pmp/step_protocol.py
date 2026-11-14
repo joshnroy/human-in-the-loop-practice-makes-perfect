@@ -698,16 +698,27 @@ class DeploymentSnapshot:
             if isinstance(domain, RewardedRoutesPracticeDomain):
                 # Deployed from the snapshot's outcome counts and the domain's prior:
                 # the planner's belief is not in a snapshot.
-                prior = DpSkillPrior(
-                    alpha=domain.initial_competence_alpha or method.prior_alpha,
-                    beta=domain.initial_competence_beta or method.prior_beta,
-                    initial_learning_rate=0.0,
+                shared = (
+                    domain.initial_competence_alpha or method.prior_alpha,
+                    domain.initial_competence_beta or method.prior_beta,
                 )
+                priors = {
+                    name: DpSkillPrior(
+                        alpha=(
+                            ab := domain.route_competence_prior(
+                                name=name, alpha=shared[0], beta=shared[1]
+                            )
+                        )[0],
+                        beta=ab[1],
+                        initial_learning_rate=0.0,
+                    )
+                    for name, _ in domain.route_rewards
+                }
                 policy = DeploymentPolicy(
                     kind="reward_greedy",
                     source_method=source,
                     horizon=domain.deployment_horizon,
-                    dp_priors={name: prior for name, _ in domain.route_rewards},
+                    dp_priors=priors,
                     known_curves={
                         name: (start, rate) for name, start, rate in domain.known_competence_curves
                     },

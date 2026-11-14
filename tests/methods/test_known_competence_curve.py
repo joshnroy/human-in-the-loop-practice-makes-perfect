@@ -50,6 +50,12 @@ class TestKnownCompetenceCurve:
         assert failed < belief.mean_competence() < succeeded
 
     @staticmethod
+    def test_a_routes_deployment_prior_is_its_own_planning_prior() -> None:
+        domain = DOMAIN.model_copy(update={"competence_prior_overrides": (("RouteB", 1.0, 99.0),)})
+        assert domain.route_competence_prior(name="RouteB", alpha=1.0, beta=3.0) == (1.0, 99.0)
+        assert domain.route_competence_prior(name="RouteA", alpha=1.0, beta=3.0) == (1.0, 3.0)
+
+    @staticmethod
     def test_deployment_reads_the_curve_at_the_try_count() -> None:
         ground = SimpleNamespace(skill=SimpleNamespace(name="RouteA"))
         history = SimpleNamespace(cycle_observations=[[0, 0], [1]])
