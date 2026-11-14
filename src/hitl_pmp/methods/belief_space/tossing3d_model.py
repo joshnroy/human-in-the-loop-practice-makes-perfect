@@ -134,6 +134,11 @@ class Tossing3DPracticeModel(BaseModel):
     _domain: PracticeDomain = PrivateAttr()
     # ((lambda, step price), the domain carrying them) of the last valuation.
     _priced_domain: tuple[tuple[float, float], PracticeDomain] | None = PrivateAttr(default=None)
+    # The last belief state forecast and its forecast: the open-list bound and J value
+    # the same node one after the other, and the forecast is a pure function of it.
+    _last_projection: tuple[Tossing3DBeliefState, Tossing3DBeliefState] | None = PrivateAttr(
+        default=None
+    )
 
     def model_post_init(self, __context: object) -> None:
         self._rng = np.random.default_rng(self.seed)
@@ -204,13 +209,22 @@ class Tossing3DPracticeModel(BaseModel):
             else self.domain.model_copy(update={"deployment_horizon": self.deployment_horizon})
         )
 
+    def projected_belief_state(self, *, belief_state: Tossing3DBeliefState) -> Tossing3DBeliefState:
+        """`refit_belief_state(state=belief_state)`, reused while the state is the last."""
+        last = self._last_projection
+        if last is not None and last[0] is belief_state:
+            return last[1]
+        projected = refit_belief_state(state=belief_state)
+        self._last_projection = (belief_state, projected)
+        return projected
+
     def sample_theta_from_belief(self, *, belief_state: Tossing3DBeliefState) -> Any:
         return self.sample_thetas_from_belief(belief_state=belief_state, num_samples=1)[0]
 
     def sample_thetas_from_belief(
         self, *, belief_state: Tossing3DBeliefState, num_samples: int
     ) -> list[Any]:
-        projected = refit_belief_state(state=belief_state)
+        projected = self.projected_belief_state(belief_state=belief_state)
         return self._domain.sample_thetas(
             beliefs=projected.skill_beliefs,
             sample_skills=lambda belief, count: self.sample_skills(belief=belief, count=count),
@@ -252,7 +266,7 @@ class Tossing3DPracticeModel(BaseModel):
     def sample_policy_values_from_belief(
         self, *, belief_state: Tossing3DBeliefState, num_samples: int
     ) -> np.ndarray:
-        projected = refit_belief_state(state=belief_state)
+        projected = self.projected_belief_state(belief_state=belief_state)
         return self.valued_domain().sample_policy_values(
             beliefs=projected.skill_beliefs, rng=self._rng, count=num_samples
         )
@@ -270,7 +284,7 @@ class Tossing3DPracticeModel(BaseModel):
         bound = getattr(self._domain, "optimistic_policy_value", None)
         if bound is None:
             return 0.0
-        projected = refit_belief_state(state=belief_state)
+        projected = self.projected_belief_state(belief_state=belief_state)
         now = self._domain.expected_policy_value(beliefs=projected.skill_beliefs)
         return max(0.0, bound(beliefs=projected.skill_beliefs, tries_left=tries_left) - now)
 
@@ -285,7 +299,7 @@ class Tossing3DPracticeModel(BaseModel):
         Particle/grid approximation and the existing training forecasts remain.
         """
         assert num_samples >= 1
-        projected = refit_belief_state(state=belief_state)
+        projected = self.projected_belief_state(belief_state=belief_state)
         # Net of lambda * E[deployment cost] when the domain models it (practice_domain.py).
         policy_value = self.valued_domain().expected_policy_value(beliefs=projected.skill_beliefs)
         return self.G(policy_value=policy_value, summed_cost=summed_cost)
