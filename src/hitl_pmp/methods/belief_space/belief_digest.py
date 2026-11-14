@@ -63,6 +63,8 @@ class BeliefDigest:
     def _encode(*, value: object, chunks: list[bytes]) -> None:
         if isinstance(value, tuple):
             chunks.append(b"tuple" + len(value).to_bytes(8, "big"))
+            if BeliefDigest._encode_float_rows(rows=value, chunks=chunks):
+                return
             for item in value:
                 BeliefDigest._encode(value=item, chunks=chunks)
             return
@@ -72,6 +74,35 @@ class BeliefDigest:
         tag, payload = BeliefDigest._leaf(value=value)
         chunks.append(tag + len(payload).to_bytes(8, "big"))
         chunks.append(payload)
+
+    # A float's encoding, by value: a weighted belief's signature is thousands of float
+    # triples, and a grid's learning rates and weights repeat across hypotheses and
+    # across the posteriors of one search. 0.0 and -0.0 share an entry, and an encoding.
+    _float_encodings: ClassVar[dict[float, bytes]] = {}
+    FLOAT_ENCODINGS_SIZE: ClassVar[int] = 1 << 20
+
+    @staticmethod
+    def _encode_float_rows(*, rows: tuple, chunks: list[bytes]) -> bool:
+        """Encode `rows` -- already announced as a tuple -- if it is a tuple of tuples of
+        exact floats, to the bytes the general route gives; else encode nothing."""
+        for row in rows:
+            if type(row) is not tuple:
+                return False
+            for item in row:
+                if type(item) is not float:
+                    return False
+        known = BeliefDigest._float_encodings
+        if len(known) > BeliefDigest.FLOAT_ENCODINGS_SIZE:
+            known.clear()
+        for row in rows:
+            chunks.append(b"tuple" + len(row).to_bytes(8, "big"))
+            for item in row:
+                encoded = known.get(item)
+                if encoded is None:
+                    tag, payload = BeliefDigest._leaf(value=item)
+                    encoded = known[item] = tag + len(payload).to_bytes(8, "big") + payload
+                chunks.append(encoded)
+        return True
 
     @staticmethod
     def _model_encoding(*, model: BaseModel) -> bytes:
