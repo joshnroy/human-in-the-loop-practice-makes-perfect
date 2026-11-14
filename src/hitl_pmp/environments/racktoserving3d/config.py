@@ -127,6 +127,11 @@ class RackServingConfig(BaseModel):
     # base_step_limit: the most the base's x, y (m) and heading (rad) targets move per
     # control step, replacing the shelf skills' 0.015 (0.15 m/s and 0.15 rad/s).
     base_step_limit: Positive | None = None
+    # planned_joint_step: the largest joint change (rad) commanded per control step
+    # along a planned arm path, replacing `tool.PLANNED_JOINT_STEP` (0.05, 29 deg/s).
+    # At most the servo's own 0.1 per-step clip (`JointStep.LIMIT`), which keeps the
+    # executed path on the checked segment.
+    planned_joint_step: Annotated[float, Field(gt=0, le=0.1)] | None = None
     # What the learned sampler's classifier reads for Sweep and GatherAndSweep
     # (Josh, 2026-11-13), `RackServingSkillProvider.hand_selected_feature_transform`.
     # "parameters" (the default): a bias and the skill's parameters.

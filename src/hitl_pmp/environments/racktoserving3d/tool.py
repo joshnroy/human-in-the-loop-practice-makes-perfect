@@ -216,6 +216,7 @@ class TableWiper:
         base: np.ndarray | None = None,
     ) -> None:
         self.attachment = "physical"
+        self.planned_joint_step = PLANNED_JOINT_STEP
         self.shelf = shelf
         self.core = shelf.core
         self.model = shelf.model
@@ -920,7 +921,7 @@ class TableWiper:
         current = shelf.data.qpos[shelf.qa].copy()
         for waypoint in path[1:]:
             delta = (np.asarray(waypoint, dtype=float) - current + np.pi) % (2 * np.pi) - np.pi
-            count = max(1, int(np.ceil(np.max(np.abs(delta)) / PLANNED_JOINT_STEP)))
+            count = max(1, int(np.ceil(np.max(np.abs(delta)) / self.planned_joint_step)))
             for index in range(1, count + 1):
                 point = current + delta * (index / count)
                 # Advance only once the arm has caught up: loaded, it lags the command
@@ -1037,6 +1038,8 @@ class RackScraper(TableWiper):
             shelf=shelf, rest_y=rest_y, home_top=home_top, home_front=home_front, base=base
         )
         self.attachment = getattr(config, "scraper_attachment", "physical")
+        if getattr(config, "planned_joint_step", None) is not None:
+            self.planned_joint_step = float(config.planned_joint_step)
         if isinstance(shelf, RackShelfSkills):
             shelf.scraper_attachment = self.attachment
         elif self.attachment == "grasp_weld":
