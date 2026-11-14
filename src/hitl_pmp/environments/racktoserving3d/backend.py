@@ -1,5 +1,6 @@
 """Native KINDER scene with measured supports, a welded rack and explicit human costs."""
 
+import copy
 import json
 import os
 import tempfile
@@ -14,6 +15,12 @@ from scipy.spatial.transform import Rotation
 
 from hitl_pmp.core.control_steps import ControlStepObserverFailed
 from hitl_pmp.environments.sweepoffshelf3d.backend import TASK_ID, SweepOffShelf3DBackend
+from hitl_pmp.environments.tossing3d.simulation_checkpoint import (
+    capture_engine,
+    capture_runtime,
+    restore_engine,
+    restore_runtime,
+)
 
 from .config import RackServingConfig
 from .geometry import install_geometry
@@ -34,6 +41,7 @@ from .semantics import (
     WellSupport,
     classify_food,
 )
+from .simulation_checkpoint import DerivedData, ModelArrays
 from .welded_food import WeldedFood
 
 FOOTPRINT_SAMPLES = 64
@@ -50,6 +58,10 @@ class RackServingBackend(SweepOffShelf3DBackend):
     _tool_home: Callable[[], bool] | None = PrivateAttr(default=None)
     _rng: Any = PrivateAttr(default=None)
     _start_kind: str = PrivateAttr(default="scattered")
+    _scene_seed: int | None = PrivateAttr(default=None)
+    # The integration state the most recent MuJoCo step started from, for a
+    # checkpoint (`DerivedData`); None until this scene has stepped.
+    _step_start: np.ndarray | None = PrivateAttr(default=None)
 
     def start_kind(self) -> str:
         """This episode's start layout, after any `gathered_fraction` draw."""
@@ -97,6 +109,8 @@ class RackServingBackend(SweepOffShelf3DBackend):
 
     def reset(self, *, seed: int) -> None:
         super().reset(seed=seed)
+        self._scene_seed = seed
+        self._track_step_starts()
         for geom in self._pads[0] | self._pads[1]:
             self.model().geom_condim[geom] = self.config.gripper_contact_dimension
         if self.config.food_handling == "welded":
@@ -136,6 +150,99 @@ class RackServingBackend(SweepOffShelf3DBackend):
             self._commit(placements=self.food_placements(names=names))
         else:
             self._commit(placements=self.food_placements(names=names, start_layout=kind))
+
+    def _track_step_starts(self) -> None:
+        """Note the state each MuJoCo step starts from: a read, ahead of KINDER's own
+        `sim.step`, on the simulator this reset built."""
+        import mujoco
+
+        sim, model, data = self.sim(), self.model(), self.data()
+        spec = mujoco.mjtState.mjSTATE_INTEGRATION
+        start = np.empty(mujoco.mj_stateSize(model, spec), dtype=np.float64)
+        self._step_start = None
+        step = sim.step
+
+        def tracked() -> None:
+            mujoco.mj_getState(model, data, start, spec)
+            self._step_start = start
+            step()
+
+        sim.step = tracked
+
+    def _checkpoint_owners(self) -> list[Any]:
+        """The Gym wrapper chain, then KINDER's scene and robot runtime (as Tossing's)."""
+        owners = []
+        current = self.env()
+        while current is not None:
+            owners.append(current)
+            current = vars(current).get("env")
+        core = self.core()
+        owners.extend(owner for owner in (core, core._robot_env) if owner not in owners)  # noqa: SLF001
+        return owners
+
+    def simulation_checkpoint(self) -> dict[str, Any]:
+        """Everything this backend and its engine hold between skills, for another
+        process: Tossing's engine and runtime capture, plus the compiled model's
+        tables (welds are written into them) and this backend's own accounting."""
+        if self._scene_seed is None:
+            raise RuntimeError("simulation checkpoint requires a seeded scene reset")
+        scene_state = self.core()._current_state  # noqa: SLF001
+        return {
+            "seed": self._scene_seed,
+            "model": ModelArrays.capture(model=self.model()),
+            "engine": capture_engine(model=self.model(), data=self.data()),
+            "derived": DerivedData.capture(data=self.data(), before_last_step=self._step_start),
+            "runtime": [
+                (type(owner).__module__, type(owner).__qualname__, capture_runtime(owner=owner))
+                for owner in self._checkpoint_owners()
+            ],
+            "scene_state": None if scene_state is None else scene_state.copy(),
+            "grip": self.grip,
+            "ledger": self.ledger,
+            "time_origin": self._time_origin,
+            "control_steps": self._control_steps,
+            "start_kind": self._start_kind,
+            "wiper_start": tuple(part.copy() for part in self._wiper_start),
+            "rngs": {
+                "_rng": copy.deepcopy(self._rng.bit_generator.state),
+                "_human_rng": copy.deepcopy(self._human_rng.bit_generator.state),
+            },
+        }
+
+    def restore_simulation_checkpoint(self, *, checkpoint: dict[str, Any]) -> None:
+        """Onto a scene already rebuilt from the checkpoint's seed. The model's tables
+        go back first: the engine restore refuses a model whose fingerprint differs."""
+        if self._scene_seed != checkpoint["seed"]:
+            raise ValueError("simulation checkpoint needs its own seed's scene rebuilt first")
+        owners = self._checkpoint_owners()
+        runtime = checkpoint["runtime"]
+        if [(type(o).__module__, type(o).__qualname__) for o in owners] != [
+            (module, name) for module, name, _ in runtime
+        ]:
+            raise ValueError("simulation checkpoint Gym/KINDER runtime topology differs")
+        ModelArrays.restore(model=self.model(), arrays=checkpoint["model"])
+        restore_engine(model=self.model(), data=self.data(), checkpoint=checkpoint["engine"])
+        DerivedData.restore(
+            model=self.model(),
+            data=self.data(),
+            saved=checkpoint["derived"],
+            state=checkpoint["engine"]["integration"],
+        )
+        # A checkpoint taken before this process steps must still know that state.
+        before = checkpoint["derived"]["before_last_step"]
+        self._step_start = None if before is None else before.copy()
+        for owner, (_, _, state) in zip(owners, runtime, strict=True):
+            restore_runtime(owner=owner, checkpoint=state)
+        if checkpoint["scene_state"] is not None:
+            self.core()._current_state = checkpoint["scene_state"].copy()  # noqa: SLF001
+        self.grip = checkpoint["grip"]
+        self.ledger = checkpoint["ledger"]
+        self._time_origin = checkpoint["time_origin"]
+        self._control_steps = checkpoint["control_steps"]
+        self._start_kind = checkpoint["start_kind"]
+        self._wiper_start = tuple(part.copy() for part in checkpoint["wiper_start"])
+        self._rng.bit_generator.state = copy.deepcopy(checkpoint["rngs"]["_rng"])
+        self._human_rng.bit_generator.state = copy.deepcopy(checkpoint["rngs"]["_human_rng"])
 
     def sync_clock(self) -> None:
         elapsed = float(self.data().time) - self._time_origin
