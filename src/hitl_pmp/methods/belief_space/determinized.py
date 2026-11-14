@@ -48,6 +48,7 @@ class DeterminizedAStarPlanner(
         seed: int,
         observation_probability_weight: float = 0.1,
         log_full_search_tree: bool = False,
+        value_bound_heuristic: bool = False,
         draw_scope: DrawScope = "node",
         variant: DeterminizedVariant = "algorithm3",
         num_rollouts: int | None = None,
@@ -70,6 +71,9 @@ class DeterminizedAStarPlanner(
         # Algorithm 3's lambda: weight on the sampled observation log probability.
         self.observation_probability_weight = observation_probability_weight
         self.log_full_search_tree = log_full_search_tree
+        # Order the open list by g minus the model's optimistic gain still reachable with
+        # the practice left (`optimistic_gain`); g alone still selects the plan.
+        self.value_bound_heuristic = value_bound_heuristic
         # "node": one independent draw per (search node, action) edge, so a node that a
         # cheap reset makes new re-rolls the same skill's outcome. Otherwise one uniform
         # per `model.outcome_draw_key(scope=...)` -- what the outcome distribution reads,
@@ -511,6 +515,13 @@ class DeterminizedAStarPlanner(
                 if key not in cost or self.strictly_improves(
                     candidate=next_path_cost, previous=cost[key]
                 ):
+                    priority = self.priority(
+                        model=model,
+                        belief_state=next_belief,
+                        budgets=budgets,
+                        spent=next_spent,
+                        g=next_path_cost,
+                    )
                     cost[key] = next_path_cost
                     if key in closed:
                         closed.remove(key)
@@ -535,6 +546,7 @@ class DeterminizedAStarPlanner(
                                 summed_cost=next_cost,
                             ),
                             g=next_path_cost,
+                            priority=priority,
                             diagnostic_info=DeterminizedNodeDiagnosticInfo(depth=next_depth),
                             cache_info=DeterminizedNodeCacheInfo(
                                 key=key,
@@ -642,6 +654,28 @@ class DeterminizedAStarPlanner(
         return candidate < previous and not math.isclose(
             candidate, previous, rel_tol=1e-12, abs_tol=1e-15
         )
+
+    def priority(
+        self,
+        *,
+        model: Any,
+        belief_state: Any,
+        budgets: dict[str, Any],
+        spent: dict[str, float],
+        g: float,
+    ) -> float | None:
+        """The open-list order under `value_bound_heuristic`: g minus the most the
+        practice left could still add. The practice left is counted in the budget's own
+        tries when there is an episode budget, else in steps (one try per step at most).
+        None (order by g) when off, unbounded, or the model offers no bound."""
+        gain = getattr(model, "optimistic_gain", None)
+        if not self.value_bound_heuristic or gain is None:
+            return None
+        unit = "episodes" if "episodes" in budgets else "steps" if "steps" in budgets else None
+        if unit is None:
+            return None
+        tries_left = max(0.0, budgets[unit][0] - spent[unit])
+        return g - gain(belief_state=belief_state, tries_left=tries_left)
 
     def heuristic(self, *, node: DeterminizedSearchNode[EnvironmentStateT, BeliefStateT]) -> float:
         """Generic hook used at line 19 where Algorithm 3 adds ``alpha * h_hat``.

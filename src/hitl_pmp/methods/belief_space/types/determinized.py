@@ -73,6 +73,9 @@ class DeterminizedSearchQueueEntry(
 
     belief: DeterminizedSearchBelief[EnvironmentStateT, BeliefStateT]
     g: float
+    # The open list's order when set: g plus an optimistic estimate of the gain still
+    # reachable (`--pomdp-value-bound-heuristic`). g alone still selects the plan.
+    priority: float | None = None
     diagnostic_info: DeterminizedNodeDiagnosticInfo
     cache_info: DeterminizedNodeCacheInfo
     path_recovery_info: DeterminizedPathRecoveryInfo[ActionT]
@@ -82,8 +85,10 @@ class DeterminizedSearchQueueEntry(
         in exact arithmetic go to the first one found (ValueResolution)."""
         if not isinstance(other, DeterminizedSearchQueueEntry):
             return NotImplemented
-        return (ValueResolution.rank(value=self.g), self.cache_info.queue_sequence) < (
-            ValueResolution.rank(value=other.g),
+        mine = self.g if self.priority is None else self.priority
+        theirs = other.g if other.priority is None else other.priority
+        return (ValueResolution.rank(value=mine), self.cache_info.queue_sequence) < (
+            ValueResolution.rank(value=theirs),
             other.cache_info.queue_sequence,
         )
 
