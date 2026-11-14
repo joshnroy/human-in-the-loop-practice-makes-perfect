@@ -691,6 +691,7 @@ class DeploymentSnapshot:
                 max_states=method.dp_max_states,
                 dp_priors=method._dp_skill_priors,
                 known_curves=method.dp_known_competence_curves,
+                curve_priors=method.deploy_curve_priors,
             )
         elif method_specific and isinstance(method, Tossing3DPomdpMethod):
             source = f"{method.pomdp_determinized_variant}/{method.pomdp_solver}"
@@ -719,6 +720,7 @@ class DeploymentSnapshot:
                     source_method=source,
                     horizon=domain.deployment_horizon,
                     dp_priors=priors,
+                    curve_priors=method.deploy_curve_priors,
                     known_curves={
                         name: (start, rate) for name, start, rate in domain.known_competence_curves
                     },

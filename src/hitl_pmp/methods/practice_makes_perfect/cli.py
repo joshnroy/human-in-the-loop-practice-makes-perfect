@@ -150,6 +150,18 @@ class EesCli:
         return out
 
     @staticmethod
+    def deploy_curve_priors(
+        *, args: argparse.Namespace
+    ) -> dict[str, tuple[float, float, float, float]]:
+        """The --skill-prior of every skill, when --deploy-current-competence is set."""
+        if not getattr(args, "deploy_current_competence", False):
+            return {}
+        priors = EesCli.skill_priors(args=args)
+        if not priors:
+            raise ValueError("--deploy-current-competence needs --skill-prior for its skills")
+        return priors
+
+    @staticmethod
     def known_rates(*, args: argparse.Namespace) -> dict[str, float]:
         """Skills given --known-competence-rate alone: the learning rate is known, the
         competence is still estimated from outcomes."""
@@ -181,6 +193,15 @@ class EesCli:
             "Beta(C_MEAN*C_STRENGTH, (1-C_MEAN)*C_STRENGTH) on its competence and a normal "
             "(RATE_MEAN, RATE_SD) truncated at 0 on its learning rate. DP holds no spread on "
             "the rate, so it takes RATE_MEAN as its starting Delta. Repeatable.",
+        )
+        parser.add_argument(
+            "--deploy-current-competence",
+            action="store_true",
+            help="Deploy on each skill's current competence with learning included: the "
+            "posterior mean of start + rate * tries under its --skill-prior, conditioned on "
+            "each practice outcome at the try it happened (deployment.CurrentCompetence), "
+            "instead of the recent-rounds average. Same estimator for DP and the "
+            "belief-space method.",
         )
         parser.add_argument(
             "--practice-try-skills",
@@ -491,6 +512,7 @@ class EesCli:
             practice_try_skills=(
                 frozenset(args.practice_try_skills) if args.practice_try_skills else None
             ),
+            deploy_curve_priors=EesCli.deploy_curve_priors(args=args),
             always_ask_reset=EesCli.always_ask_reset(args=args),
             prior_alpha=prior[0],
             prior_beta=prior[1],
@@ -923,6 +945,7 @@ class Tossing3DPomdpCli(EesCli):
                 practice_try_skills=(
                     frozenset(args.practice_try_skills) if args.practice_try_skills else None
                 ),
+                deploy_curve_priors=EesCli.deploy_curve_priors(args=args),
                 exploration_epsilon=args.exploration_epsilon,
                 sampler_max_train_iters=args.sampler_max_train_iters,
                 sampler_break_ties_among_best=args.sampler_break_ties_among_best,
