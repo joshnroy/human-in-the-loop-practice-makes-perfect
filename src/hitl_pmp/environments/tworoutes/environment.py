@@ -16,8 +16,10 @@ ROUTE_A = "RouteA"
 ROUTE_B = "RouteB"
 RESET_A = "ResetA"
 HUMAN_RESET_B = "human_reset_b"
+# `both_resets`: the robot's own reset after either route.
+ROBOT_RESET = "RobotReset"
 # A robot skill's id is its index here; the human's reset is no robot action.
-ROBOT_SKILL_NAMES = (ROUTE_A, ROUTE_B, RESET_A)
+ROBOT_SKILL_NAMES = (ROUTE_A, ROUTE_B, RESET_A, ROBOT_RESET)
 NOOP_ID = -1.0
 
 
@@ -45,6 +47,11 @@ class TwoRoutesEnvironment(Environment):
     # task is solved or not, and the reward is read off which route solved it.
     route_a_reward: float = Field(default=1.0, gt=0.0)
     route_b_reward: float = Field(default=3.0, gt=0.0)
+    # Either route leaves the robot waiting in `after`, from which either the robot's
+    # reset (`ROBOT_RESET`, taking `robot_reset_steps` control steps) or the human's
+    # (`HUMAN_RESET_B`) puts it back. Off: the original routes-own-resets structure.
+    both_resets: bool = False
+    robot_reset_steps: int = Field(default=1, ge=1)
     seed: int = 0
     learns: bool = True
     attempts: dict[str, int] = Field(default_factory=lambda: {ROUTE_A: 0, ROUTE_B: 0})
@@ -53,7 +60,8 @@ class TwoRoutesEnvironment(Environment):
     last_error: str | None = None
 
     robot_type: ClassVar[Type] = Type(
-        name="robot", feature_names=("ready", "done", "via_a", "via_b", "after_a", "after_b")
+        name="robot",
+        feature_names=("ready", "done", "via_a", "via_b", "after_a", "after_b", "after"),
     )
     robot: ClassVar[Object] = Object(name="robot", type=robot_type)
     action_space: ClassVar[Box] = Box(NOOP_ID, len(ROBOT_SKILL_NAMES) - 1, (1,))
@@ -108,9 +116,21 @@ class TwoRoutesEnvironment(Environment):
             if self._before is not None:
                 self._before()
             self.last_error = None
-            if not self.flag(name="after_a" if skill == RESET_A else "ready"):
+            needs = {RESET_A: "after_a", ROBOT_RESET: "after"}.get(skill, "ready")
+            if (
+                not self.flag(name=needs)
+                or (skill == ROBOT_RESET) != self.both_resets
+                and (skill in (RESET_A, ROBOT_RESET))
+            ):
                 self.last_error = f"{skill}: preconditions do not hold"
             elif skill == RESET_A:
+                self.set_state(state=self.build_state(ready=True))
+            elif skill == ROBOT_RESET:
+                for _ in range(self.robot_reset_steps - 1):
+                    if self._after is not None:
+                        self._after()
+                    if self._before is not None:
+                        self._before()
                 self.set_state(state=self.build_state(ready=True))
             else:
                 succeeded = bool(self._rng.random() < self.success_probability(skill=skill))
@@ -119,7 +139,7 @@ class TwoRoutesEnvironment(Environment):
                 suffix = skill[-1].lower()
                 self.set_state(
                     state=self.build_state(**{
-                        f"after_{suffix}": True,
+                        ("after" if self.both_resets else f"after_{suffix}"): True,
                         f"via_{suffix}": succeeded,
                         "done": succeeded,
                     })
@@ -157,13 +177,16 @@ class TwoRoutesEnvironment(Environment):
 
     def reset_movables(self, *, destination: str | None = None) -> bool:
         """The human's reset: back to ready, after a Route B attempt only."""
-        if destination != HUMAN_RESET_B or not self.flag(name="after_b"):
+        if destination != HUMAN_RESET_B or not self.flag(
+            name="after" if self.both_resets else "after_b"
+        ):
             return False
         self.set_state(state=self.build_state(ready=True))
         return True
 
     def get_valid_actions(self) -> list[Action]:
-        return [self.action_for(skill=skill) for skill in ROBOT_SKILL_NAMES]
+        skip = RESET_A if self.both_resets else ROBOT_RESET
+        return [self.action_for(skill=skill) for skill in ROBOT_SKILL_NAMES if skill != skip]
 
     def noop_action(self) -> Action:
         return np.array([NOOP_ID])
