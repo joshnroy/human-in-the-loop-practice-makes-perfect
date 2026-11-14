@@ -93,6 +93,35 @@ class TestKnownCompetenceCurve:
         assert prior == DpSkillPrior(alpha=1.0, beta=9.0, initial_learning_rate=0.1)
 
     @staticmethod
+    def test_current_competence_accounts_for_learning() -> None:
+        from hitl_pmp.methods.deployment import CurrentCompetence
+
+        # Route A of the toy: prior centred on 0.1 + 0.1/try; five tries made at true
+        # competence 0.1..0.5 with one success, on the 4th try.
+        outcomes = [False, False, False, True, False]
+        current = CurrentCompetence.estimate(prior=(0.1, 10.0, 0.1, 0.05), outcomes=outcomes)
+        lagging = (1 + 1) / (1 + 9 + 5)
+        assert current > 0.4 > lagging
+        assert CurrentCompetence.estimate(prior=(0.5, 10.0, 0.5, 0.25), outcomes=[]) == (
+            pytest.approx(0.5, abs=0.02)
+        )
+
+    @staticmethod
+    def test_deployment_uses_current_competence_when_given_a_curve_prior() -> None:
+        ground = SimpleNamespace(skill=SimpleNamespace(name="RouteA"))
+        history = SimpleNamespace(cycle_observations=[[False, False], [False, True, False]])
+        method = SimpleNamespace(
+            _competence_models=SimpleNamespace(get=lambda key: history if key is ground else None),
+            prior_alpha=1.0,
+            prior_beta=9.0,
+        )
+        policy = DeploymentPolicy(
+            kind="reward_greedy", curve_priors={"RouteA": (0.1, 10.0, 0.1, 0.05)}
+        )
+        assert policy.recent_competence(method=method, ground=ground) > 0.4
+        assert policy.dp_competence(method=method, ground=ground) > 0.4
+
+    @staticmethod
     def test_deployment_reads_the_curve_at_the_try_count() -> None:
         ground = SimpleNamespace(skill=SimpleNamespace(name="RouteA"))
         history = SimpleNamespace(cycle_observations=[[0, 0], [1]])

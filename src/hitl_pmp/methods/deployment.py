@@ -5,9 +5,11 @@ task, or read its configured human costs. The spec is data, independent of the
 training method's planner, simulator and open log files.
 """
 
-from typing import Literal
+from typing import ClassVar, Literal
 
+import numpy as np
 from pydantic import BaseModel, ConfigDict, Field
+from scipy.stats import beta as beta_distribution
 
 from hitl_pmp.core.method.method import NoFeasibleParametersError
 from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Policy
@@ -28,6 +30,35 @@ from hitl_pmp.methods.practice_makes_perfect.ees_method import EesMethod
 from hitl_pmp.planning.grounding import SkillGrounder
 
 
+class CurrentCompetence(BaseModel):
+    """A skill's competence now, learning included: competence after n tries is
+    start + rate * n, with a Beta prior on the start and a normal prior on the rate
+    (truncated at 0), conditioned on each practice outcome at the try it happened."""
+
+    START_GRID: ClassVar[int] = 101
+    RATE_GRID: ClassVar[int] = 41
+
+    @staticmethod
+    def estimate(*, prior: tuple[float, float, float, float], outcomes: list[bool]) -> float:
+        c_mean, c_strength, r_mean, r_sd = prior
+        starts = (np.arange(CurrentCompetence.START_GRID) + 0.5) / CurrentCompetence.START_GRID
+        rates = (
+            np.array([r_mean])
+            if r_sd <= 0
+            else np.linspace(0.0, r_mean + 4 * r_sd, CurrentCompetence.RATE_GRID)
+        )
+        c, r = np.meshgrid(starts, rates, indexing="ij")
+        log_w = beta_distribution.logpdf(c, c_mean * c_strength, (1 - c_mean) * c_strength)
+        if r_sd > 0:
+            log_w = log_w - 0.5 * ((r - r_mean) / r_sd) ** 2
+        for i, success in enumerate(outcomes):
+            p = np.clip(c + r * i, 1e-9, 1 - 1e-9)
+            log_w = log_w + (np.log(p) if success else np.log(1 - p))
+        w = np.exp(log_w - log_w.max())
+        now = np.minimum(1.0, c + r * len(outcomes))
+        return float((w * now).sum() / w.sum())
+
+
 class DeploymentPolicy(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -39,6 +70,21 @@ class DeploymentPolicy(BaseModel):
     # Skill name -> (start, rate): perfect information. Competence after n practice
     # tries is min(1, start + rate * n), in place of any estimate from outcomes.
     known_curves: dict[str, tuple[float, float]] = Field(default_factory=dict)
+    # Skill name -> (competence mean, strength, rate mean, rate sd): deploy on the
+    # current competence, learning included (`CurrentCompetence`), not the recent average.
+    curve_priors: dict[str, tuple[float, float, float, float]] = Field(default_factory=dict)
+
+    def current_competence(self, *, method: EesMethod, ground: GroundSkill) -> float | None:
+        prior = self.curve_priors.get(ground.skill.name)
+        if prior is None:
+            return None
+        history = method._competence_models.get(ground)
+        outcomes = (
+            [bool(o) for cycle in history.cycle_observations for o in cycle]
+            if history is not None
+            else []
+        )
+        return CurrentCompetence.estimate(prior=prior, outcomes=outcomes)
 
     def known_competence(self, *, method: EesMethod, ground: GroundSkill) -> float | None:
         curve = self.known_curves.get(ground.skill.name)
@@ -52,6 +98,8 @@ class DeploymentPolicy(BaseModel):
         """DP values its cumulative posterior, rather than EES's recent window."""
         if (known := self.known_competence(method=method, ground=ground)) is not None:
             return known
+        if (current := self.current_competence(method=method, ground=ground)) is not None:
+            return current
         prior = self.dp_priors.get(ground.skill.name)
         history = method._competence_models.get(ground)
         return LinearSkillCompetenceModel(
@@ -66,6 +114,8 @@ class DeploymentPolicy(BaseModel):
         optimistic Beta(10, 1), under which a route never tried looks nearly perfect."""
         if (known := self.known_competence(method=method, ground=ground)) is not None:
             return known
+        if (current := self.current_competence(method=method, ground=ground)) is not None:
+            return current
         prior = self.dp_priors.get(ground.skill.name)
         history = method._competence_models.get(ground)
         return OptimisticSkillCompetenceModel(
