@@ -29,6 +29,7 @@ from .competence_inference import BayesianSkillBelief, InferenceConfig, create_b
 from .practice_domain import TOSSING3D_DOMAIN, PracticeDomain
 
 KNOWN_RATE_GRID = 101
+SKILL_PRIOR_RATE_GRID = 21
 
 
 class SearchForecastCache:
@@ -242,7 +243,8 @@ def make_default_tossing3d_belief(
     rate_scales = dict(domain.learning_rate_prior_scales)
     known_curves = {name: (start, rate) for name, start, rate in domain.known_competence_curves}
     known_rates = dict(domain.known_learning_rates)
-    if unknown := sorted((set(known_curves) | set(known_rates)) - set(names)):
+    skill_priors = {name: rest for name, *rest in domain.skill_priors}
+    if unknown := sorted((set(known_curves) | set(known_rates) | set(skill_priors)) - set(names)):
         raise ValueError(f"no belief for {unknown}; the domain infers {sorted(set(names))}")
     for name in dict.fromkeys(names):
         index = seed_offsets[name]
@@ -275,6 +277,35 @@ def make_default_tossing3d_belief(
                         hypothesis=SkillHypothesis(competence=start, learning_rate=rate),
                         probability=1.0,
                     ),
+                )
+            )
+            continue
+        if name in skill_priors:
+            c_mean, c_strength, r_mean, r_sd = skill_priors[name]
+            grid = (np.arange(KNOWN_RATE_GRID) + 0.5) / KNOWN_RATE_GRID
+            c_w = beta_distribution.pdf(grid, c_mean * c_strength, (1 - c_mean) * c_strength)
+            rates = (
+                np.array([r_mean])
+                if r_sd <= 0
+                else np.linspace(0.0, r_mean + 4 * r_sd, SKILL_PRIOR_RATE_GRID)
+            )
+            r_w = np.ones(1) if r_sd <= 0 else np.exp(-0.5 * ((rates - r_mean) / r_sd) ** 2)
+            weights = np.outer(c_w, r_w)
+            weights = weights / weights.sum()
+            kept = [
+                (float(c), float(min(1.0, r)), float(weights[i, j]))
+                for i, c in enumerate(grid)
+                for j, r in enumerate(rates)
+                if weights[i, j] > 1e-9
+            ]
+            total = sum(w for _, _, w in kept)
+            beliefs[name] = WeightedHypothesisBelief(
+                hypotheses=tuple(
+                    WeightedHypothesis(
+                        hypothesis=SkillHypothesis(competence=c, learning_rate=r),
+                        probability=w / total,
+                    )
+                    for c, r, w in kept
                 )
             )
             continue

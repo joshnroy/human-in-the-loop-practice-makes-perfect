@@ -66,6 +66,9 @@ class DpMethod(EesMethod):
     dp_known_competence_curves: dict[str, tuple[float, float]] = Field(default_factory=dict)
     # Skill name -> rate: the learning rate is known; competence is still estimated.
     dp_known_learning_rates: dict[str, float] = Field(default_factory=dict)
+    # Skill name -> (competence mean, competence strength, rate mean): the shared
+    # `--skill-prior`. DP takes the Beta and the rate's mean (it holds no rate spread).
+    dp_skill_priors: dict[str, tuple[float, float, float]] = Field(default_factory=dict)
     dp_initial_learning_rate: float = Field(default=0.1, ge=0.0, allow_inf_nan=False)
     # Per-skill Delta priors for named robot skills; others keep dp_initial_learning_rate.
     dp_initial_learning_rate_for: dict[str, float] = Field(default_factory=dict)
@@ -187,7 +190,19 @@ class DpMethod(EesMethod):
                     beta=self.DP_PRIOR_STRENGTH * (1.0 - competence),
                     initial_learning_rate=self.initial_learning_rate(skill_name=name),
                 )
+        for name, (c_mean, c_strength, rate_mean) in self.dp_skill_priors.items():
+            self._dp_skill_priors[name] = DpMethod.skill_prior(
+                c_mean=c_mean, c_strength=c_strength, rate_mean=rate_mean
+            )
         return self
+
+    @staticmethod
+    def skill_prior(*, c_mean: float, c_strength: float, rate_mean: float) -> DpSkillPrior:
+        return DpSkillPrior(
+            alpha=c_mean * c_strength,
+            beta=(1.0 - c_mean) * c_strength,
+            initial_learning_rate=rate_mean,
+        )
 
     def initial_learning_rate(self, *, skill_name: str | None) -> float:
         """A skill's Delta prior: its own override, else the global one."""
