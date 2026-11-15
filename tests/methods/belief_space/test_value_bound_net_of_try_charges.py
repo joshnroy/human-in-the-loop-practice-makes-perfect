@@ -139,3 +139,67 @@ def test_without_the_linear_objective_the_bound_is_gross_as_before(*, tmp_path: 
     assert hard.optimistic_gain(
         belief_state=state, tries_left=30, consumes=consumes
     ) == pytest.approx(10 - 2.5)
+
+
+def _failed(*, model, atoms):  # noqa: ANN001, ANN202
+    route_b = next(g for g in model.ground_skills if g.skill.name == "RouteB")
+    return model.model_copy(
+        update={
+            "failure_effect_counts": (
+                FailureEffectCount(
+                    ground_skill=route_b,
+                    before_atoms=frozenset(atoms),
+                    was_random_exploration=False,
+                    add_effects=frozenset(),
+                    delete_effects=frozenset(atoms),
+                ),
+            )
+        }
+    )
+
+
+def test_a_search_prices_its_tries_once(*, tmp_path: Path, monkeypatch) -> None:  # noqa: ANN001
+    """The charges read only what a search holds fixed -- the cost table, the failure
+    records, lambda and the budget's forecast -- so every node after the first is
+    answered without pricing a single action again (Sweeping has 12,513 groundings)."""
+    from hitl_pmp.methods.belief_space import tossing3d_model
+
+    method, model, state, atoms = _model_and_belief(tmp_path=tmp_path)
+    failed = _failed(model=model, atoms=atoms)
+    consumes = lambda action: method.action_episodes(ground_skill=action)  # noqa: E731
+    priced = []
+    original = tossing3d_model.estimated_action_cost
+    monkeypatch.setattr(
+        tossing3d_model,
+        "estimated_action_cost",
+        lambda **kwargs: priced.append(1) or original(**kwargs),
+    )
+    first = failed.route_try_charges(belief_state=state, consumes=consumes)
+    after_first = len(priced)
+    assert after_first > 0
+    child = state.model_copy()  # another node of the same search: the same cost table
+    assert failed.route_try_charges(belief_state=child, consumes=consumes) == first
+    assert len(priced) == after_first
+    assert first["RouteB"] == pytest.approx((0.1, 0.2))
+
+
+def test_new_failure_records_or_a_new_cost_table_are_priced_afresh(*, tmp_path: Path) -> None:
+    method, model, state, atoms = _model_and_belief(tmp_path=tmp_path)
+    consumes = lambda action: method.action_episodes(ground_skill=action)  # noqa: E731
+    assert model.route_try_charges(belief_state=state, consumes=consumes)["RouteB"] == (
+        pytest.approx((0.1, 0.1))
+    )
+    failed = _failed(model=model, atoms=atoms)
+    assert failed.route_try_charges(belief_state=state, consumes=consumes)["RouteB"] == (
+        pytest.approx((0.1, 0.2))
+    )
+    dearer = state.model_copy(
+        update={
+            "expected_execution_costs": {
+                key: 2 * cost for key, cost in state.expected_execution_costs.items()
+            }
+        }
+    )
+    assert failed.route_try_charges(belief_state=dearer, consumes=consumes)["RouteB"] == (
+        pytest.approx((0.2, 0.4))
+    )
