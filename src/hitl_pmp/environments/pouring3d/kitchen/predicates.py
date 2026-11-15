@@ -39,6 +39,7 @@ class KitchenPredicates:
             *(PourPredicates.get(name=name) for name in SHARED),
             *(PourPredicates.make(name=f"Split{n}", types=()) for n in SPLIT_COUNTS),
             PourPredicates.make(name="PickPlannable", types=(O.robot_type, O.shrimp_type)),
+            PourPredicates.make(name="PlacePlannable", types=(O.robot_type, O.pitcher_type)),
         )
 
     @staticmethod
@@ -48,7 +49,7 @@ class KitchenPredicates:
     @staticmethod
     def translate(*, atoms: Atoms) -> Atoms:
         """The legacy measured atoms in this table's vocabulary."""
-        kept = {a for a in atoms if a[0] in (*SHARED, "PickPlannable")}
+        kept = {a for a in atoms if a[0] in (*SHARED, "PickPlannable", "PlacePlannable")}
         kept |= {
             (f"Split{objects[0].removeprefix('request_')}", ())
             for name, objects in atoms
