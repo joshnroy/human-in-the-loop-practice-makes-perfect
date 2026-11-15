@@ -11,6 +11,7 @@ from hitl_pmp.environments.vision_bracelet_robot import VisionBraceletKinovaGen3
 
 pytestmark = pytest.mark.xdist_group("kitchen_ikfast_closest")
 
+
 @pytest.fixture(scope="module")
 def robot():
     client = p.connect(p.DIRECT)
