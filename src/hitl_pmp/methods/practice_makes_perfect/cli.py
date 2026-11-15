@@ -708,6 +708,13 @@ class Tossing3DPomdpCli(EesCli):
             "empirical frequencies; 'all' (the default) enumerates every outcome.",
         )
         parser.add_argument(
+            "--pomdp-prune-static-groundings",
+            action=argparse.BooleanOptionalAction,
+            default=False,
+            help="Plan only with groundings whose static preconditions (on predicates no "
+            "practice skill changes) hold in the current scene; the rest can never apply.",
+        )
+        parser.add_argument(
             "--pomdp-value-bound-heuristic",
             action=argparse.BooleanOptionalAction,
             default=False,
@@ -975,6 +982,7 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_observation_probability_weight=args.pomdp_observation_probability_weight,
                 pomdp_log_full_search_tree=args.pomdp_log_full_search_tree,
                 pomdp_value_bound_heuristic=args.pomdp_value_bound_heuristic,
+                pomdp_prune_static_groundings=args.pomdp_prune_static_groundings,
                 pomdp_draw_scope=args.pomdp_draw_scope,
                 pomdp_determinized_variant=args.pomdp_determinized_variant,
                 pomdp_num_rollouts=args.pomdp_num_rollouts,
