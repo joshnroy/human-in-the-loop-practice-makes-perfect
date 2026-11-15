@@ -113,6 +113,7 @@ def test_from_a_state_the_food_only_reset_covered_it_restores_the_pour_start():
     assert _successor(ground=human, atoms=LEGACY_STATE) == frozenset({
         ("HandEmpty", ("robot",)),
         ("PitcherHome", ("pitcher",)),
+        ("PlacePlannable", ("robot", "pitcher")),
         *(("InPitcher", (f"potsticker_{i}", "pitcher")) for i in range(3)),
         *(("Settled", (f"potsticker_{i}",)) for i in range(3)),
         ("PayloadOrder", ("potsticker_0", "potsticker_1")),

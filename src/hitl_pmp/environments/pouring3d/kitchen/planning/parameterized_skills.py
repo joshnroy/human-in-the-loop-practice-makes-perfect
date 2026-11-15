@@ -75,6 +75,11 @@ BASE_ESCAPE_INSET_M = 0.05
 BASE_ESCAPE_MAX_M = 0.20
 BASE_ESCAPE_STEP_M = 0.01
 BASE_ESCAPE_DIRECTIONS = 16
+# A dumpling whose centre is below this lies on the floor (it rests about 1 cm up). One
+# that a pour flings under the base sits between the casters, clear of the 3-D body, but
+# inside the 2-D footprint and its escape inset (Curtis seed 8 of
+# pouring-cost-10seed-20261112, human-reset cost 10: 117 refused placements in a row).
+FLOOR_DUMPLING_MAX_Z_M = 0.05
 
 
 # MuJoCo's joint limits are soft: an arm resting at one sits slightly past it.
@@ -501,7 +506,12 @@ class KitchenMotionPlanner:
         refuses its own start: if the footprint inset by `BASE_ESCAPE_INSET_M` and the
         body at `ESCAPE_MARGIN_M` are clear, the base first escapes in the shortest
         straight line (`base_escape`) to a pose that passes them, and is planned from
-        there. A start that passes them plans exactly as it always has."""
+        there. A start that passes them plans exactly as it always has.
+
+        Only if that escape finds nothing, it is tried once more with the floor
+        dumplings (`floor_dumplings`) left out of the inset footprint: one under the base
+        is then crossed if the body clears it at `ESCAPE_MARGIN_M` on every step, and the
+        escape still ends only where the full checks, its footprint included, pass."""
         body_collides = KitchenMotionPlanner.body_check(
             sim=sim, arm=arm, held=held, also_collides=also_collides
         )
@@ -512,19 +522,32 @@ class KitchenMotionPlanner:
         if KitchenMotionPlanner.footprint_blocked(
             state=state, target=start, ignore=ignore
         ) or body_collides(pose):
+            escape_collides = KitchenMotionPlanner.body_check(
+                sim=sim,
+                arm=arm,
+                held=held,
+                also_collides=also_collides,
+                margin=ESCAPE_MARGIN_M,
+            )
             escape = KitchenMotionPlanner.base_escape(
                 state=state,
                 start=start,
                 body_collides=body_collides,
-                escape_collides=KitchenMotionPlanner.body_check(
-                    sim=sim,
-                    arm=arm,
-                    held=held,
-                    also_collides=also_collides,
-                    margin=ESCAPE_MARGIN_M,
-                ),
+                escape_collides=escape_collides,
                 ignore=ignore,
             )
+            floor = tuple(
+                n for n in KitchenMotionPlanner.floor_dumplings(state=state) if n not in ignore
+            )
+            if not escape and floor:
+                escape = KitchenMotionPlanner.base_escape(
+                    state=state,
+                    start=start,
+                    body_collides=body_collides,
+                    escape_collides=escape_collides,
+                    ignore=ignore,
+                    escape_ignore=floor,
+                )
             if not escape:
                 raise PlanningRefused(f"No collision-free base path to {what}")
             state = KitchenMotionPlanner.with_base(state=state, base=escape[-1])
@@ -550,17 +573,19 @@ class KitchenMotionPlanner:
         body_collides: Callable[[SE2], bool],
         escape_collides: Callable[[SE2], bool],
         ignore: tuple[str, ...] = (),
+        escape_ignore: tuple[str, ...] = (),
     ) -> list[np.ndarray]:
         """The shortest straight base translation, heading held, from a `start` inside
         the planning checks to the first pose that passes them (`[start, pose]`), every
         `BASE_ESCAPE_STEP_M` on the way clear of the escape checks: the footprint inset by
-        `BASE_ESCAPE_INSET_M`, the body at `ESCAPE_MARGIN_M`. Empty when the start itself
-        fails the escape checks (in contact, or nearly) or no direction escapes within
-        `BASE_ESCAPE_MAX_M`."""
+        `BASE_ESCAPE_INSET_M` (objects in `escape_ignore` left out of this one), the body
+        at `ESCAPE_MARGIN_M`. Empty when the start itself fails the escape checks (in
+        contact, or nearly) or no direction escapes within `BASE_ESCAPE_MAX_M`."""
+        inset_ignore = (*ignore, *escape_ignore)
 
         def escapable(pose: np.ndarray) -> bool:  # noqa: PLR0917 -- local helper
             return not KitchenMotionPlanner.footprint_blocked(
-                state=state, target=pose, inset=BASE_ESCAPE_INSET_M, ignore=ignore
+                state=state, target=pose, inset=BASE_ESCAPE_INSET_M, ignore=inset_ignore
             ) and not escape_collides(SE2(*(float(v) for v in pose)))
 
         if not escapable(start):
@@ -582,6 +607,16 @@ class KitchenMotionPlanner:
                 ) and not body_collides(SE2(*(float(v) for v in pose))):
                     return [start.copy(), pose]
         return []
+
+    @staticmethod
+    def floor_dumplings(*, state: Any) -> tuple[str, ...]:
+        """The dumplings lying on the floor: centre below `FLOOR_DUMPLING_MAX_Z_M`."""
+        prefix = KitchenPyBulletSim.movable_prefix
+        return tuple(
+            o.name
+            for o in sorted(state.get_objects(MujocoObjectType), key=lambda o: o.name)
+            if o.name.startswith(prefix) and float(state.get(o, "z")) < FLOOR_DUMPLING_MAX_Z_M
+        )
 
     @staticmethod
     def with_base(*, state: Any, base: np.ndarray) -> Any:
