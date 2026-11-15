@@ -298,7 +298,12 @@ class DpMethod(EesMethod):
         return target is None or ground_skill == target
 
     def observe_outcome(
-        self, *, ground_skill: GroundSkill, success: bool, was_random_exploration: bool = False
+        self,
+        *,
+        ground_skill: GroundSkill,
+        success: bool,
+        was_random_exploration: bool = False,
+        was_uninformative: bool = False,
     ) -> None:
         if self._dp_setup_dispatch:
             # A setup run trains nothing, but a success still ends the skill's
@@ -311,6 +316,7 @@ class DpMethod(EesMethod):
             ground_skill=ground_skill,
             success=success,
             was_random_exploration=was_random_exploration,
+            was_uninformative=was_uninformative,
         )
 
     def _observe_author_outcome(self, *, ground_skill: GroundSkill, success: bool) -> None:
