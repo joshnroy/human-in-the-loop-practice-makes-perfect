@@ -56,3 +56,39 @@ def test_an_evaluation_is_scored_from_each_tasks_bulk_event(*, tmp_path):
         ("GatherAndSweep", True, 5),
     ]
     assert (summary["num_solved"], summary["total_reward"]) == (2, 8)
+
+
+def test_a_run_is_rewarded_with_the_values_its_config_snapshot_names(*, tmp_path):
+    evaluation = tmp_path / "evaluations" / "0"
+    evaluation.mkdir(parents=True)
+    (evaluation / "results.json").write_text(
+        json.dumps({
+            "tasks": [
+                {"task": 0, "solved": True, "reason": "goal"},
+                {"task": 1, "solved": True, "reason": "goal"},
+            ],
+            "deployment_policy": {"kind": "dp_mdp"},
+        })
+    )
+    (evaluation / "actions.jsonl").write_text(
+        json.dumps({"task": 0, "label": "Sweep(robot)", "skill_trace": {"plate_count": 3}})
+        + "\n"
+        + json.dumps({
+            "task": 1,
+            "label": "GatherAndSweep(robot)",
+            "skill_trace": {"plate_count": 5},
+        })
+        + "\n"
+    )
+    (tmp_path / "config_snapshot.json").write_text(
+        json.dumps({"args": {"served_three_reward": "5.0", "served_five_reward": "10.0"}})
+    )
+    summary = RackTwoRouteSummary.run(run=tmp_path)["evaluations"]["0"]
+    assert [t["reward"] for t in summary["tasks"]] == [5.0, 10.0]
+    assert (summary["total_reward"], summary["max_reward"]) == (15.0, 20.0)
+
+
+def test_a_run_without_configured_rewards_keeps_three_and_five(*, tmp_path):
+    assert RackTwoRouteSummary.rewards(run=tmp_path) == {"Sweep": 3.0, "GatherAndSweep": 5.0}
+    (tmp_path / "config_snapshot.json").write_text(json.dumps({"args": {"seed": "0"}}))
+    assert RackTwoRouteSummary.rewards(run=tmp_path) == {"Sweep": 3.0, "GatherAndSweep": 5.0}

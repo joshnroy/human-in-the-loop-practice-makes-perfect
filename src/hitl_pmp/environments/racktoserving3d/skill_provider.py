@@ -11,7 +11,7 @@ from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 
 from .environment import RackServingEnvironment
 from .objects import RackServing3DObjects as Objects
-from .predicates import TWO_ROUTE_REWARDS, RackServing3DAtoms, RackServing3DPredicates
+from .predicates import RackServing3DAtoms, RackServing3DPredicates
 from .semantics import HUMAN_BATCH_RETURN, HUMAN_TOOL_RECOVERY
 from .skills import GATHER_AND_SWEEP_BOUNDS, SKILL_IDS, SWEEP_BOUNDS
 from .skills import RackServing3DSkills as Skills
@@ -35,7 +35,7 @@ class RackServingSkillProvider(SkillProvider):
         return RackServing3DPredicates.all(two_route=self.env.config.two_route_rewards)
 
     def goal_rewards(self) -> dict[str, float]:
-        return dict(TWO_ROUTE_REWARDS) if self.env.config.two_route_rewards else {}
+        return self.env.config.two_route_goal_rewards()
 
     def types(self) -> tuple[Type, ...]:
         return Objects.all_types()
