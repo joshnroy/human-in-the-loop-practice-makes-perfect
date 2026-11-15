@@ -123,6 +123,10 @@ class Tossing3DPomdpMethod(EesMethod):
     # the real session cost restarts at zero: exact under the linear cost objective,
     # which is additive, and not under the hard cost budget.
     pomdp_plan_beyond_session: bool = False
+    # Drop the groundings a static precondition rules out (`static_predicates`): ours
+    # grounds against every possible atom, so on Sweeping 12,496 of 12,513 groundings
+    # name a food order the rack's fixed FoodOrder chain never allows. Off by default.
+    pomdp_prune_static_groundings: bool = False
     pomdp_observation_probability_weight: float = Field(default=0.1, ge=0.0, allow_inf_nan=False)
     pomdp_draw_scope: DrawScope = "node"
     pomdp_determinized_variant: DeterminizedVariant = "algorithm3"
@@ -189,6 +193,10 @@ class Tossing3DPomdpMethod(EesMethod):
         default_factory=dict
     )
     _pending_consultation: tuple[str, SamplerConsultation] | None = PrivateAttr(default=None)
+    # Every grounding, and the static atoms the model's groundings were last pruned for.
+    _all_ground_skills: tuple[GroundSkill, ...] = PrivateAttr(default=())
+    _static_predicates: frozenset[str] = PrivateAttr(default=frozenset())
+    _pruned_for: frozenset[GroundAtom] | None = PrivateAttr(default=None)
 
     def configure_practice_accounting(self, *, accounting: PracticeAccounting) -> None:
         super().configure_practice_accounting(accounting=accounting)
@@ -451,6 +459,15 @@ class Tossing3DPomdpMethod(EesMethod):
             object_symmetry=reduce_search,
             merge_beliefs_by_counts=reduce_search,
         )
+        self._all_ground_skills = tuple(ground_skills)
+        # Static: a precondition's predicate that no practice skill (robot, human, or
+        # reset) adds, deletes or ignores, by the model's own reading of the effects.
+        self._static_predicates = (
+            frozenset(
+                atom.predicate.name for ground in ground_skills for atom in ground.preconditions
+            )
+            - self._pomdp_model._dynamic_predicates
+        )
         available = {ground_skill.skill.name for ground_skill in ground_skills}
         if self.pomdp_domain == TOSSING3D_DOMAIN:
             missing = {TOSS_SKILL, OPEN_GRIPPER_SKILL} - available
@@ -465,6 +482,36 @@ class Tossing3DPomdpMethod(EesMethod):
             "the configured practice domain's skills are missing: "
             f"{sorted(missing)} from {sorted(available)}"
         )
+
+    @property
+    def static_predicates(self) -> frozenset[str]:
+        return self._static_predicates
+
+    def prune_static_groundings(self, *, true_atoms: frozenset[GroundAtom]) -> None:
+        """Under `pomdp_prune_static_groundings`, give the model only the groundings
+        whose static preconditions all hold in `true_atoms`: no skill changes a static
+        atom, so the others can never apply. Redone whenever the static atoms differ
+        (a reset that is not a skill could move them); the model is rebuilt with every
+        field it had and keeps its random stream."""
+        if not self.pomdp_prune_static_groundings:
+            return
+        static = self._static_predicates
+        live = frozenset(atom for atom in true_atoms if atom.predicate.name in static)
+        if live == self._pruned_for:
+            return
+        kept = tuple(
+            ground
+            for ground in self._all_ground_skills
+            if all(atom in live for atom in ground.preconditions if atom.predicate.name in static)
+        )
+        old = self._pomdp_model
+        model = type(old)(**{
+            **{name: getattr(old, name) for name in type(old).model_fields},
+            "ground_skills": kept,
+        })
+        model._rng = old._rng
+        self._pomdp_model = model
+        self._pruned_for = live
 
     @property
     def search_depth(self) -> int:
@@ -832,6 +879,7 @@ class Tossing3DPomdpMethod(EesMethod):
         self._cycle_index += 1
 
     def select_skill_to_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
+        self.prune_static_groundings(true_atoms=true_atoms)
         self._refresh_execution_forecasts()
         self._decision_index += 1
         trace = SearchTrace()

@@ -668,10 +668,11 @@ DOMAIN_BEFORE_THE_ROBOT_RETURN = RACK_SERVING_DOMAIN.model_copy(
 )
 
 
-def _ours(*, config, decision_log, domain=RACK_SERVING_DOMAIN, offer_human=True):
+def _ours(*, config, decision_log, domain=RACK_SERVING_DOMAIN, offer_human=True, prune=False):
     env = RackServingEnvironment(config=config)
     provider = RackServingSkillProvider(env=env, offer_human_reset=offer_human)
     method = Tossing3DPomdpMethod(
+        pomdp_prune_static_groundings=prune,
         env=env,
         skill_provider=provider,
         pomdp_domain=Tossing3DPomdpCli.with_goal_rewards(domain=domain, provider=provider),
@@ -942,3 +943,40 @@ def test_ours_rack_bound_is_net_of_what_the_tries_cost_once_the_budget_forecasts
     gross = model.optimistic_gain(belief_state=state, tries_left=30)
     net = model.optimistic_gain(belief_state=state, tries_left=30, consumes=consumes)
     assert 0.0 < net < gross
+
+
+def test_ours_drops_the_groundings_a_static_precondition_rules_out(*, tmp_path):
+    """A predicate no practice skill adds, deletes or ignores is static; a grounding
+    one of whose static preconditions is false in the scene can never apply. Here that
+    is the rack's FoodOrder chain: one food order of 3,125 per bulk skill survives."""
+    method = _ours(config=TWO_ROUTE_CONFIG, decision_log=tmp_path / "ours.jsonl", prune=True)
+    everything = method._pomdp_model.ground_skills
+    assert "FoodOrder" in method.static_predicates
+    assert not method.static_predicates & method._pomdp_model._dynamic_predicates
+    _decision(method=method, atoms=BEFORE_SWEEP)
+    kept = method._pomdp_model.ground_skills
+    assert len(kept) < len(everything)
+    static = method.static_predicates
+    assert all(
+        atom in BEFORE_SWEEP
+        for ground in kept
+        for atom in ground.preconditions
+        if atom.predicate.name in static
+    )
+    bulk = [ground.skill.name for ground in kept if ground.skill.name in RACK_SWEEP_SKILLS]
+    assert sorted(bulk) == sorted(RACK_SWEEP_SKILLS)
+    # Nothing a static precondition allows is dropped.
+    assert len(kept) == sum(
+        all(atom in BEFORE_SWEEP for atom in ground.preconditions if atom.predicate.name in static)
+        for ground in everything
+    )
+
+
+def test_dropping_impossible_groundings_leaves_ours_first_decision_unchanged(*, tmp_path):
+    full = _ours(config=TWO_ROUTE_CONFIG, decision_log=tmp_path / "full.jsonl")
+    pruned = _ours(config=TWO_ROUTE_CONFIG, decision_log=tmp_path / "pruned.jsonl", prune=True)
+    chosen_full, record_full = _decision(method=full, atoms=BEFORE_SWEEP)
+    chosen_pruned, record_pruned = _decision(method=pruned, atoms=BEFORE_SWEEP)
+    assert chosen_full == chosen_pruned
+    assert record_full["search"] == record_pruned["search"]
+    assert record_full["value"] == record_pruned["value"]
