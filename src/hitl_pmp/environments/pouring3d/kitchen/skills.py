@@ -71,6 +71,7 @@ class KitchenSkills:
         settled = {atom("Settled", x) for x in each}
         splits = tuple(f"Split{n}" for n in SPLIT_COUNTS)
         held_s, plannable = atom("HoldingShrimp", r, s), atom("PickPlannable", r, s)
+        placeable = atom("PlacePlannable", r, p)
         picks = tuple(
             skill(
                 f"PickShrimpFrom{where}",
@@ -127,7 +128,7 @@ class KitchenSkills:
                 )
                 for n in SPLIT_COUNTS
             ),
-            skill("PlacePitcherAtHome", (r, p), {held}, {empty, home}, {held}),
+            skill("PlacePitcherAtHome", (r, p), {held, placeable}, {empty, home}, {held}),
             *picks,
             skill(
                 "DropShrimpIntoPitcher",
@@ -139,12 +140,12 @@ class KitchenSkills:
             ),
             # The human pour-back, applicable from any practice state (#742): it takes
             # the jug or a dumpling from the hand, stands the jug at home and returns
-            # every dumpling to it.
+            # every dumpling to it. The jug moved, so a placement refusal is forgotten.
             skill(
                 HUMAN_RESET,
                 (r, p, t, *each),
                 chain,
-                {empty, home, *inside, *settled},
+                {empty, home, placeable, *inside, *settled},
                 {
                     held,
                     *(atom("HoldingShrimp", r, x) for x in each),

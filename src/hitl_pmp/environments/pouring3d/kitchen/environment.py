@@ -15,8 +15,9 @@ from hitl_pmp.environments.pouring3d.practice.types import FrozenPourState
 
 from .config import KitchenGeometry
 from .pick_plannable import KitchenPickPlannable
+from .place_plannable import KitchenPlacePlannable
 from .predicates import KitchenPredicates
-from .types import ClosedLoopPourParameters, PickRefusal
+from .types import ClosedLoopPourParameters, PickRefusal, PlaceRefusal
 from .types import KitchenObjects as O
 
 HUMAN_RESET = "human_bulk_pour_back"
@@ -56,6 +57,9 @@ class KitchenEnvironment(FrozenPourEnvironment):
     _pick_watch: dict[str, Any] | None = PrivateAttr(default=None)
     # Each dumpling's last failed pick that was not a refusal: its starting poses and error.
     _pick_failures: dict[str, PickRefusal] = PrivateAttr(default_factory=dict)
+    # A planning refusal of the dispatched jug placement, under "pitcher"; kept until
+    # anything moves (see `place_plannable.py`).
+    _place_refusals: dict[str, PlaceRefusal] = PrivateAttr(default_factory=dict)
     # [skill, dumpling index, requested count, Pour ramp rate (deg/s), 0, 0]. Slots 4-5
     # held the open-loop pour's wiggle and duration; the closed-loop Pour fixes both.
     action_space: ClassVar[Box] = Box(
@@ -84,6 +88,7 @@ class KitchenEnvironment(FrozenPourEnvironment):
         """Start a held-out task as a fresh instance would: no refusal remembered."""
         self._pick_refusals.clear()
         self._pick_failures.clear()
+        self._place_refusals.clear()
 
     def reset_to_seed(self, *, seed: int, requested: int) -> FrozenPourState:
         if self._started:
@@ -124,6 +129,7 @@ class KitchenEnvironment(FrozenPourEnvironment):
         "episode_boundaries",
         "_pick_refusals",
         "_pick_failures",
+        "_place_refusals",
     )
 
     def simulation_checkpoint(self) -> dict[str, Any]:
@@ -191,6 +197,7 @@ class KitchenEnvironment(FrozenPourEnvironment):
                 if rests and name != c.held
             }
         atoms |= KitchenPickPlannable.atoms(controller=c, refusals=self._pick_refusals)
+        atoms |= KitchenPlacePlannable.atoms(controller=c, refusals=self._place_refusals)
         state.abstract_atoms = KitchenPredicates.translate(atoms=frozenset(atoms))
         return state
 
@@ -230,6 +237,26 @@ class KitchenEnvironment(FrozenPourEnvironment):
         self.current_state = self.observe()
         return self.current_state
 
+    def watched_place(self, *, action: Action) -> State:
+        """Dispatch the jug placement; remember it if it refused to plan
+        (`place_plannable`)."""
+        c = self.controller()
+        before = KitchenPlacePlannable.snapshot(controller=c) if c.held == "pitcher" else None
+        state = super().take_action(action=action)
+        if before is None:
+            return state
+        refusal = KitchenPlacePlannable.refusal(
+            controller=c,
+            before=before,
+            error=self.last_info.get("error"),
+            steps=int(self.last_info.get("controller_steps", -1)),
+        )
+        if refusal is None:
+            return state
+        self._place_refusals["pitcher"] = refusal
+        self.current_state = self.observe()
+        return self.current_state
+
     def take_action(self, *, action: Action) -> State:
         values = np.asarray(action, dtype=float)
         self.controller()
@@ -240,6 +267,8 @@ class KitchenEnvironment(FrozenPourEnvironment):
         picks = values[0] == skill_id and 0 <= skill_id < len(SKILL_NAMES)
         if picks and SKILL_NAMES[skill_id].startswith("PickShrimp"):
             return self.watched_pick(action=action, index=index)
+        if picks and SKILL_NAMES[skill_id] == "PlacePitcherAtHome":
+            return self.watched_place(action=action)
         return super().take_action(action=action)
 
     def reset_movables(self, *, destination: str | None = None) -> bool:

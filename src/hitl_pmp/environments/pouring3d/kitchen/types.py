@@ -51,6 +51,18 @@ class Pose(BaseModel):
     quat: tuple[float, float, float, float]
 
 
+class PlaceRefusal(BaseModel):
+    """A dispatched jug placement refused to plan from this state (`place_plannable.py`):
+    the base (x, y, yaw), the arm's joints, and every movable body's pose."""
+
+    model_config = ConfigDict(frozen=True)
+
+    base: tuple[float, ...]
+    arm: tuple[float, ...]
+    bodies: dict[str, Pose]
+    error: str | None = None
+
+
 class PickRefusal(BaseModel):
     """A dispatched dumpling pick refused to plan from these poses (`pick_plannable.py`)."""
 
