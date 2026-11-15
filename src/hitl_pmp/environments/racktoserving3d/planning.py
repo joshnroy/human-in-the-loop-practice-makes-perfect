@@ -84,6 +84,14 @@ BASE_REPLAN_STEPS = (None, 0.003, BASE_PATH_CHECK)
 BASE_CLEARANCE_M = 0.003
 # Base candidates tried per skill before refusing; each costs IK and possibly a BiRRT.
 MAX_STANCES = 400
+# Closed planning scenes kept for reuse (`RackPyBulletSim.reuse`): one per plan open at
+# once, and no plan opens a second while it plans.
+MAX_IDLE_SCENES = 2
+# Restages before a scene is disconnected instead of kept. PyBullet keeps every
+# collision shape a removed body used (it refuses `removeCollisionShape` on them), so a
+# kept client grows with each restage; a fresh build every 25 bounds that and still
+# saves 24 of every 25 robot loads.
+MAX_RESTAGES = 25
 
 
 class RackPyBulletSim(KitchenPyBulletSim):
@@ -93,18 +101,37 @@ class RackPyBulletSim(KitchenPyBulletSim):
     movables: ClassVar[tuple[str, ...]] = ("rack_0", "box_0", "wiper_0")
     movable_prefix: ClassVar[str] = "cube_"
 
+    # Whether a closed scene is kept, robot loaded, and rebuilt in place by the next
+    # `from_shelf`. Loading the Kinova URDF is 0.75 s and a build loads it twice
+    # (upstream's stock robot, then the vision-bracelet one replacing it): 1.5 s of each
+    # build, 13 builds in one robot batch return. Everything else is rebuilt from the
+    # new state exactly as a fresh build makes it (`_restage`).
+    reuse: ClassVar[bool] = True
+    _idle: ClassVar[list["RackPyBulletSim"]] = []
+
     def __init__(self, initial_state: Any, *, model: Any, data: Any, base_q: Any) -> None:  # noqa: PLR0917 -- upstream signature
         super().__init__(initial_state, model=model, data=data, base_q=base_q)
+        # The robot as loaded, before anything poses it, for `_restage` to return to.
+        self._as_loaded = self._robot_state()
+        self._restages = 0
         client = self.physics_client_id
         if self._cupboard1_shelf_id is not None:
             p.removeBody(self._cupboard1_shelf_id, physicsClientId=client)
-            # Upstream's set_state poses this id from the state's cupboard_1.
-            self._cupboard1_shelf_id = self._mirrored["cupboard_1"]
-        for name, body in list(self._cubes.items()):
+        for body in self._cubes.values():
             p.removeBody(body, physicsClientId=client)
-            self._cubes[name] = self._mirrored[name]
         for body in self._static_colliders.values():
             p.removeBody(body, physicsClientId=client)
+        self._rack_scene(model=model, data=data, base_q=base_q)
+        self._fresh_attributes = frozenset({*vars(self), "_fresh_attributes", "ignores_food"})
+
+    def _rack_scene(self, *, model: Any, data: Any, base_q: Any) -> None:
+        """This scene's own bodies, once upstream's stand-ins for them are gone."""
+        client = self.physics_client_id
+        if self._cupboard1_shelf_id is not None:
+            # Upstream's set_state poses this id from the state's cupboard_1.
+            self._cupboard1_shelf_id = self._mirrored["cupboard_1"]
+        for name in list(self._cubes):
+            self._cubes[name] = self._mirrored[name]
         self._static_colliders = {}
         # Upstream plans the mobile base only as a 2-D footprint, but a low reach can
         # fold the hand back into the TidyBot's own chassis, which MuJoCo collides
@@ -237,10 +264,81 @@ class RackPyBulletSim(KitchenPyBulletSim):
     @classmethod
     def from_shelf(cls, *, shelf: Any, ignores_food: bool = False) -> "RackPyBulletSim":
         state = shelf.core._get_object_centric_state()  # noqa: SLF001
-        sim = cls(state, model=shelf.model, data=shelf.data, base_q=shelf.ba)
+        idle = RackPyBulletSim._idle
+        if cls.reuse and cls is RackPyBulletSim and idle:
+            sim = idle.pop()
+            sim._restage(state=state, model=shelf.model, data=shelf.data, base_q=shelf.ba)
+        else:
+            sim = cls(state, model=shelf.model, data=shelf.data, base_q=shelf.ba)
         sim.ignores_food = ignores_food
         sim.set_state(state)
         return sim
+
+    def close(self) -> None:
+        """Kept for the next `from_shelf` while `reuse` holds (at most `MAX_IDLE_SCENES`
+        of them, each restaged at most `MAX_RESTAGES` times), else disconnected;
+        closing twice is closing once."""
+        idle = RackPyBulletSim._idle
+        if any(sim is self for sim in idle):
+            return
+        if (
+            self.reuse
+            and type(self) is RackPyBulletSim
+            and len(idle) < MAX_IDLE_SCENES
+            and self._restages < MAX_RESTAGES
+        ):
+            idle.append(self)
+            return
+        super().close()
+
+    def _robot_state(self) -> tuple[Any, Any, list[tuple[float, float]]]:
+        client, robot = self.physics_client_id, self.robot.robot_id
+        joints = [
+            p.getJointState(robot, joint, physicsClientId=client)[:2]
+            for joint in range(p.getNumJoints(robot, physicsClientId=client))
+        ]
+        return (
+            p.getBasePositionAndOrientation(robot, physicsClientId=client),
+            p.getBaseVelocity(robot, physicsClientId=client),
+            joints,
+        )
+
+    def _restage(self, *, state: Any, model: Any, data: Any, base_q: Any) -> None:
+        """Return this scene to exactly what a fresh build for `state` makes, the
+        loaded robot kept: every other body removed and mirrored again, the robot back
+        to its as-loaded pose, and every attribute as `__init__` leaves it."""
+        self._restages += 1
+        client, robot = self.physics_client_id, self.robot.robot_id
+        bodies = [
+            p.getBodyUniqueId(index, physicsClientId=client)
+            for index in range(p.getNumBodies(physicsClientId=client))
+        ]
+        for body in bodies:
+            if body != robot:
+                p.removeBody(body, physicsClientId=client)
+        (position, orientation), (linear, angular), joints = self._as_loaded
+        p.resetBasePositionAndOrientation(robot, position, orientation, physicsClientId=client)
+        p.resetBaseVelocity(robot, linear, angular, physicsClientId=client)
+        for joint, (angle, velocity) in enumerate(joints):
+            p.resetJointState(robot, joint, angle, velocity, physicsClientId=client)
+        for name in set(vars(self)) - self._fresh_attributes:
+            delattr(self, name)
+        # Upstream's own containers as its __init__ leaves them, its stand-ins for
+        # the cubes and the cupboard to be replaced by `_rack_scene` as there.
+        names = state.get_object_names()
+        self.base_link_to_held_obj = None
+        self._bins, self._bin_walls, self._bin_poses, self._boxes = {}, {}, {}, {}
+        self._static_boxes, self._bounding_boxes = {}, {}
+        self._static_base_obstacles = []
+        self._static_colliders = {}
+        self._cubes = {name: -1 for name in names if "cube" in name}
+        self._cupboard1_shelf_id = -1 if "cupboard_1" in names else None
+        self._mirror_scene(state=state, model=model, data=data, base_q=base_q)
+        self._rack_scene(model=model, data=data, base_q=base_q)
+        if "ignores_food" in vars(self):
+            del self.ignores_food
+        if frozenset(vars(self)) | {"ignores_food"} != self._fresh_attributes:
+            raise RuntimeError("a restaged planning scene differs from a fresh build")
 
 
 class ScraperPlan(BaseModel):
