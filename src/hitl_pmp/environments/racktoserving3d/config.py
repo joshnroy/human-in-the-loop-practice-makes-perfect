@@ -67,10 +67,15 @@ class RackServingConfig(BaseModel):
     bulk_transfer_only: bool = False
     # The two-route reward structure (Josh, 2026-11-12), opt-in: Sweep succeeds when at
     # least three dumplings are on the plate and that outcome is worth 3; GatherAndSweep
-    # succeeds when all five are and is worth 5 (`TWO_ROUTE_REWARDS`). The rewards are
-    # given to the methods, never estimated. Needs `bulk_transfer_only`, whose one
+    # succeeds when all five are and is worth 5 (`two_route_goal_rewards`). The rewards
+    # are given to the methods, never estimated. Needs `bulk_transfer_only`, whose one
     # bulk attempt per task is what makes each bulk skill a route.
     two_route_rewards: bool = False
+    # What ServedThree (Sweep's outcome) and ServedFive (GatherAndSweep's) are worth
+    # under `two_route_rewards`; anything but the 3 and 5 defaults needs it. The
+    # planners and the deployed policies all read them through the provider.
+    served_three_reward: Positive = 3.0
+    served_five_reward: Positive = 5.0
     # RobotBatchReturn (Josh, 2026-11-13), opt-in: one robot skill that puts every
     # dumpling back on its start slot, the robot counterpart of the person's batch
     # return, offered in training only (`robot_batch_return.py`). It needs a start
@@ -263,6 +268,13 @@ class RackServingConfig(BaseModel):
     scraper_friction: Friction = (0.4, 0.005, 0.0001)
     scraper_blade_friction: Friction = (0.25, 0.005, 0.0001)
 
+    def two_route_goal_rewards(self) -> dict[str, float]:
+        """What each two-route outcome is worth, by the predicate that holds in it;
+        empty without `two_route_rewards`."""
+        if not self.two_route_rewards:
+            return {}
+        return {"ServedThree": self.served_three_reward, "ServedFive": self.served_five_reward}
+
     def gather_and_sweep_bounds(self) -> tuple[tuple[float, float], ...]:
         """GatherAndSweep's (s, delta, d) bounds, `gather_delta_high` applied."""
         squeeze, (delta_low, delta_high), depth = GATHER_AND_SWEEP_BOUNDS
@@ -386,6 +398,10 @@ class RackServingConfig(BaseModel):
             raise ValueError("start_layout custom needs exactly five custom_layout offsets")
         if self.two_route_rewards and not (self.bulk_transfer_only and self.sweep_skill):
             raise ValueError("two_route_rewards needs bulk_transfer_only and sweep_skill")
+        if not self.two_route_rewards and (
+            self.served_three_reward != 3.0 or self.served_five_reward != 5.0
+        ):
+            raise ValueError("served_three_reward and served_five_reward need two_route_rewards")
         if self.robot_batch_return and (
             self.start_layout == "scattered" or self.food_handling != "welded"
         ):

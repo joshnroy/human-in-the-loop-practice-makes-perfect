@@ -5,8 +5,10 @@ from `step_events.jsonl` (each robot event's `skill_trace.plate_count` is the co
 after it); evaluation from each `evaluations/<index>/` (`results.json`, and
 `actions.jsonl` for the plate count after a task's bulk skill). A task is solved by
 the skill that ended it (Josh, 2026-11-12): a Sweep that left 3 or more on the plate
-is solved and worth 3, a GatherAndSweep that left all 5 is solved and worth 5, and
-anything else is unsolved and worth 0, a GatherAndSweep that landed 3 or 4 included.
+is solved and worth `served_three_reward`, a GatherAndSweep that left all 5 is solved
+and worth `served_five_reward` (from the run's `config_snapshot.json`; 3 and 5 when it
+names neither), and anything else is unsolved and worth 0, a GatherAndSweep that
+landed 3 or 4 included.
 `results_solved` is the run's own `solved`; runs from before that rule (which stopped a
 task the moment all five settled, leaving no action event: counted as 5 here) can
 disagree with `solved`. Post-run only.
@@ -19,7 +21,9 @@ from typing import Any
 
 BULK = ("Sweep", "GatherAndSweep")
 NEEDED = {"Sweep": 3, "GatherAndSweep": 5}
-REWARD = {"Sweep": 3, "GatherAndSweep": 5}
+REWARD = {"Sweep": 3.0, "GatherAndSweep": 5.0}
+# The `RackServingConfig` field that prices each bulk skill's outcome.
+REWARD_FIELD = {"Sweep": "served_three_reward", "GatherAndSweep": "served_five_reward"}
 
 
 class RackTwoRouteSummary:
@@ -30,13 +34,25 @@ class RackTwoRouteSummary:
         return [json.loads(line) for line in path.read_text().splitlines() if line]
 
     @staticmethod
+    def rewards(*, run: Path) -> dict[str, float]:
+        """Each bulk skill's reward as the run was configured; the 3 and 5 defaults
+        for a run whose snapshot predates the reward flags or is missing."""
+        snapshot = run / "config_snapshot.json"
+        args = json.loads(snapshot.read_text()).get("args", {}) if snapshot.exists() else {}
+        return {
+            skill: float(args.get(REWARD_FIELD[skill], default))
+            for skill, default in REWARD.items()
+        }
+
+    @staticmethod
     def solved(*, skill: str | None, count: int) -> bool:
         return skill in NEEDED and count >= NEEDED[skill]
 
     @staticmethod
-    def reward(*, skill: str | None, count: int) -> int:
+    def reward(*, skill: str | None, count: int, rewards: dict[str, float] | None = None) -> float:
+        rewards = REWARD if rewards is None else rewards
         return (
-            REWARD[skill] if skill and RackTwoRouteSummary.solved(skill=skill, count=count) else 0
+            rewards[skill] if skill and RackTwoRouteSummary.solved(skill=skill, count=count) else 0
         )
 
     @staticmethod
@@ -113,7 +129,8 @@ class RackTwoRouteSummary:
         return summary
 
     @staticmethod
-    def evaluation(*, directory: Path) -> dict[str, Any]:
+    def evaluation(*, directory: Path, rewards: dict[str, float] | None = None) -> dict[str, Any]:
+        rewards = REWARD if rewards is None else rewards
         results = json.loads((directory / "results.json").read_text())
         actions = RackTwoRouteSummary.lines(path=directory / "actions.jsonl")
         # The recording names every dispatched skill, the goal-stopped one included.
@@ -142,7 +159,7 @@ class RackTwoRouteSummary:
                 "plate_count": count,
                 "solved": RackTwoRouteSummary.solved(skill=skill, count=count),
                 "results_solved": task["solved"],
-                "reward": RackTwoRouteSummary.reward(skill=skill, count=count),
+                "reward": RackTwoRouteSummary.reward(skill=skill, count=count, rewards=rewards),
                 "reason": task["reason"],
                 "errors": [a["skill_error"] for a in own if a.get("skill_error")],
             })
@@ -151,7 +168,7 @@ class RackTwoRouteSummary:
             "tasks": tasks,
             "num_solved": sum(t["solved"] for t in tasks),
             "total_reward": sum(t["reward"] for t in tasks),
-            "max_reward": 5 * len(tasks),
+            "max_reward": max(rewards.values()) * len(tasks),
         }
 
     @staticmethod
@@ -159,10 +176,12 @@ class RackTwoRouteSummary:
         evaluations = sorted(
             d for d in (run / "evaluations").glob("*") if (d / "results.json").exists()
         )
+        rewards = RackTwoRouteSummary.rewards(run=run)
         return {
             "practice": RackTwoRouteSummary.practice(run=run),
             "evaluations": {
-                d.name: RackTwoRouteSummary.evaluation(directory=d) for d in evaluations
+                d.name: RackTwoRouteSummary.evaluation(directory=d, rewards=rewards)
+                for d in evaluations
             },
         }
 

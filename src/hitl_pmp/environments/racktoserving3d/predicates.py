@@ -8,11 +8,11 @@ from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate
 from .objects import RackServing3DObjects as Objects
 
 AbstractAtom = tuple[str, tuple[str, ...]]
-# `RackServingConfig.two_route_rewards`: what each outcome is worth, by the predicate
-# that holds in it. The two never hold together: which one a solved task holds is
-# decided by the bulk skill that solved it (`RackServing3DAtoms.served_verdict`).
+# `RackServingConfig.two_route_rewards`: ServedThree and ServedFive never hold
+# together: which one a solved task holds is decided by the bulk skill that solved it
+# (`RackServing3DAtoms.served_verdict`). What each is worth is the config's
+# (`RackServingConfig.two_route_goal_rewards`).
 TWO_ROUTE_SWEEP_COUNT = 3
-TWO_ROUTE_REWARDS = {"ServedThree": 3.0, "ServedFive": 5.0}
 
 
 class RackServing3DAtoms:
