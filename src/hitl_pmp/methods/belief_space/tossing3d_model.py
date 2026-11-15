@@ -140,6 +140,18 @@ class Tossing3DPracticeModel(BaseModel):
     _last_projection: tuple[Tossing3DBeliefState, Tossing3DBeliefState] | None = PrivateAttr(
         default=None
     )
+    # ((cost table, failure records, budget forecast, ground skills, domain), lambda,
+    # charges) of the last `route_try_charges`; the five compared by identity, as they
+    # are fixed in a search.
+    _try_charges_cache: tuple[tuple[object, ...], float, dict[str, tuple[float, float]]] | None = (
+        PrivateAttr(default=None)
+    )
+    # `restore_cost`'s candidates by the atom or conditional predicate they add (a pure
+    # function of `ground_skills`), and their forecast costs under the last cost table.
+    _restorer_index: (
+        tuple[object, dict[GroundAtom, frozenset[int]], dict[str, frozenset[int]]] | None
+    ) = PrivateAttr(default=None)
+    _restorer_costs: tuple[object, object, dict[int, float]] | None = PrivateAttr(default=None)
 
     def model_post_init(self, __context: object) -> None:
         self._rng = np.random.default_rng(self.seed)
@@ -335,6 +347,23 @@ class Tossing3DPracticeModel(BaseModel):
         budget."""
         if consumes is None or not self.linear_cost_lambda:
             return {}
+        # Everything read below is fixed within one search (the cost forecast, as
+        # `estimated_action_cost` says; the failure records; lambda; the budget's
+        # forecast), so a search prices its tries once. Identity, as for the symmetry.
+        key = (
+            belief_state.expected_execution_costs,
+            self.failure_effect_counts,
+            consumes,
+            self.ground_skills,
+            self._domain,
+        )
+        cached = self._try_charges_cache
+        if (
+            cached is not None
+            and all(a is b for a, b in zip(cached[0], key, strict=True))
+            and cached[1] == self.linear_cost_lambda
+        ):
+            return dict(cached[2])
         price = self.linear_cost_lambda
         charges: dict[str, tuple[float, float]] = {}
         for ground_skill in self.ground_skills:
@@ -348,6 +377,7 @@ class Tossing3DPracticeModel(BaseModel):
             )
             first, cheapest_again = charges.get(route, (math.inf, math.inf))
             charges[route] = (min(first, cost), min(cheapest_again, again))
+        self._try_charges_cache = (key, self.linear_cost_lambda, dict(charges))
         return charges
 
     def restore_cost(
@@ -381,18 +411,48 @@ class Tossing3DPracticeModel(BaseModel):
             removed &= count.delete_effects - count.add_effects
         if not removed:
             return 0.0
+        by_atom, by_conditional = self._restorers()
         names = {atom.predicate.name for atom in removed}
-        costs = [
-            estimated_action_cost(state=belief_state, action=other)
-            for other in self.ground_skills
-            if removed & other.add_effects
-            or any(
-                effect_atom.predicate.name in names
-                for effect in other.skill.conditional_add_effects
-                for effect_atom in effect.add_effects
+        restorers = set().union(
+            *(by_atom.get(atom, ()) for atom in removed),
+            *(by_conditional.get(name, ()) for name in names),
+        )
+        if not restorers:
+            return 0.0
+        priced = self._restorer_costs
+        if (
+            priced is None
+            or priced[0] is not belief_state.expected_execution_costs
+            or priced[1] is not self.ground_skills
+        ):
+            priced = (belief_state.expected_execution_costs, self.ground_skills, {})
+            self._restorer_costs = priced
+        costs = priced[2]
+        for index in restorers - costs.keys():
+            costs[index] = estimated_action_cost(
+                state=belief_state, action=self.ground_skills[index]
             )
-        ]
-        return min(costs) if costs else 0.0
+        return min(costs[index] for index in restorers)
+
+    def _restorers(self) -> tuple[dict[GroundAtom, frozenset[int]], dict[str, frozenset[int]]]:
+        """The ground skills (by index) that add each atom, and those with a conditional
+        add effect of each predicate name: `restore_cost`'s candidates, indexed once
+        instead of scanned for every try."""
+        if self._restorer_index is None or self._restorer_index[0] is not self.ground_skills:
+            by_atom: dict[GroundAtom, set[int]] = {}
+            by_conditional: dict[str, set[int]] = {}
+            for index, other in enumerate(self.ground_skills):
+                for atom in other.add_effects:
+                    by_atom.setdefault(atom, set()).add(index)
+                for effect in other.skill.conditional_add_effects:
+                    for effect_atom in effect.add_effects:
+                        by_conditional.setdefault(effect_atom.predicate.name, set()).add(index)
+            self._restorer_index = (
+                self.ground_skills,
+                {atom: frozenset(i) for atom, i in by_atom.items()},
+                {name: frozenset(i) for name, i in by_conditional.items()},
+            )
+        return self._restorer_index[1], self._restorer_index[2]
 
     def J(
         self, *, belief_state: Tossing3DBeliefState, summed_cost: float, num_samples: int
