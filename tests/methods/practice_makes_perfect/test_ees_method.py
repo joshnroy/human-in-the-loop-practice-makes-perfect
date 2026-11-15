@@ -74,13 +74,19 @@ class _CountingEesMethod(EesMethod):
     observe_outcome_calls: int = 0
 
     def observe_outcome(
-        self, *, ground_skill: GroundSkill, success: bool, was_random_exploration: bool = False
+        self,
+        *,
+        ground_skill: GroundSkill,
+        success: bool,
+        was_random_exploration: bool = False,
+        was_uninformative: bool = False,
     ) -> None:
         self.observe_outcome_calls += 1
         super().observe_outcome(
             ground_skill=ground_skill,
             success=success,
             was_random_exploration=was_random_exploration,
+            was_uninformative=was_uninformative,
         )
 
 

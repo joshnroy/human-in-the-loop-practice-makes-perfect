@@ -735,6 +735,9 @@ class DeploymentSnapshot:
             key: getattr(method, key)
             for key in EesMethod.model_fields
             if key not in {"env", "skill_provider", "draw_recorder"}
+            # Carried only when on, so a run with it off writes the snapshot it always
+            # wrote (the policy file's hash is in every measurement record).
+            and (key != "competence_from_informed_only" or method.competence_from_informed_only)
         }
         return pickle.dumps(
             {
