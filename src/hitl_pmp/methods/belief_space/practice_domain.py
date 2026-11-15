@@ -80,6 +80,15 @@ class PracticeDomain(BaseModel, abc.ABC):
     # (belief name, scale): that skill's starting learning-rate prior is the shared one
     # with its scale multiplied by this; 0 puts all of it at a rate of zero.
     learning_rate_prior_scales: tuple[tuple[str, float], ...] = ()
+    # (belief name, start, rate): perfect information. That skill's competence after n
+    # tries is min(1, start + rate * n), believed with certainty, so no outcome moves it.
+    known_competence_curves: tuple[tuple[str, float, float], ...] = ()
+    # (belief name, rate): that skill's learning rate is known; its competence is not.
+    known_learning_rates: tuple[tuple[str, float], ...] = ()
+    # (belief name, competence mean, competence strength, rate mean, rate sd): that skill's
+    # prior is Beta(mean*strength, (1-mean)*strength) on competence and a normal on the
+    # learning rate truncated at 0 -- the same prior DP gets (`--skill-prior`).
+    skill_priors: tuple[tuple[str, float, float, float, float], ...] = ()
     # Expectimax depth when the run does not set one.
     default_search_depth: int = Field(default=3, ge=0)
     # Reduce expectimax by exact object symmetry and count-keyed beliefs

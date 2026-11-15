@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+import math
+from collections.abc import Callable, Iterable, Mapping
 from types import MappingProxyType
 from typing import Any, ClassVar
 
@@ -134,6 +135,11 @@ class Tossing3DPracticeModel(BaseModel):
     _domain: PracticeDomain = PrivateAttr()
     # ((lambda, step price), the domain carrying them) of the last valuation.
     _priced_domain: tuple[tuple[float, float], PracticeDomain] | None = PrivateAttr(default=None)
+    # The last belief state forecast and its forecast: the open-list bound and J value
+    # the same node one after the other, and the forecast is a pure function of it.
+    _last_projection: tuple[Tossing3DBeliefState, Tossing3DBeliefState] | None = PrivateAttr(
+        default=None
+    )
 
     def model_post_init(self, __context: object) -> None:
         self._rng = np.random.default_rng(self.seed)
@@ -204,13 +210,22 @@ class Tossing3DPracticeModel(BaseModel):
             else self.domain.model_copy(update={"deployment_horizon": self.deployment_horizon})
         )
 
+    def projected_belief_state(self, *, belief_state: Tossing3DBeliefState) -> Tossing3DBeliefState:
+        """`refit_belief_state(state=belief_state)`, reused while the state is the last."""
+        last = self._last_projection
+        if last is not None and last[0] is belief_state:
+            return last[1]
+        projected = refit_belief_state(state=belief_state)
+        self._last_projection = (belief_state, projected)
+        return projected
+
     def sample_theta_from_belief(self, *, belief_state: Tossing3DBeliefState) -> Any:
         return self.sample_thetas_from_belief(belief_state=belief_state, num_samples=1)[0]
 
     def sample_thetas_from_belief(
         self, *, belief_state: Tossing3DBeliefState, num_samples: int
     ) -> list[Any]:
-        projected = refit_belief_state(state=belief_state)
+        projected = self.projected_belief_state(belief_state=belief_state)
         return self._domain.sample_thetas(
             beliefs=projected.skill_beliefs,
             sample_skills=lambda belief, count: self.sample_skills(belief=belief, count=count),
@@ -252,7 +267,7 @@ class Tossing3DPracticeModel(BaseModel):
     def sample_policy_values_from_belief(
         self, *, belief_state: Tossing3DBeliefState, num_samples: int
     ) -> np.ndarray:
-        projected = refit_belief_state(state=belief_state)
+        projected = self.projected_belief_state(belief_state=belief_state)
         return self.valued_domain().sample_policy_values(
             beliefs=projected.skill_beliefs, rng=self._rng, count=num_samples
         )
@@ -263,6 +278,121 @@ class Tossing3DPracticeModel(BaseModel):
         if self.linear_cost_lambda is not None:
             return policy_value - self.linear_cost_lambda * summed_cost
         return policy_value if summed_cost <= PRACTICE_BUDGET else -np.inf
+
+    def optimistic_gain(
+        self,
+        *,
+        belief_state: Tossing3DBeliefState,
+        tries_left: float,
+        consumes: Callable[[GroundSkill], float] | None = None,
+    ) -> float:
+        """How much more objective at most `tries_left` tries could add, for the search's
+        open-list order; 0 for a domain that offers no bound.
+
+        Under the linear objective with the actions that `consumes` the budget known, the
+        bound is net of what those tries must cost: the best, over the routes and over
+        n <= `tries_left`, of n tries of one route less the least n tries of it are
+        charged (`route_try_charges`). Gross of that charge, every node with tries enough
+        left to saturate the best route has the same bound, so a try of another route
+        costs the open-list order only its price, exactly as a try of the best route
+        does, and the search spreads over every mix of the two instead of going deep."""
+        bound = getattr(self._domain, "optimistic_policy_value", None)
+        if bound is None:
+            return 0.0
+        projected = self.projected_belief_state(belief_state=belief_state)
+        beliefs = projected.skill_beliefs
+        now = self._domain.expected_policy_value(beliefs=beliefs)
+        charges = self.route_try_charges(belief_state=belief_state, consumes=consumes)
+        if not charges:
+            return max(0.0, bound(beliefs=beliefs, tries_left=tries_left) - now)
+        best = now
+        for route, (first, again) in charges.items():
+            ceiling = bound(beliefs=beliefs, tries_left=tries_left, routes=(route,))
+            for n in range(1, math.floor(tries_left) + 1):
+                value = bound(beliefs=beliefs, tries_left=n, routes=(route,))
+                best = max(best, value - first - (n - 1) * again)
+                # The bound never falls with more tries, so past its ceiling another
+                # try only adds a charge.
+                if value >= ceiling:
+                    break
+        return max(0.0, best - now)
+
+    def route_try_charges(
+        self,
+        *,
+        belief_state: Tossing3DBeliefState,
+        consumes: Callable[[GroundSkill], float] | None,
+    ) -> dict[str, tuple[float, float]]:
+        """Per route (a belief the budget's tries train): the least the objective charges
+        its first try, and each try after that.
+
+        A try is charged lambda times its forecast cost. A try after another must also
+        put back whatever precondition every outcome of the earlier try removes -- its
+        success effects, and the failure effects observed for it; a failure never
+        observed is taken to change nothing -- so it is charged in addition the cheapest
+        action that can add such an atom back. Empty without the linear objective or
+        without `consumes`, the search's own forecast of what an action takes from the
+        budget."""
+        if consumes is None or not self.linear_cost_lambda:
+            return {}
+        price = self.linear_cost_lambda
+        charges: dict[str, tuple[float, float]] = {}
+        for ground_skill in self.ground_skills:
+            if consumes(ground_skill) <= 0.0:
+                continue
+            name = ground_skill.skill.name
+            route = self.domain.belief_name(skill_name=name) or name
+            cost = price * estimated_action_cost(state=belief_state, action=ground_skill)
+            again = cost + price * self.restore_cost(
+                belief_state=belief_state, ground_skill=ground_skill
+            )
+            first, cheapest_again = charges.get(route, (math.inf, math.inf))
+            charges[route] = (min(first, cost), min(cheapest_again, again))
+        return charges
+
+    def restore_cost(
+        self, *, belief_state: Tossing3DBeliefState, ground_skill: GroundSkill
+    ) -> float:
+        """The cheapest forecast cost of an action that adds back a precondition of
+        `ground_skill` that every outcome of it removes; 0 when none is removed, or when
+        no action can add one back (then a second try is never possible, and charging
+        nothing keeps the bound a bound)."""
+        removed = ground_skill.preconditions & (
+            ground_skill.delete_effects
+            | {
+                atom
+                for atom in ground_skill.preconditions
+                if atom.predicate in ground_skill.ignore_effects
+            }
+        )
+        removed -= ground_skill.add_effects
+        conditional = {
+            effect_atom.predicate.name
+            for effect in ground_skill.skill.conditional_add_effects
+            for effect_atom in effect.add_effects
+        }
+        removed = frozenset(atom for atom in removed if atom.predicate.name not in conditional)
+        failures = [
+            count for count in self.failure_effect_counts if count.ground_skill == ground_skill
+        ]
+        if not failures:
+            return 0.0
+        for count in failures:
+            removed &= count.delete_effects - count.add_effects
+        if not removed:
+            return 0.0
+        names = {atom.predicate.name for atom in removed}
+        costs = [
+            estimated_action_cost(state=belief_state, action=other)
+            for other in self.ground_skills
+            if removed & other.add_effects
+            or any(
+                effect_atom.predicate.name in names
+                for effect in other.skill.conditional_add_effects
+                for effect_atom in effect.add_effects
+            )
+        ]
+        return min(costs) if costs else 0.0
 
     def J(
         self, *, belief_state: Tossing3DBeliefState, summed_cost: float, num_samples: int
@@ -275,7 +405,7 @@ class Tossing3DPracticeModel(BaseModel):
         Particle/grid approximation and the existing training forecasts remain.
         """
         assert num_samples >= 1
-        projected = refit_belief_state(state=belief_state)
+        projected = self.projected_belief_state(belief_state=belief_state)
         # Net of lambda * E[deployment cost] when the domain models it (practice_domain.py).
         policy_value = self.valued_domain().expected_policy_value(beliefs=projected.skill_beliefs)
         return self.G(policy_value=policy_value, summed_cost=summed_cost)

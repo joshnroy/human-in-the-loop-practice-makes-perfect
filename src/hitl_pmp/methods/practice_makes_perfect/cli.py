@@ -120,7 +120,98 @@ class EesCli:
         return AlwaysAskReset(cost=args.always_ask_reset_cost)
 
     @staticmethod
+    def known_curves(*, args: argparse.Namespace) -> dict[str, tuple[float, float]]:
+        """--known-competence-start/-rate as one curve per skill named by both. A start
+        needs a rate; a rate alone is `known_rates`."""
+        starts = getattr(args, "known_competence_start", None) or {}
+        rates = getattr(args, "known_competence_rate", None) or {}
+        if unpaired := sorted(set(starts) - set(rates)):
+            raise ValueError(f"--known-competence-start without a rate for {unpaired}")
+        return {name: (starts[name], rates[name]) for name in starts}
+
+    @staticmethod
+    def skill_priors(*, args: argparse.Namespace) -> dict[str, tuple[float, float, float, float]]:
+        """--skill-prior SKILL=C_MEAN,C_STRENGTH,RATE_MEAN,RATE_SD, one per skill."""
+        out: dict[str, tuple[float, float, float, float]] = {}
+        for spec in getattr(args, "skill_prior", None) or []:
+            name, _, raw = spec.partition("=")
+            values = tuple(float(v) for v in raw.split(","))
+            if not name or len(values) != 4 or name in out:
+                raise ValueError(
+                    "--skill-prior expects SKILL=c_mean,c_strength,rate_mean,rate_sd "
+                    f"once per skill, got {spec!r}"
+                )
+            c_mean, c_strength, rate_mean, rate_sd = values
+            if not (0 < c_mean < 1 and c_strength > 0 and rate_mean >= 0 and rate_sd >= 0):
+                raise ValueError(
+                    f"--skill-prior {spec!r}: need 0<c_mean<1, c_strength>0, rates >= 0"
+                )
+            out[name] = (c_mean, c_strength, rate_mean, rate_sd)
+        return out
+
+    @staticmethod
+    def deploy_curve_priors(
+        *, args: argparse.Namespace
+    ) -> dict[str, tuple[float, float, float, float]]:
+        """The --skill-prior of every skill, when --deploy-current-competence is set."""
+        if not getattr(args, "deploy_current_competence", False):
+            return {}
+        priors = EesCli.skill_priors(args=args)
+        if not priors:
+            raise ValueError("--deploy-current-competence needs --skill-prior for its skills")
+        return priors
+
+    @staticmethod
+    def known_rates(*, args: argparse.Namespace) -> dict[str, float]:
+        """Skills given --known-competence-rate alone: the learning rate is known, the
+        competence is still estimated from outcomes."""
+        starts = getattr(args, "known_competence_start", None) or {}
+        rates = getattr(args, "known_competence_rate", None) or {}
+        return {name: rate for name, rate in rates.items() if name not in starts}
+
+    @staticmethod
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:
+        for flag, text in (
+            ("--known-competence-start", "SKILL=S: perfect information, competence untrained"),
+            ("--known-competence-rate", "SKILL=R: perfect information, gain per practice try"),
+        ):
+            parser.add_argument(
+                flag,
+                action=DpCli.SkillValues,
+                default={},
+                metavar="SKILL=VALUE",
+                help=f"{text}. DP and the belief-space method then estimate nothing for "
+                "that skill: competence after n tries is min(1, S + R * n), in planning "
+                "and deployment. EES ignores it.",
+            )
+        parser.add_argument(
+            "--skill-prior",
+            action="append",
+            default=None,
+            metavar="SKILL=C_MEAN,C_STRENGTH,RATE_MEAN,RATE_SD",
+            help="One skill's prior, given identically to DP and the belief-space method: "
+            "Beta(C_MEAN*C_STRENGTH, (1-C_MEAN)*C_STRENGTH) on its competence and a normal "
+            "(RATE_MEAN, RATE_SD) truncated at 0 on its learning rate. DP holds no spread on "
+            "the rate, so it takes RATE_MEAN as its starting Delta. Repeatable.",
+        )
+        parser.add_argument(
+            "--deploy-current-competence",
+            action="store_true",
+            help="Deploy on each skill's current competence with learning included: the "
+            "posterior mean of start + rate * tries under its --skill-prior, conditioned on "
+            "each practice outcome at the try it happened (deployment.CurrentCompetence), "
+            "instead of the recent-rounds average. Same estimator for DP and the "
+            "belief-space method.",
+        )
+        parser.add_argument(
+            "--practice-try-skills",
+            nargs="+",
+            default=None,
+            metavar="SKILL",
+            help="The skills whose completed execution counts as one practice try under "
+            "--practice-episode-budget, for the practice loop and the belief-space "
+            "planner alike. Default: every skill with learnable parameters.",
+        )
         parser.add_argument(
             "--record-ees-decisions",
             action="store_true",
@@ -418,6 +509,10 @@ class EesCli:
             planning_timeout=args.planning_timeout,
             competence_window_size=args.competence_window_size,
             competence_recency_size=args.competence_recency_size,
+            practice_try_skills=(
+                frozenset(args.practice_try_skills) if args.practice_try_skills else None
+            ),
+            deploy_curve_priors=EesCli.deploy_curve_priors(args=args),
             always_ask_reset=EesCli.always_ask_reset(args=args),
             prior_alpha=prior[0],
             prior_beta=prior[1],
@@ -487,12 +582,32 @@ class Tossing3DPomdpCli(EesCli):
 
     @staticmethod
     def with_learning_rates_by_parameters(
-        *, domain: PracticeDomain, provider: SkillProvider, enabled: bool
+        *,
+        domain: PracticeDomain,
+        provider: SkillProvider,
+        enabled: bool,
+        curves: Mapping[str, tuple[float, float]] | None = None,
+        rates: Mapping[str, float] | None = None,
+        priors: Mapping[str, tuple[float, float, float, float]] | None = None,
     ) -> PracticeDomain:
         """The domain with each robot skill's starting learning-rate prior scaled by one
         over its number of continuous parameters, and by zero for a skill with none
         (Josh, 2026-11-12); the domain itself when not enabled. The person's skills keep
-        the shared prior."""
+        the shared prior. Known curves (perfect information) are carried as given."""
+        if curves:
+            domain = domain.model_copy(
+                update={
+                    "known_competence_curves": tuple(
+                        (name, start, rate) for name, (start, rate) in curves.items()
+                    )
+                }
+            )
+        if rates:
+            domain = domain.model_copy(update={"known_learning_rates": tuple(rates.items())})
+        if priors:
+            domain = domain.model_copy(
+                update={"skill_priors": tuple((n, *v) for n, v in priors.items())}
+            )
         if not enabled:
             return domain
         believed = {name for name, _ in domain.belief_sources}
@@ -591,6 +706,14 @@ class Tossing3DPomdpCli(EesCli):
             default=Tossing3DPomdpMethod.model_fields["pomdp_num_rollouts"].default,
             help="Curtis variant only: outcome draws per (node, action), branching on their "
             "empirical frequencies; 'all' (the default) enumerates every outcome.",
+        )
+        parser.add_argument(
+            "--pomdp-value-bound-heuristic",
+            action=argparse.BooleanOptionalAction,
+            default=False,
+            help="Order the determinized search's open list by g minus an optimistic bound "
+            "on the deployment value the practice left could still add (the domain's "
+            "optimistic_policy_value); g alone still selects the plan.",
         )
         parser.add_argument(
             "--pomdp-log-full-search-tree",
@@ -819,6 +942,10 @@ class Tossing3DPomdpCli(EesCli):
                 skill_provider=ctx.skill_provider,
                 seed=args.seed,
                 draw_recorder=draw_recorder,
+                practice_try_skills=(
+                    frozenset(args.practice_try_skills) if args.practice_try_skills else None
+                ),
+                deploy_curve_priors=EesCli.deploy_curve_priors(args=args),
                 exploration_epsilon=args.exploration_epsilon,
                 sampler_max_train_iters=args.sampler_max_train_iters,
                 sampler_break_ties_among_best=args.sampler_break_ties_among_best,
@@ -847,6 +974,7 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_plan_beyond_session=args.pomdp_plan_beyond_session,
                 pomdp_observation_probability_weight=args.pomdp_observation_probability_weight,
                 pomdp_log_full_search_tree=args.pomdp_log_full_search_tree,
+                pomdp_value_bound_heuristic=args.pomdp_value_bound_heuristic,
                 pomdp_draw_scope=args.pomdp_draw_scope,
                 pomdp_determinized_variant=args.pomdp_determinized_variant,
                 pomdp_num_rollouts=args.pomdp_num_rollouts,
@@ -872,6 +1000,9 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_domain=Tossing3DPomdpCli.with_learning_rates_by_parameters(
                     provider=ctx.skill_provider,
                     enabled=args.pomdp_learning_rate_by_parameters,
+                    curves=EesCli.known_curves(args=args),
+                    rates=EesCli.known_rates(args=args),
+                    priors=EesCli.skill_priors(args=args),
                     domain=Tossing3DPomdpCli.with_prior_means(
                         means=args.pomdp_competence_prior_for,
                         domain=Tossing3DPomdpCli.with_competence_prior(
@@ -1138,6 +1269,11 @@ class DpCli(EesCli):
                 dp_solver_time_limit=args.dp_solver_time_limit,
                 dp_prior_calibration=args.dp_prior_calibration,
                 dp_initial_competence=args.dp_initial_competence,
+                dp_known_competence_curves=EesCli.known_curves(args=args),
+                dp_known_learning_rates=EesCli.known_rates(args=args),
+                dp_skill_priors={
+                    n: (c, k, r) for n, (c, k, r, _) in EesCli.skill_priors(args=args).items()
+                },
                 dp_initial_learning_rate_for=args.dp_initial_learning_rate_for,
                 dp_learning_rate_by_parameters=args.dp_learning_rate_by_parameters,
                 dp_skill_cost_prior_steps_for=args.dp_skill_cost_prior_steps_for,

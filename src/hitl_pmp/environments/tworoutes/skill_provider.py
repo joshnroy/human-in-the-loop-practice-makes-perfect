@@ -15,9 +15,17 @@ class TwoRoutesSkillProvider(SkillProvider):
 
     env: TwoRoutesEnvironment
     offer_human_reset: bool = True
+    both_resets: bool = False
 
     def skills(self) -> tuple[Skill, ...]:
-        return TwoRoutesSkills.all()
+        return TwoRoutesSkills.both_resets() if self.both_resets else TwoRoutesSkills.all()
+
+    def human_skill(self) -> Skill:
+        return (
+            TwoRoutesSkills.human_reset_from_after()
+            if self.both_resets
+            else TwoRoutesSkills.human_reset()
+        )
 
     def predicates(self) -> tuple[Predicate, ...]:
         return TwoRoutesPredicates.all()
@@ -29,7 +37,7 @@ class TwoRoutesSkillProvider(SkillProvider):
         return (self.env.robot,)
 
     def ground(self, *, name: str) -> GroundSkill:
-        skill = next(s for s in (*self.skills(), TwoRoutesSkills.human_reset()) if s.name == name)
+        skill = next(s for s in (*self.skills(), self.human_skill()) if s.name == name)
         return GroundSkill(skill=skill, objects=(self.env.robot,))
 
     def sample_params(self, *, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
@@ -48,7 +56,7 @@ class TwoRoutesSkillProvider(SkillProvider):
     def human_cube_bin_reset_skill(self) -> GroundSkill | None:
         if not self.offer_human_reset:
             return None
-        return self.ground(name=TwoRoutesSkills.human_reset().name)
+        return self.ground(name=self.human_skill().name)
 
     def movables_reset_destination(self, *, ground_skill: GroundSkill) -> str | None:
         return ground_skill.skill.name
