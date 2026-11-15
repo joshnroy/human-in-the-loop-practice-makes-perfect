@@ -7,9 +7,10 @@ robot motion. Practice uses the provider's full operators and learned failure
 effects; actual evaluation still uses the live rack backend's verdict.
 """
 
+from collections import OrderedDict
 from collections.abc import Collection, Mapping
 from functools import cache
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 from numpy.typing import NDArray
@@ -17,8 +18,10 @@ from numpy.typing import NDArray
 from hitl_pmp.core.method.skill_provider import SkillProvider
 
 from .practice_domain import PracticeDomain, SampleSkills
+from .rewarded_routes_domain import OPTIMISTIC_QUANTILE
 from .types.practice_example_source import PracticeExampleSource
 from .types.skill_belief import SkillBelief
+from .types.weighted_hypothesis_belief import WeightedHypothesisBelief
 
 RACK_NUM_FOOD = 5
 RACK_ROBOT_SKILLS = (
@@ -34,6 +37,11 @@ RACK_ROBOT_SKILLS = (
 # Two ways to empty the rack with the scraper held, both all-or-nothing in this model.
 RACK_SWEEP_SKILLS = ("GatherAndSweep", "Sweep")
 RACK_HUMAN_SKILLS = ("human_batch_return", "human_tool_recovery")
+# The robot's own batch return (`RackServingConfig.robot_batch_return`): offered in
+# practice only, so it is never a deployment transition and not in RACK_ROBOT_SKILLS.
+# Its competence is inferred from its outcomes and its price from its observed steps,
+# like any robot skill's; a provider that does not offer it drops its belief.
+RACK_ROBOT_RESET_SKILLS = ("RobotBatchReturn",)
 RACK_EXPECTATION_SAMPLES = 4096
 RACK_EXPECTATION_SEED = 0
 RackDeploymentState = tuple[int, str, bool]
@@ -276,8 +284,8 @@ class RackServingPracticeDomain(PracticeDomain):
     initial_competence_alpha: float | None = 1.0
     initial_competence_beta: float | None = 3.0
     sampler_skill: str = "GatherAndSweep"
-    # Sweep is appended after the human skills, so every older belief keeps its
-    # prior-seed slot.
+    # Sweep is appended after the human skills, and the robot's batch return after
+    # Sweep, so every older belief keeps its prior-seed slot.
     belief_sources: tuple[tuple[str, PracticeExampleSource], ...] = tuple(
         (
             name,
@@ -285,12 +293,26 @@ class RackServingPracticeDomain(PracticeDomain):
             if name in RACK_SWEEP_SKILLS
             else PracticeExampleSource.OUTCOME,
         )
-        for name in (*RACK_ROBOT_SKILLS[:-1], *RACK_HUMAN_SKILLS, RACK_ROBOT_SKILLS[-1])
+        for name in (
+            *RACK_ROBOT_SKILLS[:-1],
+            *RACK_HUMAN_SKILLS,
+            RACK_ROBOT_SKILLS[-1],
+            *RACK_ROBOT_RESET_SKILLS,
+        )
     )
     # `RackServingConfig.sweep_skill=False` removes Sweep from the provider.
-    # `bulk_transfer_only=True` removes PlaceFoodOnTray.
-    optional_skill_names: frozenset[str] = frozenset({"Sweep", "PlaceFoodOnTray"})
-    failure_effect_skills: frozenset[str] = frozenset((*RACK_ROBOT_SKILLS, *RACK_HUMAN_SKILLS))
+    # `bulk_transfer_only=True` removes PlaceFoodOnTray. `robot_batch_return=True`
+    # is what offers RobotBatchReturn at all.
+    optional_skill_names: frozenset[str] = frozenset({
+        "Sweep",
+        "PlaceFoodOnTray",
+        *RACK_ROBOT_RESET_SKILLS,
+    })
+    failure_effect_skills: frozenset[str] = frozenset((
+        *RACK_ROBOT_SKILLS,
+        *RACK_HUMAN_SKILLS,
+        *RACK_ROBOT_RESET_SKILLS,
+    ))
     human_skill_names: frozenset[str] = frozenset(RACK_HUMAN_SKILLS)
     # Bulk skill name -> the reward of the outcome its success reaches; empty unless
     # the provider prices goals (`RackServingConfig.two_route_rewards`).
@@ -408,6 +430,98 @@ class RackServingPracticeDomain(PracticeDomain):
     def expected_deployment_cost(self, *, beliefs: Mapping[str, SkillBelief]) -> float:
         """Expected control steps per task, times the run's robot-step price."""
         return float(self._expectation(beliefs=beliefs)[1].mean()) * self.robot_step_price
+
+    def optimistic_policy_value(
+        self,
+        *,
+        beliefs: Mapping[str, SkillBelief],
+        tries_left: float,
+        routes: Collection[str] | None = None,
+    ) -> float:
+        """An optimistic bound on the deployment value reachable with `tries_left` more
+        practice tries, for the determinized search's open-list order.
+
+        This value model at one competence vector, with no step costs: each robot skill
+        at its reach, the OPTIMISTIC_QUANTILE of min(1, competence + rate * tries_left)
+        over its belief, as if every try left went to that skill. Without step costs the
+        model's value never falls as a competence rises (it maximises over policies whose
+        every success moves to a state worth at least the one it leaves, or ends on a
+        bulk reward), so at quantile 1 this bounds every split of the tries; the
+        quantile trades that guarantee for an order the prior's tail does not flatten,
+        as in the routes toy.
+
+        With `routes`, the tries go to those bulk skills only, and a bulk skill not
+        named is no way to deploy in this bound (the model's net-of-charges bound asks
+        for one route at a time). Skills that are not bulk transfers keep their reach."""
+        draws = self._reach_draws(beliefs=beliefs)
+        reach = tuple(
+            (name, self._reach(draws=draws[name], tries_left=tries_left))
+            for name in self.robot_skills()
+            if routes is None or name not in RACK_SWEEP_SKILLS or name in routes
+        )
+        deployment = self._deployment() | {"step_weight": 0.0}
+        key = (reach, deployment["horizon"], deployment["one_bulk_attempt"], self.bulk_rewards)
+        memo = RackServingPracticeDomain._bound_memo
+        if (cached := memo.get(key)) is not None:
+            memo.move_to_end(key)
+            return cached
+        value = float(
+            RackServingDeployment.solve(
+                competences={name: np.array([r]) for name, r in reach}, **deployment
+            )[0][0]
+        )
+        memo[key] = value
+        while len(memo) > RackServingPracticeDomain.BOUND_MEMO_SIZE:
+            memo.popitem(last=False)
+        return value
+
+    # One open-list bound values the same beliefs at every n <= tries left and for every
+    # route, so the draws are taken once for the last beliefs mapping (held, so its
+    # identity cannot be reused while it is cached), and the value model's solve is
+    # memoised on the reach vector it reads. Bounded LRU.
+    BOUND_MEMO_SIZE: ClassVar[int] = 4096
+    _bound_memo: ClassVar[OrderedDict[tuple[object, ...], float]] = OrderedDict()
+    _last_draws: ClassVar[list[Any]] = [None, None, None]
+
+    def _reach_draws(
+        self, *, beliefs: Mapping[str, SkillBelief]
+    ) -> dict[str, tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]]]:
+        """Per robot skill, (competences, learning rates, weights) the reach is read
+        from: a weighted hypothesis set exactly, any other belief as
+        RACK_EXPECTATION_SAMPLES fixed-seed draws of equal weight."""
+        last = RackServingPracticeDomain._last_draws
+        skills = self.robot_skills()
+        if last[0] is beliefs and last[1] == skills:
+            return last[2]
+        rng = np.random.default_rng(RACK_EXPECTATION_SEED)
+        draws = {}
+        for name in skills:
+            belief = beliefs[name]
+            if isinstance(belief, WeightedHypothesisBelief):
+                draws[name] = (
+                    np.asarray(belief.competences, dtype=np.float64),
+                    np.asarray(belief.learning_rates, dtype=np.float64),
+                    np.asarray(belief.probabilities, dtype=np.float64),
+                )
+            else:
+                rows = belief.sample(rng=rng, count=RACK_EXPECTATION_SAMPLES)
+                draws[name] = (rows[:, 0], rows[:, 1], np.full(len(rows), 1.0 / len(rows)))
+        last[:] = [beliefs, skills, draws]
+        return draws
+
+    @staticmethod
+    def _reach(
+        *,
+        draws: tuple[NDArray[np.float64], NDArray[np.float64], NDArray[np.float64]],
+        tries_left: float,
+    ) -> float:
+        """The OPTIMISTIC_QUANTILE of a skill's competence after `tries_left` tries."""
+        competences, rates, weights = draws
+        reaches = np.minimum(1.0, competences + rates * tries_left)
+        order = np.argsort(reaches, kind="stable")
+        mass = np.cumsum(weights[order])
+        index = int(np.searchsorted(mass, OPTIMISTIC_QUANTILE - 1e-12))
+        return float(reaches[order][min(index, len(order) - 1)])
 
 
 RACK_SERVING_DOMAIN = RackServingPracticeDomain()

@@ -48,6 +48,7 @@ class DeterminizedAStarPlanner(
         seed: int,
         observation_probability_weight: float = 0.1,
         log_full_search_tree: bool = False,
+        value_bound_heuristic: bool = False,
         draw_scope: DrawScope = "node",
         variant: DeterminizedVariant = "algorithm3",
         num_rollouts: int | None = None,
@@ -70,6 +71,9 @@ class DeterminizedAStarPlanner(
         # Algorithm 3's lambda: weight on the sampled observation log probability.
         self.observation_probability_weight = observation_probability_weight
         self.log_full_search_tree = log_full_search_tree
+        # Order the open list by g minus the model's optimistic gain still reachable with
+        # the practice left (`optimistic_gain`); g alone still selects the plan.
+        self.value_bound_heuristic = value_bound_heuristic
         # "node": one independent draw per (search node, action) edge, so a node that a
         # cheap reset makes new re-rolls the same skill's outcome. Otherwise one uniform
         # per `model.outcome_draw_key(scope=...)` -- what the outcome distribution reads,
@@ -89,6 +93,8 @@ class DeterminizedAStarPlanner(
         remaining_actions: int | None = None,
         remaining_steps: float | None = None,
         action_steps: Callable[[ActionT], float] | None = None,
+        remaining_episodes: float | None = None,
+        action_episodes: Callable[[ActionT], float] | None = None,
     ) -> tuple[float, ActionT | StopAction]:
         """Search one sampled deterministic successor per applicable action.
 
@@ -113,6 +119,13 @@ class DeterminizedAStarPlanner(
         part of its node's identity (``node_key``), so two routes to one belief that
         spent different steps stay two nodes, each cut by its own count. With None no
         step count is read and every key is the model's own, unchanged.
+
+        Optional ``remaining_episodes`` is the same cut in another unit: the practice
+        tries that are left, counted with ``action_episodes``, what one action takes
+        from them (1 for a try of a skill with learnable parameters, 0 for any other
+        action). Both budgets go through one piece of code (``budgets`` below), each
+        with its own count on the path and in the node's identity, and a plan must fit
+        both. With None no try count is read and no key changes.
         """
         # ``horizon`` belongs to the shared interface for exact expectimax. This
         # planner has no depth to bound, so a caller passing one is configured wrongly.
@@ -129,6 +142,17 @@ class DeterminizedAStarPlanner(
         assert remaining_steps is None or remaining_steps >= 0, (
             "remaining_steps must be non-negative"
         )
+        if remaining_episodes is not None and action_episodes is None:
+            raise ValueError("remaining_episodes needs action_episodes, the tries per action")
+        assert remaining_episodes is None or remaining_episodes >= 0, (
+            "remaining_episodes must be non-negative"
+        )
+        # The practice budgets in force, by unit: what is left and what one action takes.
+        budgets: dict[str, tuple[float, Callable[[ActionT], float]]] = {}
+        if remaining_steps is not None and action_steps is not None:
+            budgets["steps"] = (remaining_steps, action_steps)
+        if remaining_episodes is not None and action_episodes is not None:
+            budgets["episodes"] = (remaining_episodes, action_episodes)
         assert self.max_iterations >= 1, "max_iterations must be positive"
         assert num_samples >= 1, "num_samples must be positive"
         assert math.isfinite(summed_cost) and summed_cost >= 0, (
@@ -151,7 +175,7 @@ class DeterminizedAStarPlanner(
         best_objective_value = root_value
         best_action: ActionT | StopAction = STOP_ACTION
         best_path_depth = 0
-        best_path_steps = 0.0
+        best_path_spent = {"steps": 0.0, "episodes": 0.0}
         over_budget_root_actions: list[ActionT] = []
         # Algorithm 3, line 3: Open <- {(b0, g=0)}.
         open_nodes: list[
@@ -168,10 +192,11 @@ class DeterminizedAStarPlanner(
             # continuations. None preserves unrestricted graph-search merging.
             horizon=remaining_actions,
             steps=None if remaining_steps is None else 0.0,
+            episodes=None if remaining_episodes is None else 0.0,
         )
         # Our sampled stopping objective J(C, b), cached per belief-space node with
         # the cost it was evaluated at (a curtis node is reached at several costs). J
-        # does not read the steps spent, so this cache is keyed without them.
+        # does not read the steps or tries spent, so this cache is keyed without them.
         values_by_key = {
             self.node_key(
                 model=model,
@@ -275,11 +300,19 @@ class DeterminizedAStarPlanner(
             ):
                 diagnostics.action_horizon_terminal_nodes += 1
                 continue
-            if (
-                remaining_steps is not None
-                and current_node.path_recovery_info.steps >= remaining_steps
-            ):
+            spent = {
+                "steps": current_node.path_recovery_info.steps,
+                "episodes": current_node.path_recovery_info.episodes,
+            }
+            exhausted = next(
+                (unit for unit, (remaining, _) in budgets.items() if spent[unit] >= remaining),
+                None,
+            )
+            if exhausted == "steps":
                 diagnostics.step_budget_terminal_nodes += 1
+                continue
+            if exhausted == "episodes":
+                diagnostics.episode_budget_terminal_nodes += 1
                 continue
 
             edges = sampled_edges.get(current_node.cache_info.key)
@@ -308,17 +341,17 @@ class DeterminizedAStarPlanner(
                 sampled_cost,
                 estimated_observation_probability,
             ) in children:
-                next_steps = current_node.path_recovery_info.steps
-                if remaining_steps is not None:
-                    assert action_steps is not None
-                    forecast_steps = action_steps(action)
-                    assert math.isfinite(forecast_steps) and forecast_steps >= 0, (
-                        "forecast steps must be finite and non-negative"
+                next_spent = dict(spent)
+                over_budget = False
+                for unit, (remaining, taken_by) in budgets.items():
+                    forecast = taken_by(action)
+                    assert math.isfinite(forecast) and forecast >= 0, (
+                        f"forecast {unit} must be finite and non-negative"
                     )
-                    next_steps += forecast_steps
+                    next_spent[unit] += forecast
                     # Checked per path, not when the edge is sampled: a cached edge can
-                    # be relaxed again from a path that has spent fewer steps.
-                    if next_steps > remaining_steps:
+                    # be relaxed again from a path that has spent less.
+                    if next_spent[unit] > remaining:
                         if (
                             trace is not None
                             and current_node.diagnostic_info.depth == 0
@@ -329,11 +362,15 @@ class DeterminizedAStarPlanner(
                                 event="action_rejected",
                                 node=0,
                                 action=DecisionLogEncoding.value(value=action),
-                                reason="exceeds_remaining_steps",
-                                forecast_steps=forecast_steps,
-                                remaining_steps=remaining_steps,
+                                reason=f"exceeds_remaining_{unit}",
+                                **{f"forecast_{unit}": forecast, f"remaining_{unit}": remaining},
                             )
-                        continue
+                        over_budget = True
+                        break
+                if over_budget:
+                    continue
+                next_steps = next_spent["steps"]
+                next_episodes = next_spent["episodes"]
                 next_cost = current_node.belief.summed_cost + sampled_cost
                 next_depth = current_node.diagnostic_info.depth + 1
                 # Only a root edge establishes the first action. Descendants inherit
@@ -354,6 +391,7 @@ class DeterminizedAStarPlanner(
                         None if remaining_actions is None else remaining_actions - next_depth
                     ),
                     steps=None if remaining_steps is None else next_steps,
+                    episodes=None if remaining_episodes is None else next_episodes,
                 )
                 child_is_new = key not in search_node_ids
                 if not child_is_new:
@@ -440,8 +478,7 @@ class DeterminizedAStarPlanner(
                             ],
                             beats_stop=next_path_cost < 0.0,
                         )
-                        if remaining_steps is not None:
-                            path.update(forecast_steps=next_steps)
+                        path.update({f"forecast_{unit}": next_spent[unit] for unit in budgets})
                     if self.log_full_search_tree:
                         if child_is_new:
                             trace.record(
@@ -478,6 +515,13 @@ class DeterminizedAStarPlanner(
                 if key not in cost or self.strictly_improves(
                     candidate=next_path_cost, previous=cost[key]
                 ):
+                    priority = self.priority(
+                        model=model,
+                        belief_state=next_belief,
+                        budgets=budgets,
+                        spent=next_spent,
+                        g=next_path_cost,
+                    )
                     cost[key] = next_path_cost
                     if key in closed:
                         closed.remove(key)
@@ -491,7 +535,7 @@ class DeterminizedAStarPlanner(
                         best_objective_value = value
                         best_action = first_action
                         best_path_depth = next_depth
-                        best_path_steps = next_steps
+                        best_path_spent = next_spent
                     sequence += 1
                     heapq.heappush(
                         open_nodes,
@@ -502,6 +546,7 @@ class DeterminizedAStarPlanner(
                                 summed_cost=next_cost,
                             ),
                             g=next_path_cost,
+                            priority=priority,
                             diagnostic_info=DeterminizedNodeDiagnosticInfo(depth=next_depth),
                             cache_info=DeterminizedNodeCacheInfo(
                                 key=key,
@@ -514,6 +559,7 @@ class DeterminizedAStarPlanner(
                                 observation_surprise=cumulative_surprise,
                                 heuristic_cost=cumulative_heuristic,
                                 steps=next_steps,
+                                episodes=next_episodes,
                             ),
                         ),
                     )
@@ -525,6 +571,8 @@ class DeterminizedAStarPlanner(
             diagnostics.termination_reason = "action_horizon_exhausted"
         elif diagnostics.step_budget_terminal_nodes:
             diagnostics.termination_reason = "step_budget_exhausted"
+        elif diagnostics.episode_budget_terminal_nodes:
+            diagnostics.termination_reason = "episode_budget_exhausted"
 
         if trace is not None:
             for path in root_action_paths:
@@ -561,8 +609,14 @@ class DeterminizedAStarPlanner(
             if remaining_steps is not None:
                 draw_fields.update(
                     remaining_steps=remaining_steps,
-                    selected_path_steps=best_path_steps,
+                    selected_path_steps=best_path_spent["steps"],
                     step_budget_terminal_nodes=diagnostics.step_budget_terminal_nodes,
+                )
+            if remaining_episodes is not None:
+                draw_fields.update(
+                    remaining_episodes=remaining_episodes,
+                    selected_path_episodes=best_path_spent["episodes"],
+                    episode_budget_terminal_nodes=diagnostics.episode_budget_terminal_nodes,
                 )
             trace.record(
                 event="search_summary",
@@ -601,6 +655,29 @@ class DeterminizedAStarPlanner(
             candidate, previous, rel_tol=1e-12, abs_tol=1e-15
         )
 
+    def priority(
+        self,
+        *,
+        model: Any,
+        belief_state: Any,
+        budgets: dict[str, Any],
+        spent: dict[str, float],
+        g: float,
+    ) -> float | None:
+        """The open-list order under `value_bound_heuristic`: g minus the most the
+        practice left could still add. The practice left is counted in the budget's own
+        tries when there is an episode budget, else in steps (one try per step at most).
+        None (order by g) when off, unbounded, or the model offers no bound."""
+        gain = getattr(model, "optimistic_gain", None)
+        if not self.value_bound_heuristic or gain is None:
+            return None
+        unit = "episodes" if "episodes" in budgets else "steps" if "steps" in budgets else None
+        if unit is None:
+            return None
+        remaining, consumes = budgets[unit]
+        tries_left = max(0.0, remaining - spent[unit])
+        return g - gain(belief_state=belief_state, tries_left=tries_left, consumes=consumes)
+
     def heuristic(self, *, node: DeterminizedSearchNode[EnvironmentStateT, BeliefStateT]) -> float:
         """Generic hook used at line 19 where Algorithm 3 adds ``alpha * h_hat``.
 
@@ -620,6 +697,7 @@ class DeterminizedAStarPlanner(
         belief_state: BeliefStateT,
         horizon: int | None,
         steps: float | None = None,
+        episodes: float | None = None,
     ) -> object:
         """A search node's identity: with the accumulated cost (ours) or, as in
         PO_DAStar, the belief alone, the cost being carried by g.
@@ -630,7 +708,12 @@ class DeterminizedAStarPlanner(
         one step) with robot steps (cheap, many). Merged, a node keeps the steps of
         whichever route reached it first or cheapest, and the budget cut then prunes
         or admits continuations for the other route on the wrong count. With None the
-        key is the model's own."""
+        key is the model's own.
+
+        Under a practice episode budget ``episodes``, the tries the path has spent,
+        joins the key the same way and for the same reason: one belief is reached by
+        routes that spent different numbers of tries whenever a try leaves the belief
+        where a setup action would have."""
         if self.variant == "curtis":
             key = model.belief_cache_key(
                 environment_state=environment_state, belief_state=belief_state, horizon=horizon
@@ -642,9 +725,17 @@ class DeterminizedAStarPlanner(
                 belief_state=belief_state,
                 horizon=horizon,
             )
-        if steps is None:
-            return key
-        return key, self.steps_key(steps=steps)
+        return self.with_spent(key=key, steps=steps, episodes=episodes)
+
+    def with_spent(self, *, key: object, steps: float | None, episodes: float | None) -> object:
+        """``key`` joined by what the path has spent of each budget in force."""
+        if episodes is None:
+            return key if steps is None else (key, self.steps_key(steps=steps))
+        return (
+            key,
+            None if steps is None else self.steps_key(steps=steps),
+            self.steps_key(steps=episodes),
+        )
 
     @staticmethod
     def steps_key(*, steps: float) -> float:
@@ -740,11 +831,13 @@ class DeterminizedAStarPlanner(
         num_samples: int,
         remaining_actions: int | None = None,
         steps: float | None = None,
+        episodes: float | None = None,
     ) -> tuple[object, float]:
         """Return the node key and J(C, b), computing J on a cache miss.
 
-        J is cached by the model's key alone; ``steps`` only joins the node key that is
-        returned, so one belief reached after different step counts is valued once.
+        J is cached by the model's key alone; ``steps`` and ``episodes`` only join the
+        node key that is returned, so one belief reached after different step or try
+        counts is valued once.
 
         A curtis node is one belief reached at several costs. G separates into a
         policy-value term and a cost term, so J(C, b) = J(C', b) + G(0, C) - G(0, C'):
@@ -758,7 +851,7 @@ class DeterminizedAStarPlanner(
             belief_state=belief_state,
             horizon=remaining_actions,
         )
-        node_key = key if steps is None else (key, self.steps_key(steps=steps))
+        node_key = self.with_spent(key=key, steps=steps, episodes=episodes)
         cached = values_by_key.get(key)
         if cached is not None:
             cached_value, cached_cost = cached

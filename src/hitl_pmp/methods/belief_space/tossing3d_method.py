@@ -76,6 +76,7 @@ def make_belief_space_planner(
     seed: int,
     observation_probability_weight: float,
     log_full_search_tree: bool = False,
+    value_bound_heuristic: bool = False,
     draw_scope: DrawScope = "node",
     variant: DeterminizedVariant = "algorithm3",
     num_rollouts: int | None = None,
@@ -95,6 +96,7 @@ def make_belief_space_planner(
         seed=seed,
         observation_probability_weight=observation_probability_weight,
         log_full_search_tree=log_full_search_tree,
+        value_bound_heuristic=value_bound_heuristic,
         draw_scope=draw_scope,
         variant=variant,
         num_rollouts=num_rollouts,
@@ -109,8 +111,18 @@ class Tossing3DPomdpMethod(EesMethod):
     # None: the practice domain's `default_search_depth` (3 Tossing3D, 7 the shelf).
     pomdp_search_depth: int | None = Field(default=None, ge=0)
     pomdp_log_full_search_tree: bool = False
+    pomdp_value_bound_heuristic: bool = False
     pomdp_solver: Literal["expectimax", "determinized_astar"] = "expectimax"
     pomdp_max_search_iterations: int = Field(default=100, ge=1)
+    # determinized_astar only. A plan may run past the end of the practice session: it
+    # is bounded by the practice budget that is left (steps, tries) and by
+    # `pomdp_max_search_iterations`, not by the session's remaining actions. The search
+    # models no session boundary, so a plan that crosses one is valued as if the
+    # learning update at the boundary did not happen until the plan's end (J forecasts
+    # one refit, from the plan's last belief), and its cost keeps accumulating where
+    # the real session cost restarts at zero: exact under the linear cost objective,
+    # which is additive, and not under the hard cost budget.
+    pomdp_plan_beyond_session: bool = False
     pomdp_observation_probability_weight: float = Field(default=0.1, ge=0.0, allow_inf_nan=False)
     pomdp_draw_scope: DrawScope = "node"
     pomdp_determinized_variant: DeterminizedVariant = "algorithm3"
@@ -171,6 +183,7 @@ class Tossing3DPomdpMethod(EesMethod):
     # The practice steps left in the whole run, and what one action is forecast to
     # take of them: the step count its planning price is made from.
     _remaining_practice_steps: int | None = PrivateAttr(default=None)
+    _remaining_practice_episodes: int | None = PrivateAttr(default=None)
     _expected_execution_steps: dict[str, float] = PrivateAttr(default_factory=dict)
     _human_execution_steps: dict[tuple[str, str | None], list[int]] = PrivateAttr(
         default_factory=dict
@@ -417,6 +430,7 @@ class Tossing3DPomdpMethod(EesMethod):
             seed=self.seed,
             observation_probability_weight=self.pomdp_observation_probability_weight,
             log_full_search_tree=self.pomdp_log_full_search_tree,
+            value_bound_heuristic=self.pomdp_value_bound_heuristic,
             draw_scope=self.pomdp_draw_scope,
             variant=self.pomdp_determinized_variant,
             num_rollouts=self.pomdp_num_rollouts,
@@ -466,6 +480,7 @@ class Tossing3DPomdpMethod(EesMethod):
         """Start a practice session without resetting the learned skill state."""
         self._remaining_practice_actions = None
         self._remaining_practice_steps = None
+        self._remaining_practice_episodes = None
         # G scores the current session, so its accumulated cost starts at zero.
         previous_session_cost = self._pomdp_state.accumulated_cost
         self._pomdp_state = self._pomdp_state.model_copy(update={"accumulated_cost": 0.0})
@@ -521,14 +536,34 @@ class Tossing3DPomdpMethod(EesMethod):
             )
 
     def observe_practice_action_budget(
-        self, *, remaining_actions: int, remaining_steps: int | None = None
+        self,
+        *,
+        remaining_actions: int,
+        remaining_steps: int | None = None,
+        remaining_episodes: int | None = None,
     ) -> None:
         assert remaining_actions >= 0, "remaining_actions must be non-negative"
         assert remaining_steps is None or remaining_steps >= 0, (
             "remaining_steps must be non-negative"
         )
+        assert remaining_episodes is None or remaining_episodes >= 0, (
+            "remaining_episodes must be non-negative"
+        )
         self._remaining_practice_actions = remaining_actions
         self._remaining_practice_steps = remaining_steps
+        self._remaining_practice_episodes = remaining_episodes
+
+    def action_episodes(self, *, ground_skill: GroundSkill) -> float:
+        """What one planned action takes from an episode budget: 1 for a try
+        (`EesMethod.counts_as_try`), 0 for anything else (setup skills, a person's
+        reset). The practice loop counts by the same rule (`practice_episode_dispatched`)."""
+        return (
+            1.0
+            if EesMethod.counts_as_try(
+                ground_skill=ground_skill, try_skills=self.practice_try_skills
+            )
+            else 0.0
+        )
 
     def forecast_action_steps(self, *, ground_skill: GroundSkill) -> float:
         """The control steps the planner expects one try of `ground_skill` to take: the
@@ -827,12 +862,20 @@ class Tossing3DPomdpMethod(EesMethod):
                     model=model,
                     trace=trace,
                     num_samples=self.pomdp_num_samples,
-                    remaining_actions=self._remaining_practice_actions,
+                    remaining_actions=(
+                        None if self.pomdp_plan_beyond_session else self._remaining_practice_actions
+                    ),
                     remaining_steps=self._remaining_practice_steps,
                     action_steps=(
                         None
                         if self._remaining_practice_steps is None
                         else lambda action: self.forecast_action_steps(ground_skill=action)
+                    ),
+                    remaining_episodes=self._remaining_practice_episodes,
+                    action_episodes=(
+                        None
+                        if self._remaining_practice_episodes is None
+                        else lambda action: self.action_episodes(ground_skill=action)
                     ),
                 )
             else:
@@ -883,6 +926,13 @@ class Tossing3DPomdpMethod(EesMethod):
             horizon=horizon,
             remaining_practice_actions=self._remaining_practice_actions,
             remaining_practice_steps=self._remaining_practice_steps,
+            # Only a run with an episode budget says so: every other log is unchanged.
+            **(
+                {}
+                if self._remaining_practice_episodes is None
+                else {"remaining_practice_episodes": self._remaining_practice_episodes}
+            ),
+            **({"plan_beyond_session": True} if self.pomdp_plan_beyond_session else {}),
             solver=planner.name,
             max_search_iterations=(
                 planner.max_iterations if isinstance(planner, DeterminizedAStarPlanner) else None

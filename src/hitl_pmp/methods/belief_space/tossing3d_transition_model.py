@@ -307,6 +307,9 @@ def transition_outcomes(
     )
 
 
+BRANCH_PROBABILITY_FLOOR = 1e-12
+
+
 def binary_outcomes(
     *,
     state: Tossing3DBeliefState,
@@ -320,7 +323,9 @@ def binary_outcomes(
 ) -> tuple[TransitionBranch, ...]:
     outcomes: list[TransitionBranch] = []
     for success, branch_probability in ((True, probability), (False, 1.0 - probability)):
-        if branch_probability <= 0.0:
+        # A belief certain of the outcome can still leave ~1e-16 on the other one from
+        # rounding, and conditioning on an outcome it rules out is undefined.
+        if branch_probability <= BRANCH_PROBABILITY_FLOOR:
             continue
         effect_outcomes = (
             (

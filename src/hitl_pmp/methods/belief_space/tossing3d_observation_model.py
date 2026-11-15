@@ -2,6 +2,9 @@
 
 from typing import ClassVar, Literal
 
+import numpy as np
+from scipy.stats import beta as beta_distribution
+
 from hitl_pmp.core.method.types import GroundSkill, Skill
 from hitl_pmp.methods.belief_space.types.belief_state import (
     ConcreteSkillBelief,
@@ -13,13 +16,20 @@ from hitl_pmp.methods.belief_space.types.particle_filter_belief import (
     create_broad_particle_prior,
 )
 from hitl_pmp.methods.belief_space.types.practice_example_source import PracticeExampleSource
-from hitl_pmp.methods.belief_space.types.skill_belief import SkillBelief
+from hitl_pmp.methods.belief_space.types.skill_belief import (
+    SkillBelief,
+    SkillHypothesis,
+    WeightedHypothesis,
+)
 from hitl_pmp.methods.belief_space.types.weighted_hypothesis_belief import WeightedHypothesisBelief
 
 from .belief_digest import BeliefDigest
 from .bounded_memo import BoundedMemo
 from .competence_inference import BayesianSkillBelief, InferenceConfig, create_bayesian_prior
 from .practice_domain import TOSSING3D_DOMAIN, PracticeDomain
+
+KNOWN_RATE_GRID = 101
+SKILL_PRIOR_RATE_GRID = 21
 
 
 class SearchForecastCache:
@@ -231,6 +241,11 @@ def make_default_tossing3d_belief(
     }
     overrides = {name: (alpha, beta) for name, alpha, beta in domain.competence_prior_overrides}
     rate_scales = dict(domain.learning_rate_prior_scales)
+    known_curves = {name: (start, rate) for name, start, rate in domain.known_competence_curves}
+    known_rates = dict(domain.known_learning_rates)
+    skill_priors = {name: rest for name, *rest in domain.skill_priors}
+    if unknown := sorted((set(known_curves) | set(known_rates) | set(skill_priors)) - set(names)):
+        raise ValueError(f"no belief for {unknown}; the domain infers {sorted(set(names))}")
     for name in dict.fromkeys(names):
         index = seed_offsets[name]
         config = inference_config or InferenceConfig()
@@ -254,6 +269,67 @@ def make_default_tossing3d_belief(
                     else {"initial_eta_sigma": 1e-12, "sigma_eta": 0.0}
                 )
             )
+        if name in known_curves:
+            start, rate = known_curves[name]
+            beliefs[name] = WeightedHypothesisBelief.of(
+                hypotheses=(
+                    WeightedHypothesis(
+                        hypothesis=SkillHypothesis(competence=start, learning_rate=rate),
+                        probability=1.0,
+                    ),
+                )
+            )
+            continue
+        if name in skill_priors:
+            c_mean, c_strength, r_mean, r_sd = skill_priors[name]
+            grid = (np.arange(KNOWN_RATE_GRID) + 0.5) / KNOWN_RATE_GRID
+            c_w = beta_distribution.pdf(grid, c_mean * c_strength, (1 - c_mean) * c_strength)
+            rates = (
+                np.array([r_mean])
+                if r_sd <= 0
+                else np.linspace(0.0, r_mean + 4 * r_sd, SKILL_PRIOR_RATE_GRID)
+            )
+            r_w = np.ones(1) if r_sd <= 0 else np.exp(-0.5 * ((rates - r_mean) / r_sd) ** 2)
+            weights = np.outer(c_w, r_w)
+            weights = weights / weights.sum()
+            kept = [
+                (float(c), float(min(1.0, r)), float(weights[i, j]))
+                for i, c in enumerate(grid)
+                for j, r in enumerate(rates)
+                if weights[i, j] > 1e-9
+            ]
+            total = sum(w for _, _, w in kept)
+            beliefs[name] = WeightedHypothesisBelief.of(
+                hypotheses=tuple(
+                    WeightedHypothesis(
+                        hypothesis=SkillHypothesis(competence=c, learning_rate=r),
+                        probability=w / total,
+                    )
+                    for c, r, w in kept
+                )
+            )
+            continue
+        if name in known_rates:
+            # The rate is known; competence is inferred, from the skill's Beta prior on
+            # a grid, every hypothesis carrying that one rate.
+            grid = (np.arange(KNOWN_RATE_GRID) + 0.5) / KNOWN_RATE_GRID
+            weights = beta_distribution.pdf(
+                grid, config.initial_competence_alpha, config.initial_competence_beta
+            )
+            weights = weights / weights.sum()
+            beliefs[name] = WeightedHypothesisBelief.of(
+                hypotheses=tuple(
+                    WeightedHypothesis(
+                        hypothesis=SkillHypothesis(
+                            competence=float(c), learning_rate=known_rates[name]
+                        ),
+                        probability=float(w),
+                    )
+                    for c, w in zip(grid, weights, strict=True)
+                    if w > 0
+                )
+            )
+            continue
         beliefs[name] = (
             create_broad_particle_prior(num_particles=num_particles, seed=seed + index)
             if model is None

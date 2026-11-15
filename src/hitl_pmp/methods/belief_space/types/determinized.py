@@ -59,6 +59,8 @@ class DeterminizedPathRecoveryInfo(BaseModel, Generic[ActionT]):
     heuristic_cost: float = 0.0
     # Forecast control steps the path spends; only read under a step budget.
     steps: float = 0.0
+    # Practice tries the path spends; only read under an episode budget.
+    episodes: float = 0.0
 
 
 class DeterminizedSearchQueueEntry(
@@ -71,6 +73,9 @@ class DeterminizedSearchQueueEntry(
 
     belief: DeterminizedSearchBelief[EnvironmentStateT, BeliefStateT]
     g: float
+    # The open list's order when set: g plus an optimistic estimate of the gain still
+    # reachable (`--pomdp-value-bound-heuristic`). g alone still selects the plan.
+    priority: float | None = None
     diagnostic_info: DeterminizedNodeDiagnosticInfo
     cache_info: DeterminizedNodeCacheInfo
     path_recovery_info: DeterminizedPathRecoveryInfo[ActionT]
@@ -80,8 +85,10 @@ class DeterminizedSearchQueueEntry(
         in exact arithmetic go to the first one found (ValueResolution)."""
         if not isinstance(other, DeterminizedSearchQueueEntry):
             return NotImplemented
-        return (ValueResolution.rank(value=self.g), self.cache_info.queue_sequence) < (
-            ValueResolution.rank(value=other.g),
+        mine = self.g if self.priority is None else self.priority
+        theirs = other.g if other.priority is None else other.priority
+        return (ValueResolution.rank(value=mine), self.cache_info.queue_sequence) < (
+            ValueResolution.rank(value=theirs),
             other.cache_info.queue_sequence,
         )
 
@@ -111,6 +118,7 @@ class DeterminizedSearchDiagnostics(BaseModel):
     max_depth_reached: int = 0
     action_horizon_terminal_nodes: int = 0
     step_budget_terminal_nodes: int = 0
+    episode_budget_terminal_nodes: int = 0
     reused_outcome_draws: int = 0
     termination_reason: str = "frontier_exhausted"
 
