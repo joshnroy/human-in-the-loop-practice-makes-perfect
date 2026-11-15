@@ -255,6 +255,13 @@ class EesCli:
             "predicators' settings.py default; the paper's launch configs override it "
             "to 100000, which trains the classifier to interpolation on Ball-Ring.",
         )
+        parser.add_argument(
+            "--competence-from-informed-only",
+            action="store_true",
+            help="Learn each skill's competence only from the sampler's informed picks: "
+            "an uninformative pick (no success yet, so a uniform draw) still counts as a "
+            "try but its outcome is not observed. Off reproduces every earlier run.",
+        )
         # Each default is the EesMethod field's; see that field for why it is what it
         # is. Only --reproduce-predicators-practice-target-history defaults on.
         parser.add_argument(
@@ -515,6 +522,7 @@ class EesCli:
             competence_after_first_success=args.competence_after_first_success,
             refit_samplers_every_attempt=args.refit_samplers_every_attempt,
             sampler_max_train_iters=args.sampler_max_train_iters,
+            competence_from_informed_only=args.competence_from_informed_only,
             goal_pursuit_horizon=args.goal_pursuit_horizon,
             goal_pursuit_init_cycles=args.goal_pursuit_init_cycles,
             goal_pursuit_interval=args.goal_pursuit_interval,
@@ -927,6 +935,7 @@ class Tossing3DPomdpCli(EesCli):
                 competence_after_first_success=args.competence_after_first_success,
                 refit_samplers_every_attempt=args.refit_samplers_every_attempt,
                 sampler_max_train_iters=args.sampler_max_train_iters,
+                competence_from_informed_only=args.competence_from_informed_only,
                 goal_pursuit_horizon=args.goal_pursuit_horizon,
                 goal_pursuit_init_cycles=args.goal_pursuit_init_cycles,
                 goal_pursuit_interval=args.goal_pursuit_interval,

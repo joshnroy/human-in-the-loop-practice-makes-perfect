@@ -82,6 +82,24 @@ class OptimisticSkillCompetenceModel(BaseModel):
     # default_factory (not a bare default) is what gives every instance its own
     # list-of-lists rather than one shared class-level object.
     cycle_observations: list[list[bool]] = Field(default_factory=lambda: [list[bool]()])
+    # One entry per try that happened but was not observed (`skip_try`): the number of
+    # observations recorded before it. Empty unless competence is learned from informed
+    # picks only, so the try index of every observation stays recoverable.
+    skipped_before: list[int] = Field(default_factory=list)
+
+    @property
+    def num_tries(self) -> int:
+        """Every try of this skill, observed or skipped."""
+        return self.num_observations + len(getattr(self, "skipped_before", []))
+
+    def skip_try(self) -> None:
+        """Counts a try without observing its outcome."""
+        self.skipped_before.append(self.num_observations)
+
+    def observation_try_indices(self) -> list[int]:
+        """The try index (from 0) at which each observation, in order, happened."""
+        skipped = getattr(self, "skipped_before", [])
+        return [j + sum(1 for s in skipped if s <= j) for j in range(self.num_observations)]
 
     @property
     def num_observations(self) -> int:
