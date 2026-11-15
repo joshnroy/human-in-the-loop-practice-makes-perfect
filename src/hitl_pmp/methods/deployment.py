@@ -40,8 +40,19 @@ class CurrentCompetence(BaseModel):
     RATE_GRID: ClassVar[int] = 41
 
     @staticmethod
-    def estimate(*, prior: tuple[float, float, float, float], outcomes: list[bool]) -> float:
+    def estimate(
+        *,
+        prior: tuple[float, float, float, float],
+        outcomes: list[bool],
+        try_indices: list[int] | None = None,
+        num_tries: int | None = None,
+    ) -> float:
+        """`try_indices` places each outcome at the try it happened (default: the i-th
+        outcome at try i) and `num_tries` is how many tries "now" is after (default:
+        one per outcome); they differ only when some tries were not observed."""
         c_mean, c_strength, r_mean, r_sd = prior
+        indices = list(range(len(outcomes))) if try_indices is None else try_indices
+        tries = len(outcomes) if num_tries is None else num_tries
         starts = (np.arange(CurrentCompetence.START_GRID) + 0.5) / CurrentCompetence.START_GRID
         rates = (
             np.array([r_mean])
@@ -52,11 +63,11 @@ class CurrentCompetence(BaseModel):
         log_w = beta_distribution.logpdf(c, c_mean * c_strength, (1 - c_mean) * c_strength)
         if r_sd > 0:
             log_w = log_w - 0.5 * ((r - r_mean) / r_sd) ** 2
-        for i, success in enumerate(outcomes):
+        for i, success in zip(indices, outcomes, strict=True):
             p = np.clip(c + r * i, 1e-9, 1 - 1e-9)
             log_w = log_w + (np.log(p) if success else np.log(1 - p))
         w = np.exp(log_w - log_w.max())
-        now = np.minimum(1.0, c + r * len(outcomes))
+        now = np.minimum(1.0, c + r * tries)
         return float((w * now).sum() / w.sum())
 
 
@@ -91,7 +102,14 @@ class DeploymentPolicy(BaseModel):
             if history is not None
             else []
         )
-        return CurrentCompetence.estimate(prior=prior, outcomes=outcomes)
+        if history is None or not getattr(history, "skipped_before", None):
+            return CurrentCompetence.estimate(prior=prior, outcomes=outcomes)
+        return CurrentCompetence.estimate(
+            prior=prior,
+            outcomes=outcomes,
+            try_indices=history.observation_try_indices(),
+            num_tries=history.num_tries,
+        )
 
     def known_competence(self, *, method: EesMethod, ground: GroundSkill) -> float | None:
         curve = self.known_curves.get(ground.skill.name)

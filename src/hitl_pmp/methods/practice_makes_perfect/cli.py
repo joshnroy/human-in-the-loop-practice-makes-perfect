@@ -245,6 +245,13 @@ class EesCli:
             "to 100000, which trains the classifier to interpolation on Ball-Ring.",
         )
         parser.add_argument(
+            "--competence-from-informed-only",
+            action="store_true",
+            help="Learn each skill's competence only from the sampler's informed picks: "
+            "an uninformative pick (no success yet, so a uniform draw) still counts as a "
+            "try but its outcome is not observed. Off reproduces every earlier run.",
+        )
+        parser.add_argument(
             "--sampler-break-ties-among-best",
             action="store_true",
             help="When more than half the candidates tie at the top score but not all of "
@@ -503,6 +510,7 @@ class EesCli:
             exploration_epsilon=args.exploration_epsilon,
             sampler_max_train_iters=args.sampler_max_train_iters,
             sampler_break_ties_among_best=args.sampler_break_ties_among_best,
+            competence_from_informed_only=args.competence_from_informed_only,
             goal_pursuit_horizon=args.goal_pursuit_horizon,
             goal_pursuit_init_cycles=args.goal_pursuit_init_cycles,
             goal_pursuit_interval=args.goal_pursuit_interval,
@@ -956,6 +964,7 @@ class Tossing3DPomdpCli(EesCli):
                 exploration_epsilon=args.exploration_epsilon,
                 sampler_max_train_iters=args.sampler_max_train_iters,
                 sampler_break_ties_among_best=args.sampler_break_ties_among_best,
+                competence_from_informed_only=args.competence_from_informed_only,
                 goal_pursuit_horizon=args.goal_pursuit_horizon,
                 goal_pursuit_init_cycles=args.goal_pursuit_init_cycles,
                 goal_pursuit_interval=args.goal_pursuit_interval,

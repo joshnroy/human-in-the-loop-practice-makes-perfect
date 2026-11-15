@@ -639,12 +639,18 @@ class Tossing3DPomdpMethod(EesMethod):
         self._pending_consultation = (skill_name, consultation)
 
     def observe_outcome(
-        self, *, ground_skill: GroundSkill, success: bool, was_random_exploration: bool = False
+        self,
+        *,
+        ground_skill: GroundSkill,
+        success: bool,
+        was_random_exploration: bool = False,
+        was_uninformative: bool = False,
     ) -> None:
         super().observe_outcome(
             ground_skill=ground_skill,
             success=success,
             was_random_exploration=was_random_exploration,
+            was_uninformative=was_uninformative,
         )
         pending, self._pending_consultation = self._pending_consultation, None
         consultation = None
