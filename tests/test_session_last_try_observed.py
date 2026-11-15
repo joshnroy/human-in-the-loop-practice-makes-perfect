@@ -70,12 +70,15 @@ def test_the_random_skills_baseline_tallies_its_sessions_last_try_too():
 class _CountsOutcomes(EesMethod):
     outcomes: int = 0
 
-    def observe_outcome(self, *, ground_skill, success, was_random_exploration=False):
+    def observe_outcome(
+        self, *, ground_skill, success, was_random_exploration=False, was_uninformative=False
+    ):
         self.outcomes += 1
         super().observe_outcome(
             ground_skill=ground_skill,
             success=success,
             was_random_exploration=was_random_exploration,
+            was_uninformative=was_uninformative,
         )
 
 

@@ -763,6 +763,7 @@ class DeploymentSnapshot:
             # Carried only when on, so a run with it off writes the snapshot it always
             # wrote (the policy file's hash is in every measurement record).
             and (key != "sampler_break_ties_among_best" or method.sampler_break_ties_among_best)
+            and (key != "competence_from_informed_only" or method.competence_from_informed_only)
         }
         return pickle.dumps(
             {
