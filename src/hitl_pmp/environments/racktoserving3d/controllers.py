@@ -115,10 +115,16 @@ class RackControllers:
     STILL_STEPS: ClassVar[int] = 3
     # `RackServingConfig.settle_until_still`, read once per instance.
     settle_until_still: bool = False
+    # `RackServingConfig.gather_and_sweep_bounds()` when `gather_delta_high` is set, read
+    # once per instance; None reads the module's bounds at call time, which the
+    # measurement probes in scripts/ replace in their own process.
+    gather_and_sweep_bounds: tuple[tuple[float, float], ...] | None = None
 
     def __init__(self, *, backend: RackServingBackend, step_limit: int = 12000):
         self.backend = backend
         self.settle_until_still = backend.config.settle_until_still
+        if backend.config.gather_delta_high is not None:
+            self.gather_and_sweep_bounds = backend.config.gather_and_sweep_bounds()
         self.shelf = RackShelfSkills(env=backend.env(), tick_limit=step_limit)
         if backend.config.base_step_limit is not None:
             self.shelf.base_step_limit = backend.config.base_step_limit
@@ -289,7 +295,7 @@ class RackControllers:
 
     def gather_and_sweep(self, *, s: float, delta: float, d: float) -> None:
         """Squeeze toward the plate in two passes, gather from +y then -y, then sweep."""
-        bounds = GATHER_AND_SWEEP_BOUNDS
+        bounds = self.gather_and_sweep_bounds or GATHER_AND_SWEEP_BOUNDS
         values = (s, delta, d)
         if not np.isfinite(values).all() or any(
             not low <= value <= high for value, (low, high) in zip(values, bounds, strict=True)

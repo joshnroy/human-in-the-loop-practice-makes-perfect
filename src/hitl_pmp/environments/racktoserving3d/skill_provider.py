@@ -45,7 +45,10 @@ class RackServingSkillProvider(SkillProvider):
 
     def sample_params(self, *, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
         # By name: the two-route variants are the same skills with success restated.
-        bounds = {"GatherAndSweep": GATHER_AND_SWEEP_BOUNDS, "Sweep": SWEEP_BOUNDS}
+        bounds = {
+            "GatherAndSweep": self.env.config.gather_and_sweep_bounds(),
+            "Sweep": SWEEP_BOUNDS,
+        }
         name = ground_skill.skill.name
         if name not in bounds:
             return np.zeros(0)
@@ -55,7 +58,11 @@ class RackServingSkillProvider(SkillProvider):
         self, *, ground_skill: GroundSkill, params: np.ndarray, state: State
     ) -> Action:
         del state
-        return RackServingActions.encode(ground_skill=ground_skill, params=params)
+        return RackServingActions.encode(
+            ground_skill=ground_skill,
+            params=params,
+            gather_and_sweep_bounds=self.env.config.gather_and_sweep_bounds(),
+        )
 
     def hand_selected_feature_transform(
         self, *, ground_skill: GroundSkill, state: State, params: np.ndarray
@@ -120,7 +127,12 @@ class RackServingActions:
     """Encode [robot skill ID, food index, squeeze s m, gather delta m, sweep depth d m]."""
 
     @staticmethod
-    def encode(*, ground_skill: GroundSkill, params: np.ndarray) -> Action:
+    def encode(
+        *,
+        ground_skill: GroundSkill,
+        params: np.ndarray,
+        gather_and_sweep_bounds: tuple[tuple[float, float], ...] = GATHER_AND_SWEEP_BOUNDS,
+    ) -> Action:
         skill = ground_skill.skill
         if skill.name in (HUMAN_BATCH_RETURN, HUMAN_TOOL_RECOVERY):
             raise PermissionError("human interventions are not robot actions")
@@ -133,7 +145,7 @@ class RackServingActions:
         if skill.name == Skills.GATHER_AND_SWEEP.name:
             if any(
                 not lower <= value <= upper
-                for value, (lower, upper) in zip(params, GATHER_AND_SWEEP_BOUNDS, strict=True)
+                for value, (lower, upper) in zip(params, gather_and_sweep_bounds, strict=True)
             ):
                 raise ValueError("GatherAndSweep s/delta/d are outside the declared bounds")
             continuous = params

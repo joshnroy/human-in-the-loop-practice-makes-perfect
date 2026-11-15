@@ -16,6 +16,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .potsticker import CollisionModel, RackPotsticker
+from .skills import GATHER_AND_SWEEP_BOUNDS
 
 Positive = Annotated[float, Field(gt=0)]
 Nonnegative = Annotated[float, Field(ge=0)]
@@ -148,6 +149,14 @@ class RackServingConfig(BaseModel):
     # evaluation task consults it right after PickScraper, so a sampler fitted on it
     # was scored on states it had not seen.
     sampler_features: Literal["parameters", "parameters_and_layout", "full_state"] = "parameters"
+    # Opt-in (2026-11-14 learning-curve study): GatherAndSweep's delta upper bound (m),
+    # replacing the declared 0.075, for the sampler, the action encoding and the
+    # controller alike. Measured on the fast two-route setup, delta of 0.1 and above
+    # leaves a side dumpling off the plate, so a wider range lowers the skill's
+    # uniform-draw competence without changing what success means. At most 0.2: on
+    # middle_three a stop of 0.2 still executes and one of 0.3 lies behind the gather
+    # start and is refused. Sweep's bounds and GatherAndSweep's s and d are unchanged.
+    gather_delta_high: Annotated[float, Field(gt=0.005, le=0.2)] | None = None
     human_interruption_cost: Positive = 5
 
     rack_width: Positive = 0.375
@@ -253,6 +262,13 @@ class RackServingConfig(BaseModel):
     blade_height_feedback_limit: float = Field(default=0.0, ge=0.0, le=0.02)
     scraper_friction: Friction = (0.4, 0.005, 0.0001)
     scraper_blade_friction: Friction = (0.25, 0.005, 0.0001)
+
+    def gather_and_sweep_bounds(self) -> tuple[tuple[float, float], ...]:
+        """GatherAndSweep's (s, delta, d) bounds, `gather_delta_high` applied."""
+        squeeze, (delta_low, delta_high), depth = GATHER_AND_SWEEP_BOUNDS
+        if self.gather_delta_high is not None:
+            delta_high = self.gather_delta_high
+        return (squeeze, (delta_low, delta_high), depth)
 
     @property
     def dumpling_depth(self) -> float:
