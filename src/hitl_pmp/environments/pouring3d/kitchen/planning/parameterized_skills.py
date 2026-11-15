@@ -36,7 +36,7 @@ from kinder_models.dynamic3d.utils import (
     run_base_motion_planning,
 )
 from pybullet_helpers.geometry import Pose
-from pybullet_helpers.ikfast.utils import IKFastHyperparameters, ikfast_closest_inverse_kinematics
+from pybullet_helpers.ikfast.utils import IKFastHyperparameters
 from pybullet_helpers.inverse_kinematics import (
     check_collisions_with_held_object,
     set_robot_joints_with_held_object,
@@ -48,6 +48,7 @@ from spatialmath import SE2
 from tomsgeoms2d.structs import Rectangle
 from tomsgeoms2d.utils import geom2ds_intersect
 
+from .ikfast_closest import IKFastClosest
 from .utils import PLANNING_MARGIN_M, UPRIGHT_TILT_LIMIT_DEG, KitchenPyBulletSim
 
 # An arm motion whose start lies inside the planning margin, but at least this far from
@@ -253,8 +254,8 @@ class KitchenMotionPlanner:
         current = list(sim.robot.get_joint_positions())
         if reference is not None:
             sim.robot.set_joints(list(reference))
-        solutions = ikfast_closest_inverse_kinematics(
-            sim.robot,
+        solutions = IKFastClosest.solve(
+            robot=sim.robot,
             world_from_target=target,
             hyperparameters=IKFastHyperparameters(
                 max_time=np.inf, max_attempts=IKFAST_MAX_ATTEMPTS
