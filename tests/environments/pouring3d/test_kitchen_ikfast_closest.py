@@ -9,6 +9,7 @@ from pybullet_helpers.ikfast.utils import IKFastHyperparameters, ikfast_closest_
 from hitl_pmp.environments.pouring3d.kitchen.planning.ikfast_closest import IKFastClosest
 from hitl_pmp.environments.vision_bracelet_robot import VisionBraceletKinovaGen3
 
+pytestmark = pytest.mark.xdist_group("kitchen_ikfast_closest")
 
 @pytest.fixture(scope="module")
 def robot():
