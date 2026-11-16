@@ -71,6 +71,7 @@ class RewardedRoutesPracticeDomain(PracticeDomain):
             ),
             human_skill_names=frozenset(humans),
             failure_effect_skills=frozenset((*route_names, *humans)),
+            failure_kept_predicates=tuple(sorted(provider.failure_kept_predicates().items())),
         )
 
     def route_competence_prior(
