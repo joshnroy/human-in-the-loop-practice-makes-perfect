@@ -51,7 +51,9 @@ class TwoRoutesStepProtocol(SimulatedStepProtocolHooks):
     @staticmethod
     def evaluation_skill_provider(*, problem: Problem) -> TwoRoutesSkillProvider:
         return TwoRoutesSkillProvider(
-            env=TwoRoutesStepProtocol.env(problem=problem), offer_human_reset=False
+            env=TwoRoutesStepProtocol.env(problem=problem),
+            offer_human_reset=False,
+            both_resets=TwoRoutesStepProtocol.env(problem=problem).both_resets,
         )
 
     @staticmethod
