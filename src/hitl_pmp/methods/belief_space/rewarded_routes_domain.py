@@ -7,7 +7,7 @@ largest route reward.
 """
 
 from collections import OrderedDict
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from typing import Any, ClassVar
 
 import numpy as np
@@ -22,6 +22,7 @@ from .types.weighted_hypothesis_belief import WeightedHypothesisBelief
 
 ROUTES_EXPECTATION_SAMPLES = 4096
 ROUTES_EXPECTATION_SEED = 0
+OPTIMISTIC_QUANTILE = 0.9
 
 
 class RewardedRoutesPracticeDomain(PracticeDomain):
@@ -80,6 +81,43 @@ class RewardedRoutesPracticeDomain(PracticeDomain):
         overrides = {n: (a, b) for n, a, b in self.competence_prior_overrides}
         overrides.update({n: (m * k, (1 - m) * k) for n, m, k, _, _ in self.skill_priors})
         return overrides.get(name, (alpha, beta))
+
+    def optimistic_policy_value(
+        self,
+        *,
+        beliefs: Mapping[str, SkillBelief],
+        tries_left: float,
+        routes: Collection[str] | None = None,
+    ) -> float:
+        """An upper bound on the deployment value reachable with `tries_left` more
+        practice tries: every try given to whichever single route ends worth the most,
+        at the most optimistic competence and learning rate the belief holds. With
+        `routes`, only those routes are counted."""
+        best = 0.0
+        for name, reward in self.route_rewards:
+            if routes is not None and name not in routes:
+                continue
+            belief = beliefs[name]
+            if isinstance(belief, WeightedHypothesisBelief):
+                reaches = sorted(
+                    (min(1.0, competence + rate * tries_left), probability)
+                    for competence, rate, probability in zip(
+                        belief.competences, belief.learning_rates, belief.probabilities, strict=True
+                    )
+                )
+                # Exact for a known curve; for a spread-out prior its 90th percentile, since
+                # the extreme tail would make every route look perfect.
+                reach, mass = reaches[-1][0], 0.0
+                for value, probability in reaches:
+                    mass += probability
+                    if mass >= OPTIMISTIC_QUANTILE:
+                        reach = value
+                        break
+            else:
+                rows = belief.sample(rng=np.random.default_rng(ROUTES_EXPECTATION_SEED), count=512)
+                reach = float(np.max(np.minimum(1.0, rows[:, 0] + rows[:, 1] * tries_left)))
+            best = max(best, reward * reach)
+        return best
 
     def sample_thetas(
         self, *, beliefs: Mapping[str, SkillBelief], sample_skills: SampleSkills, count: int
