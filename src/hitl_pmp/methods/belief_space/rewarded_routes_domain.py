@@ -104,7 +104,10 @@ class RewardedRoutesPracticeDomain(PracticeDomain):
                 reaches = sorted(
                     (min(1.0, competence + rate * tries_left), probability)
                     for competence, rate, probability in zip(
-                        belief.competences, belief.learning_rates, belief.probabilities, strict=True
+                        belief.competences.tolist(),
+                        belief.learning_rates.tolist(),
+                        belief.probabilities.tolist(),
+                        strict=True,
                     )
                 )
                 # Exact for a known curve; for a spread-out prior its 90th percentile, since
@@ -183,7 +186,8 @@ class RewardedRoutesPracticeDomain(PracticeDomain):
             if type(belief) is not WeightedHypothesisBelief:
                 return None
             encoded = (
-                np.array(belief.probabilities).tobytes() + np.array(belief.competences).tobytes()
+                np.asarray(belief.probabilities).tobytes()
+                + np.asarray(belief.competences).tobytes()
             )
             digest.update(len(encoded).to_bytes(8, "big"))
             digest.update(encoded)

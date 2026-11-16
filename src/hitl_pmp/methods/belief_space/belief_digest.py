@@ -4,9 +4,11 @@ import hashlib
 import weakref
 from typing import ClassVar
 
+import numpy as np
 from pydantic import BaseModel
 
 from .types.skill_belief import SkillBelief
+from .types.weighted_hypothesis_belief import WeightedHypothesisBelief
 
 
 class BeliefDigest:
@@ -36,11 +38,67 @@ class BeliefDigest:
         entry = BeliefDigest._digests.get(id(belief))
         if entry is not None and entry[0]() is belief:
             return entry[1]
-        digest = BeliefDigest.digest(
-            value=(type(belief).__module__, type(belief).__qualname__, belief.signature())
-        )
+        if isinstance(belief, WeightedHypothesisBelief):
+            digest = BeliefDigest._weighted_digest(belief=belief)
+        else:
+            digest = BeliefDigest.digest(
+                value=(type(belief).__module__, type(belief).__qualname__, belief.signature())
+            )
         BeliefDigest._remember(table=BeliefDigest._digests, owner=belief, encoded=digest)
         return digest
+
+    # The per-hypothesis float encodings of a weighted belief's shared columns, remembered
+    # against the column (weakly, like `_digests`): conditioning keeps the competences
+    # and learning rates and makes only new weights, so most of a child's encoding is its
+    # parent's. The weights are encoded afresh each time and never remembered.
+    _columns: ClassVar[dict[int, tuple[weakref.ref[np.ndarray], list[bytes]]]] = {}
+    _ROW: ClassVar[bytes] = b"tuple" + (3).to_bytes(8, "big")
+
+    @staticmethod
+    def _weighted_digest(*, belief: WeightedHypothesisBelief) -> bytes:
+        """The general route's digest of `belief.signature()` -- a tuple of float
+        triples -- to the byte, built from the columns."""
+        competences, learning_rates, probabilities = belief.signature_columns()
+        chunks: list[bytes] = []
+        BeliefDigest._encode(
+            value=(type(belief).__module__, type(belief).__qualname__), chunks=chunks
+        )
+        # The 2-tuple's header is rewritten as the 3-tuple's: the signature follows.
+        chunks[0] = b"tuple" + (3).to_bytes(8, "big")
+        chunks.append(b"tuple" + len(probabilities).to_bytes(8, "big"))
+        row = BeliefDigest._ROW
+        for c, r, p in zip(
+            BeliefDigest._shared_column(column=competences),
+            BeliefDigest._shared_column(column=learning_rates),
+            BeliefDigest._float_column(values=probabilities.tolist()),
+            strict=True,
+        ):
+            chunks.append(row + c + r + p)
+        return hashlib.sha256(b"".join(chunks)).digest()
+
+    @staticmethod
+    def _shared_column(*, column: np.ndarray) -> list[bytes]:
+        entry = BeliefDigest._columns.get(id(column))
+        if entry is not None and entry[0]() is column:
+            return entry[1]
+        encoded = BeliefDigest._float_column(values=column.tolist())
+        key = id(column)
+
+        def forget(reference: weakref.ref) -> None:  # noqa: PLR0917 -- weakref calls it so
+            current = BeliefDigest._columns.get(key)
+            if current is not None and current[0] is reference:
+                del BeliefDigest._columns[key]
+
+        BeliefDigest._columns[key] = (weakref.ref(column, forget), encoded)
+        return encoded
+
+    @staticmethod
+    def _float_column(*, values: list[float]) -> list[bytes]:
+        encodings: list[bytes] = []
+        for value in values:
+            tag, payload = BeliefDigest._leaf(value=value)
+            encodings.append(tag + len(payload).to_bytes(8, "big") + payload)
+        return encodings
 
     @staticmethod
     def content_key(*, belief: SkillBelief) -> object:
