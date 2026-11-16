@@ -178,6 +178,9 @@ class EesMethod(Method):
     # Skill names that count as a practice try (episode). None: every skill with
     # learnable parameters, the default rule (`counts_as_try`).
     practice_try_skills: frozenset[str] | None = None
+    # Skill name -> (competence mean, strength, rate mean, rate sd): deploy on each skill's
+    # current competence, learning included (`--deploy-current-competence`).
+    deploy_curve_priors: dict[str, tuple[float, float, float, float]] = Field(default_factory=dict)
     competence_recency_size: int = 5
 
     # False matches vendor 5bd3f5bd: one observation per non-exploration attempt.
