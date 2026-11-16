@@ -39,6 +39,12 @@ class TwoRoutesCli:
             "own reset or the human's works after either one.",
         )
         parser.add_argument(
+            "--robot-reset",
+            action=argparse.BooleanOptionalAction,
+            default=True,
+            help="Under --both-resets, --no-robot-reset leaves only the human's reset.",
+        )
+        parser.add_argument(
             "--robot-reset-steps",
             type=int,
             default=1,
@@ -58,6 +64,7 @@ class TwoRoutesCli:
             competence_cap=args.competence_cap,
             both_resets=args.both_resets,
             robot_reset_steps=args.robot_reset_steps,
+            robot_reset=args.robot_reset,
             route_a_reward=args.route_a_reward,
             route_b_reward=args.route_b_reward,
             seed=args.seed + (0 if practice else args.test_env_seed_offset),
@@ -79,6 +86,7 @@ class TwoRoutesCli:
                 env=problem.env,
                 offer_human_reset=args.human_reset,
                 both_resets=args.both_resets,
+                robot_reset=args.robot_reset,
             ),
             test_task_goals=(problem.tasks.goal(),),
         )
