@@ -10,7 +10,7 @@ from __future__ import annotations
 import heapq
 import math
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any, get_args
 
 import numpy as np
@@ -87,6 +87,8 @@ class DeterminizedAStarPlanner(
         num_samples: int = NUM_SAMPLES,
         trace: SearchTrace | None = None,
         remaining_actions: int | None = None,
+        remaining_steps: float | None = None,
+        action_steps: Callable[[ActionT], float] | None = None,
     ) -> tuple[float, ActionT | StopAction]:
         """Search one sampled deterministic successor per applicable action.
 
@@ -102,6 +104,13 @@ class DeterminizedAStarPlanner(
         to the real practice session's remaining action slots. Without it, the
         iteration limit bounds cyclic search without imposing a depth cutoff.
         ``horizon`` must be None: there is no search depth to set.
+
+        Optional ``remaining_steps`` limits plans to the practice steps that are left,
+        counted with ``action_steps``, the caller's forecast of the control steps one
+        action takes: a path never takes an action that would overshoot, and a node
+        whose path has spent them all is not expanded. Such a node is still valued by
+        its stop value, as under ``remaining_actions``. A path's steps travel with its
+        queue entry, not its node key, so with None nothing here is read.
         """
         # ``horizon`` belongs to the shared interface for exact expectimax. This
         # planner has no depth to bound, so a caller passing one is configured wrongly.
@@ -112,6 +121,11 @@ class DeterminizedAStarPlanner(
             )
         assert remaining_actions is None or remaining_actions >= 0, (
             "remaining_actions must be non-negative"
+        )
+        if remaining_steps is not None and action_steps is None:
+            raise ValueError("remaining_steps needs action_steps, the forecast steps per action")
+        assert remaining_steps is None or remaining_steps >= 0, (
+            "remaining_steps must be non-negative"
         )
         assert self.max_iterations >= 1, "max_iterations must be positive"
         assert num_samples >= 1, "num_samples must be positive"
@@ -135,6 +149,8 @@ class DeterminizedAStarPlanner(
         best_objective_value = root_value
         best_action: ActionT | StopAction = STOP_ACTION
         best_path_depth = 0
+        best_path_steps = 0.0
+        over_budget_root_actions: list[ActionT] = []
         # Algorithm 3, line 3: Open <- {(b0, g=0)}.
         open_nodes: list[
             DeterminizedSearchQueueEntry[EnvironmentStateT, BeliefStateT, ActionT]
@@ -247,6 +263,12 @@ class DeterminizedAStarPlanner(
             ):
                 diagnostics.action_horizon_terminal_nodes += 1
                 continue
+            if (
+                remaining_steps is not None
+                and current_node.path_recovery_info.steps >= remaining_steps
+            ):
+                diagnostics.step_budget_terminal_nodes += 1
+                continue
 
             edges = sampled_edges.get(current_node.cache_info.key)
             sample_new_edges = edges is None
@@ -274,6 +296,32 @@ class DeterminizedAStarPlanner(
                 sampled_cost,
                 estimated_observation_probability,
             ) in children:
+                next_steps = current_node.path_recovery_info.steps
+                if remaining_steps is not None:
+                    assert action_steps is not None
+                    forecast_steps = action_steps(action)
+                    assert math.isfinite(forecast_steps) and forecast_steps >= 0, (
+                        "forecast steps must be finite and non-negative"
+                    )
+                    next_steps += forecast_steps
+                    # Checked per path, not when the edge is sampled: a cached edge can
+                    # be relaxed again from a path that has spent fewer steps.
+                    if next_steps > remaining_steps:
+                        if (
+                            trace is not None
+                            and current_node.diagnostic_info.depth == 0
+                            and action not in over_budget_root_actions
+                        ):
+                            over_budget_root_actions.append(action)
+                            trace.record(
+                                event="action_rejected",
+                                node=0,
+                                action=DecisionLogEncoding.value(value=action),
+                                reason="exceeds_remaining_steps",
+                                forecast_steps=forecast_steps,
+                                remaining_steps=remaining_steps,
+                            )
+                        continue
                 next_cost = current_node.belief.summed_cost + sampled_cost
                 next_depth = current_node.diagnostic_info.depth + 1
                 # Only a root edge establishes the first action. Descendants inherit
@@ -378,6 +426,8 @@ class DeterminizedAStarPlanner(
                             ],
                             beats_stop=next_path_cost < 0.0,
                         )
+                        if remaining_steps is not None:
+                            path.update(forecast_steps=next_steps)
                     if self.log_full_search_tree:
                         if child_is_new:
                             trace.record(
@@ -427,6 +477,7 @@ class DeterminizedAStarPlanner(
                         best_objective_value = value
                         best_action = first_action
                         best_path_depth = next_depth
+                        best_path_steps = next_steps
                     sequence += 1
                     heapq.heappush(
                         open_nodes,
@@ -448,6 +499,7 @@ class DeterminizedAStarPlanner(
                                 action_path=action_path,
                                 observation_surprise=cumulative_surprise,
                                 heuristic_cost=cumulative_heuristic,
+                                steps=next_steps,
                             ),
                         ),
                     )
@@ -457,6 +509,8 @@ class DeterminizedAStarPlanner(
             diagnostics.termination_reason = "iteration_budget"
         elif diagnostics.action_horizon_terminal_nodes:
             diagnostics.termination_reason = "action_horizon_exhausted"
+        elif diagnostics.step_budget_terminal_nodes:
+            diagnostics.termination_reason = "step_budget_exhausted"
 
         if trace is not None:
             for path in root_action_paths:
@@ -489,6 +543,12 @@ class DeterminizedAStarPlanner(
             if self.variant != "algorithm3":
                 draw_fields.update(
                     determinized_variant=self.variant, num_rollouts=self.num_rollouts
+                )
+            if remaining_steps is not None:
+                draw_fields.update(
+                    remaining_steps=remaining_steps,
+                    selected_path_steps=best_path_steps,
+                    step_budget_terminal_nodes=diagnostics.step_budget_terminal_nodes,
                 )
             trace.record(
                 event="search_summary",
