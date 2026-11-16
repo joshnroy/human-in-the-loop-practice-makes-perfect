@@ -20,6 +20,7 @@ from hitl_pmp.environments.lightswitch.environment import LightSwitchEnvironment
 from hitl_pmp.environments.tossingroom.environment import (
     TossingRoomEnvironment,
 )
+from hitl_pmp.environments.tworoutes.environment import TwoRoutesEnvironment
 
 # Classes, not instances: each test builds its own and resets it, so no test can
 # depend on the state another one happened to leave behind. A module-level list of
@@ -29,6 +30,7 @@ _ENVIRONMENT_TYPES: list[type[Environment]] = [
     LightSwitchEnvironment,
     BallRingEnvironment,
     TossingRoomEnvironment,
+    TwoRoutesEnvironment,
 ]
 
 # One entry since the three frozen-weight forks were retired. Kept as a list, and kept

@@ -43,6 +43,8 @@ from hitl_pmp.environments.tossing3d.step_protocol import Tossing3DStepProtocol
 from hitl_pmp.environments.tossingroom.cli import (
     TossingRoomCli,
 )
+from hitl_pmp.environments.tworoutes.cli import TwoRoutesCli
+from hitl_pmp.environments.tworoutes.step_protocol import TwoRoutesStepProtocol
 from hitl_pmp.launch_gate import LaunchGate
 from hitl_pmp.methods.oracle.cli import SkillOracleCli
 from hitl_pmp.methods.practice_makes_perfect.cli import (
@@ -80,6 +82,8 @@ ENVIRONMENTS: dict[str, type[EnvironmentCli]] = {
     # (`tossingroom`, `tossingroomsplit`, `tossingroomsplitidentity`) are retired; their
     # published results stay in docs/experiment-logs/ behind staleness notes.
     "tossingroom": TossingRoomCli,
+    # A toy with no physics: two routes to one goal, one of which needs a human reset.
+    "tworoutes": TwoRoutesCli,
 }
 
 
@@ -92,6 +96,7 @@ STEP_PROTOCOL_ENVIRONMENTS: dict[str, type[StepProtocolEnvironment]] = {
     "sweepoffshelf3d": SweepOffShelf3DStepProtocol,
     "tossing3d": Tossing3DStepProtocol,
     "tossing3d_real": Tossing3DRealStepProtocol,
+    "tworoutes": TwoRoutesStepProtocol,
 }
 
 

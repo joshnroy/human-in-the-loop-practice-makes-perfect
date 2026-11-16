@@ -88,6 +88,8 @@ def test_environments_registry_is_exactly_the_surviving_domains() -> None:
         # Not a fork: the same domain on the real TidyBot (or a fake robot).
         "tossing3d_real",
         "tossingroom",
+        # Not a fork: a toy with no physics, two routes to one goal.
+        "tworoutes",
     }
 
 
