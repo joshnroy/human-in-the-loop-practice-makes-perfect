@@ -128,6 +128,26 @@ class EesCli:
         return {name: (starts[name], rates[name]) for name in starts}
 
     @staticmethod
+    def skill_priors(*, args: argparse.Namespace) -> dict[str, tuple[float, float, float, float]]:
+        """--skill-prior SKILL=C_MEAN,C_STRENGTH,RATE_MEAN,RATE_SD, one per skill."""
+        out: dict[str, tuple[float, float, float, float]] = {}
+        for spec in getattr(args, "skill_prior", None) or []:
+            name, _, raw = spec.partition("=")
+            values = tuple(float(v) for v in raw.split(","))
+            if not name or len(values) != 4 or name in out:
+                raise ValueError(
+                    "--skill-prior expects SKILL=c_mean,c_strength,rate_mean,rate_sd "
+                    f"once per skill, got {spec!r}"
+                )
+            c_mean, c_strength, rate_mean, rate_sd = values
+            if not (0 < c_mean < 1 and c_strength > 0 and rate_mean >= 0 and rate_sd >= 0):
+                raise ValueError(
+                    f"--skill-prior {spec!r}: need 0<c_mean<1, c_strength>0, rates >= 0"
+                )
+            out[name] = (c_mean, c_strength, rate_mean, rate_sd)
+        return out
+
+    @staticmethod
     def known_rates(*, args: argparse.Namespace) -> dict[str, float]:
         """Skills given --known-competence-rate alone: the learning rate is known, the
         competence is still estimated from outcomes."""
@@ -150,6 +170,16 @@ class EesCli:
                 "that skill: competence after n tries is min(1, S + R * n), in planning "
                 "and deployment. EES ignores it.",
             )
+        parser.add_argument(
+            "--skill-prior",
+            action="append",
+            default=None,
+            metavar="SKILL=C_MEAN,C_STRENGTH,RATE_MEAN,RATE_SD",
+            help="One skill's prior, given identically to DP and the belief-space method: "
+            "Beta(C_MEAN*C_STRENGTH, (1-C_MEAN)*C_STRENGTH) on its competence and a normal "
+            "(RATE_MEAN, RATE_SD) truncated at 0 on its learning rate. DP holds no spread on "
+            "the rate, so it takes RATE_MEAN as its starting Delta. Repeatable.",
+        )
         parser.add_argument(
             "--practice-try-skills",
             nargs="+",
@@ -516,6 +546,7 @@ class Tossing3DPomdpCli(EesCli):
         domain: PracticeDomain,
         curves: Mapping[str, tuple[float, float]],
         rates: Mapping[str, float] | None = None,
+        priors: Mapping[str, tuple[float, float, float, float]] | None = None,
     ) -> PracticeDomain:
         """The domain with each named skill's learning curve known (perfect information),
         and each skill named by `rates` alone with its learning rate known; the domain
@@ -530,6 +561,10 @@ class Tossing3DPomdpCli(EesCli):
             )
         if rates:
             domain = domain.model_copy(update={"known_learning_rates": tuple(rates.items())})
+        if priors:
+            domain = domain.model_copy(
+                update={"skill_priors": tuple((n, *v) for n, v in priors.items())}
+            )
         return domain
 
     @staticmethod
@@ -872,6 +907,7 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_domain=Tossing3DPomdpCli.with_known_curves(
                     curves=EesCli.known_curves(args=args),
                     rates=EesCli.known_rates(args=args),
+                    priors=EesCli.skill_priors(args=args),
                     domain=Tossing3DPomdpCli.with_prior_means(
                         means=args.pomdp_competence_prior_for,
                         domain=Tossing3DPomdpCli.with_competence_prior(
@@ -1091,6 +1127,9 @@ class DpCli(EesCli):
                 dp_initial_competence=args.dp_initial_competence,
                 dp_known_competence_curves=EesCli.known_curves(args=args),
                 dp_known_learning_rates=EesCli.known_rates(args=args),
+                dp_skill_priors={
+                    n: (c, k, r) for n, (c, k, r, _) in EesCli.skill_priors(args=args).items()
+                },
                 dp_initial_learning_rate_for=args.dp_initial_learning_rate_for,
                 dp_solver_log=(
                     args.output_dir / "dp_allocations.jsonl" if args.output_dir else None

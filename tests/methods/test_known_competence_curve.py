@@ -66,6 +66,33 @@ class TestKnownCompetenceCurve:
         assert not EesMethod.counts_as_try(ground_skill=route, try_skills=None)
 
     @staticmethod
+    def test_a_skill_prior_gives_ours_that_beta_and_that_rate_distribution() -> None:
+        domain = DOMAIN.model_copy(
+            update={
+                "known_competence_curves": (),
+                "skill_priors": (("RouteA", 0.1, 10.0, 0.1, 0.05),),
+            }
+        )
+        belief = make_default_tossing3d_belief(
+            domain=domain, model="local_trend", engine="grid"
+        ).skill_beliefs["RouteA"]
+        assert belief.mean_competence() == pytest.approx(0.1, abs=0.01)
+        assert belief.mean_learning_rate() == pytest.approx(0.1, abs=0.01)
+        assert belief.refit(training_examples=1).mean_competence() > 0.15
+        assert domain.route_competence_prior(name="RouteA", alpha=1.0, beta=3.0) == (
+            pytest.approx(1.0),
+            pytest.approx(9.0),
+        )
+
+    @staticmethod
+    def test_a_skill_prior_gives_dp_that_beta_and_that_rate_mean() -> None:
+        from hitl_pmp.methods.practice_makes_perfect.dp_method import DpMethod
+        from hitl_pmp.methods.practice_makes_perfect.dp_priors import DpSkillPrior
+
+        prior = DpMethod.skill_prior(c_mean=0.1, c_strength=10.0, rate_mean=0.1)
+        assert prior == DpSkillPrior(alpha=1.0, beta=9.0, initial_learning_rate=0.1)
+
+    @staticmethod
     def test_deployment_reads_the_curve_at_the_try_count() -> None:
         ground = SimpleNamespace(skill=SimpleNamespace(name="RouteA"))
         history = SimpleNamespace(cycle_observations=[[0, 0], [1]])

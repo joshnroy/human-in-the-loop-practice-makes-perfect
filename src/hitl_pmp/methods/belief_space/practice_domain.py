@@ -73,6 +73,10 @@ class PracticeDomain(BaseModel, abc.ABC):
     known_competence_curves: tuple[tuple[str, float, float], ...] = ()
     # (belief name, rate): that skill's learning rate is known; its competence is not.
     known_learning_rates: tuple[tuple[str, float], ...] = ()
+    # (belief name, competence mean, competence strength, rate mean, rate sd): that skill's
+    # prior is Beta(mean*strength, (1-mean)*strength) on competence and a normal on the
+    # learning rate truncated at 0 -- the same prior DP gets (`--skill-prior`).
+    skill_priors: tuple[tuple[str, float, float, float, float], ...] = ()
     # Expectimax depth when the run does not set one.
     default_search_depth: int = Field(default=3, ge=0)
     # Reduce expectimax by exact object symmetry and count-keyed beliefs
