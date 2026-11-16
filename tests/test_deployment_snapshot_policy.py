@@ -78,3 +78,35 @@ def test_belief_method_snapshot_records_its_valued_deployment_policy(*, variant,
         raw=legacy, env=method.env, provider=method.skill_provider
     )
     assert historical.deployment_policy.kind == "shared_ees"
+
+
+def test_a_rewarded_routes_snapshot_deploys_reward_greedy_from_the_domains_prior():
+    from hitl_pmp.environments.tworoutes.environment import TwoRoutesEnvironment
+    from hitl_pmp.environments.tworoutes.skill_provider import TwoRoutesSkillProvider
+    from hitl_pmp.methods.belief_space.rewarded_routes_domain import RewardedRoutesPracticeDomain
+    from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
+
+    env = TwoRoutesEnvironment()
+    provider = TwoRoutesSkillProvider(env=env)
+    method = Tossing3DPomdpMethod(
+        env=env,
+        skill_provider=provider,
+        seed=0,
+        pomdp_num_particles=32,
+        pomdp_domain=RewardedRoutesPracticeDomain.from_provider(provider=provider),
+    )
+    raw = DeploymentSnapshot.encode(method=method)
+    restored = DeploymentSnapshot.restore(
+        raw=raw, env=env, provider=TwoRoutesSkillProvider(env=env, offer_human_reset=False)
+    )
+    policy = restored.deployment_policy
+    assert policy.kind == "reward_greedy" and policy.horizon == 1
+    assert {name: (prior.alpha, prior.beta) for name, prior in policy.dp_priors.items()} == {
+        "RouteA": (1.0, 3.0),
+        "RouteB": (1.0, 3.0),
+    }
+    legacy = DeploymentSnapshot.encode(method=method, method_specific=False)
+    assert (
+        DeploymentSnapshot.restore(raw=legacy, env=env, provider=provider).deployment_policy.kind
+        == "shared_ees"
+    )
