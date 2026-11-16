@@ -212,11 +212,11 @@ class DeterminizedAStarPlanner(
         cost = {root_key: 0.0}
         # Potential differences in J can make edges negative. A cheaper path to
         # an expanded node must therefore propagate through its descendants.
-        # Retain its sampled edges so reopening cannot redraw the determinization.
-        sampled_edges: dict[
-            object,
-            list[tuple[ActionT, EnvironmentStateT, BeliefStateT, float, float]],
-        ] = {}
+        # Retain its sampled edges so reopening cannot redraw the determinization: each
+        # as (action, index of the outcome drawn, its cost, its probability), never the
+        # child's belief. A search generates several children per node and reopens
+        # few or none, and the beliefs were most of its memory (`regenerate_children`).
+        sampled_edges: dict[object, list[tuple[ActionT, int, float, float]]] = {}
         # The shared uniforms of the "state" and "skill" draw scopes, and how many
         # draws reused one (under the key `reused`).
         outcome_uniforms: dict[object, float] = {}
@@ -328,7 +328,12 @@ class DeterminizedAStarPlanner(
                     outcome_uniforms=outcome_uniforms,
                 )
             else:
-                children = iter(list(edges))
+                # Rebuilt whole before any is relaxed, as the stored list was read.
+                children = iter(
+                    list(
+                        self.regenerate_children(model=model, node=current_node.belief, edges=edges)
+                    )
+                )
                 cached_successor_relaxations += len(edges)
 
             # Lazily generated, so the first expansion keeps its original sample/
@@ -751,11 +756,11 @@ class DeterminizedAStarPlanner(
         *,
         model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
         node: DeterminizedSearchBelief[EnvironmentStateT, BeliefStateT],
-        edges: list[tuple[ActionT, EnvironmentStateT, BeliefStateT, float, float]],
+        edges: list[tuple[ActionT, int, float, float]],
         diagnostics: DeterminizedSearchDiagnostics,
         outcome_uniforms: dict[object, float],
     ) -> Iterator[tuple[ActionT, EnvironmentStateT, BeliefStateT, float, float]]:
-        """Each valid action's children, appended to ``edges`` as they are yielded.
+        """Each valid action's children, recorded in ``edges`` as they are yielded.
 
         Ours: one sampled outcome per action (Algorithm 3, lines 14-15). Curtis: one
         child per distinct outcome, with its branch probability -- the model's, or its
@@ -785,40 +790,73 @@ class DeterminizedAStarPlanner(
                         outcome_uniforms[draw_key] = uniform
                     else:
                         diagnostics.reused_outcome_draws += 1
-                branches = [self.sample_outcome(outcomes=outcomes, action=action, uniform=uniform)]
-            for next_environment_state, sampled_cost, probability in branches:
+                index = self.sample_outcome_index(outcomes=outcomes, action=action, uniform=uniform)
+                branches = [(index, outcomes[index][2])]
+            for index, probability in branches:
+                next_environment_state, sampled_cost, _ = outcomes[index]
                 next_belief = model.compute_next_belief_state(
                     belief_state=node.belief_state,
                     environment_state=node.environment_state,
                     potential_next_environment_state=next_environment_state,
                     practice_action=action,
                 )
-                edge = (action, next_environment_state, next_belief, sampled_cost, probability)
-                edges.append(edge)
+                edges.append((action, index, sampled_cost, probability))
                 diagnostics.generated_successors += 1
-                yield edge
+                yield action, next_environment_state, next_belief, sampled_cost, probability
+
+    @staticmethod
+    def regenerate_children(
+        *,
+        model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
+        node: DeterminizedSearchBelief[EnvironmentStateT, BeliefStateT],
+        edges: list[tuple[ActionT, int, float, float]],
+    ) -> Iterator[tuple[ActionT, EnvironmentStateT, BeliefStateT, float, float]]:
+        """A reopened node's children, rebuilt from the outcomes its first expansion drew.
+
+        The outcome distribution is recomputed from the reopened node and each recorded
+        outcome taken by its index, with the cost and probability recorded with it; so a
+        reopening draws nothing and charges each edge what it was first charged.
+        `transition_outcomes` and `compute_next_belief_state` are deterministic in their
+        arguments (a model's, the tests'), and the reopened node is the node first
+        expanded: one key, so one belief up to what the key leaves out (under curtis,
+        the accumulated cost, which the path's g carries)."""
+        outcomes: list[tuple[EnvironmentStateT, float, float]] = []
+        last_action: ActionT | None = None
+        for action, index, sampled_cost, probability in edges:
+            if last_action is None or action is not last_action:
+                outcomes = model.transition_outcomes(
+                    environment_state=node.environment_state,
+                    practice_action=action,
+                    belief_state=node.belief_state,
+                )
+                last_action = action
+            next_environment_state = outcomes[index][0]
+            next_belief = model.compute_next_belief_state(
+                belief_state=node.belief_state,
+                environment_state=node.environment_state,
+                potential_next_environment_state=next_environment_state,
+                practice_action=action,
+            )
+            yield action, next_environment_state, next_belief, sampled_cost, probability
 
     def branch_outcomes(
         self,
         *,
         outcomes: list[tuple[EnvironmentStateT, float, float]],
         action: ActionT,
-    ) -> list[tuple[EnvironmentStateT, float, float]]:
-        """PO_DAStar's branches: every outcome at its own probability, or the distinct
-        outcomes of ``num_rollouts`` draws at their empirical frequency."""
+    ) -> list[tuple[int, float]]:
+        """PO_DAStar's branches, as (outcome index, branch probability): every outcome at
+        its own probability, or the distinct outcomes of ``num_rollouts`` draws at their
+        empirical frequency."""
         assert outcomes, f"action {action!r} has no chance outcomes"
         if self.num_rollouts is None:
-            return list(outcomes)
+            return [(index, outcome[2]) for index, outcome in enumerate(outcomes)]
         probabilities = np.fromiter((outcome[2] for outcome in outcomes), dtype=np.float64)
         draws = self.rng.choice(
             len(outcomes), size=self.num_rollouts, p=probabilities / probabilities.sum()
         )
         counts = np.bincount(draws, minlength=len(outcomes))
-        return [
-            (outcome[0], outcome[1], count / self.num_rollouts)
-            for outcome, count in zip(outcomes, counts, strict=True)
-            if count
-        ]
+        return [(index, count / self.num_rollouts) for index, count in enumerate(counts) if count]
 
     def compute_and_cache_stop_value(
         self,
@@ -883,7 +921,19 @@ class DeterminizedAStarPlanner(
         action: ActionT,
         uniform: float | None = None,
     ) -> tuple[EnvironmentStateT, float, float]:
-        """Validate a chance distribution and sample one determinized successor.
+        """Validate a chance distribution and sample one determinized successor."""
+        return outcomes[
+            self.sample_outcome_index(outcomes=outcomes, action=action, uniform=uniform)
+        ]
+
+    def sample_outcome_index(
+        self,
+        *,
+        outcomes: list[tuple[EnvironmentStateT, float, float]],
+        action: ActionT,
+        uniform: float | None = None,
+    ) -> int:
+        """`sample_outcome`'s draw, as the index of the outcome it picks.
 
         A given ``uniform`` goes through the CDF exactly as ``Generator.choice`` maps
         its own draw, so equal distributions given equal uniforms agree."""
@@ -907,4 +957,4 @@ class DeterminizedAStarPlanner(
         assert math.isfinite(outcome[1]) and outcome[1] >= 0, (
             "sampled_cost must be finite and non-negative"
         )
-        return outcome
+        return outcome_index

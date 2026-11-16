@@ -130,3 +130,23 @@ class TestValueMemo:
         assert RewardedRoutesPracticeDomain.value_memo_size() <= (
             RewardedRoutesPracticeDomain.VALUE_MEMO_SIZE
         )
+
+
+class TestValueMemoKey:
+    """A key held a copy of every route's weights and competences -- ~61 kB for a
+    prior grid -- so a full memo of 4,096 held ~240 MiB. A digest of the same bytes is
+    as exact a key and fixed-size."""
+
+    @staticmethod
+    def test_the_key_is_a_fixed_size_digest_whatever_the_beliefs_size() -> None:
+        sizes = set()
+        for rows in (1, 441, 4000):
+            weight = 1.0 / rows
+            beliefs = {
+                name: belief(*((i / rows, 0.0, weight) for i in range(rows)))
+                for name in ("RouteA", "RouteB")
+            }
+            key = DOMAIN.value_memo_key(beliefs=beliefs)
+            assert isinstance(key, bytes)
+            sizes.add(len(key))
+        assert sizes == {32}
