@@ -547,12 +547,17 @@ class Tossing3DPomdpMethod(EesMethod):
         self._remaining_practice_steps = remaining_steps
         self._remaining_practice_episodes = remaining_episodes
 
-    @staticmethod
-    def action_episodes(*, ground_skill: GroundSkill) -> float:
-        """What one planned action takes from an episode budget: 1 for a try of a skill
-        with learnable parameters, 0 for anything else (setup skills, a person's reset).
-        The practice loop counts by the same rule (`practice_episode_dispatched`)."""
-        return 1.0 if ground_skill.skill.param_dim > 0 else 0.0
+    def action_episodes(self, *, ground_skill: GroundSkill) -> float:
+        """What one planned action takes from an episode budget: 1 for a try
+        (`EesMethod.counts_as_try`), 0 for anything else (setup skills, a person's
+        reset). The practice loop counts by the same rule (`practice_episode_dispatched`)."""
+        return (
+            1.0
+            if EesMethod.counts_as_try(
+                ground_skill=ground_skill, try_skills=self.practice_try_skills
+            )
+            else 0.0
+        )
 
     def forecast_action_steps(self, *, ground_skill: GroundSkill) -> float:
         """The control steps the planner expects one try of `ground_skill` to take: the
