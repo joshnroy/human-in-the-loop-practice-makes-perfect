@@ -36,9 +36,22 @@ class DeploymentPolicy(BaseModel):
     horizon: int = Field(default=4, ge=0)
     max_states: int = Field(default=4096, ge=1)
     dp_priors: dict[str, DpSkillPrior] = Field(default_factory=dict)
+    # Skill name -> (start, rate): perfect information. Competence after n practice
+    # tries is min(1, start + rate * n), in place of any estimate from outcomes.
+    known_curves: dict[str, tuple[float, float]] = Field(default_factory=dict)
+
+    def known_competence(self, *, method: EesMethod, ground: GroundSkill) -> float | None:
+        curve = self.known_curves.get(ground.skill.name)
+        if curve is None:
+            return None
+        history = method._competence_models.get(ground)
+        tries = sum(len(c) for c in history.cycle_observations) if history is not None else 0
+        return min(1.0, curve[0] + curve[1] * tries)
 
     def dp_competence(self, *, method: EesMethod, ground: GroundSkill) -> float:
         """DP values its cumulative posterior, rather than EES's recent window."""
+        if (known := self.known_competence(method=method, ground=ground)) is not None:
+            return known
         prior = self.dp_priors.get(ground.skill.name)
         history = method._competence_models.get(ground)
         return LinearSkillCompetenceModel(
@@ -51,6 +64,8 @@ class DeploymentPolicy(BaseModel):
         """The recent-window posterior mean of the snapshot's outcome counts, from this
         policy's own prior for the skill where it names one rather than EES's
         optimistic Beta(10, 1), under which a route never tried looks nearly perfect."""
+        if (known := self.known_competence(method=method, ground=ground)) is not None:
+            return known
         prior = self.dp_priors.get(ground.skill.name)
         history = method._competence_models.get(ground)
         return OptimisticSkillCompetenceModel(

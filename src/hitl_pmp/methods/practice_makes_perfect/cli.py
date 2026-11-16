@@ -1,6 +1,6 @@
 import argparse
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, get_args
 
@@ -118,7 +118,38 @@ class EesCli:
         return AlwaysAskReset(cost=args.always_ask_reset_cost)
 
     @staticmethod
+    def known_curves(*, args: argparse.Namespace) -> dict[str, tuple[float, float]]:
+        """--known-competence-start/-rate as one curve per skill named by both. A start
+        needs a rate; a rate alone is `known_rates`."""
+        starts = getattr(args, "known_competence_start", None) or {}
+        rates = getattr(args, "known_competence_rate", None) or {}
+        if unpaired := sorted(set(starts) - set(rates)):
+            raise ValueError(f"--known-competence-start without a rate for {unpaired}")
+        return {name: (starts[name], rates[name]) for name in starts}
+
+    @staticmethod
+    def known_rates(*, args: argparse.Namespace) -> dict[str, float]:
+        """Skills given --known-competence-rate alone: the learning rate is known, the
+        competence is still estimated from outcomes."""
+        starts = getattr(args, "known_competence_start", None) or {}
+        rates = getattr(args, "known_competence_rate", None) or {}
+        return {name: rate for name, rate in rates.items() if name not in starts}
+
+    @staticmethod
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:
+        for flag, text in (
+            ("--known-competence-start", "SKILL=S: perfect information, competence untrained"),
+            ("--known-competence-rate", "SKILL=R: perfect information, gain per practice try"),
+        ):
+            parser.add_argument(
+                flag,
+                action=DpCli.SkillValues,
+                default={},
+                metavar="SKILL=VALUE",
+                help=f"{text}. DP and the belief-space method then estimate nothing for "
+                "that skill: competence after n tries is min(1, S + R * n), in planning "
+                "and deployment. EES ignores it.",
+            )
         parser.add_argument(
             "--record-ees-decisions",
             action="store_true",
@@ -445,6 +476,28 @@ class Tossing3DPomdpCli(EesCli):
     }
 
     @staticmethod
+    def with_known_curves(
+        *,
+        domain: PracticeDomain,
+        curves: Mapping[str, tuple[float, float]],
+        rates: Mapping[str, float] | None = None,
+    ) -> PracticeDomain:
+        """The domain with each named skill's learning curve known (perfect information),
+        and each skill named by `rates` alone with its learning rate known; the domain
+        itself when neither names a skill."""
+        if curves:
+            domain = domain.model_copy(
+                update={
+                    "known_competence_curves": tuple(
+                        (name, start, rate) for name, (start, rate) in curves.items()
+                    )
+                }
+            )
+        if rates:
+            domain = domain.model_copy(update={"known_learning_rates": tuple(rates.items())})
+        return domain
+
+    @staticmethod
     def with_competence_prior(
         *, domain: PracticeDomain, prior: tuple[float, float] | None
     ) -> PracticeDomain:
@@ -769,11 +822,17 @@ class Tossing3DPomdpCli(EesCli):
                     if args.skill_cost_prior_steps is None
                     else {"skill_cost_prior_steps": args.skill_cost_prior_steps}
                 ),
-                pomdp_domain=Tossing3DPomdpCli.with_competence_prior(
-                    domain=(
-                        domain if isinstance(domain, PracticeDomain) else domain(ctx.skill_provider)
+                pomdp_domain=Tossing3DPomdpCli.with_known_curves(
+                    curves=EesCli.known_curves(args=args),
+                    rates=EesCli.known_rates(args=args),
+                    domain=Tossing3DPomdpCli.with_competence_prior(
+                        domain=(
+                            domain
+                            if isinstance(domain, PracticeDomain)
+                            else domain(ctx.skill_provider)
+                        ),
+                        prior=competence_prior,
                     ),
-                    prior=competence_prior,
                 ),
                 decision_log=(
                     args.output_dir
@@ -980,6 +1039,8 @@ class DpCli(EesCli):
                 dp_solver_time_limit=args.dp_solver_time_limit,
                 dp_prior_calibration=args.dp_prior_calibration,
                 dp_initial_competence=args.dp_initial_competence,
+                dp_known_competence_curves=EesCli.known_curves(args=args),
+                dp_known_learning_rates=EesCli.known_rates(args=args),
                 dp_initial_learning_rate_for=args.dp_initial_learning_rate_for,
                 dp_solver_log=(
                     args.output_dir / "dp_allocations.jsonl" if args.output_dir else None
