@@ -138,8 +138,11 @@ class TwoRoutesEnvironment(Environment):
                     self.attempts[skill] += 1
                 suffix = skill[-1].lower()
                 self.set_state(
+                    # Under both_resets every end also waits in `after`; `after_{suffix}`
+                    # keeps the four ends (route x outcome) distinct states.
                     state=self.build_state(**{
-                        ("after" if self.both_resets else f"after_{suffix}"): True,
+                        "after": self.both_resets,
+                        f"after_{suffix}": True,
                         f"via_{suffix}": succeeded,
                         "done": succeeded,
                     })
