@@ -19,7 +19,7 @@ def _names(*, atoms):
 def test_a_failed_route_try_ends_in_after_needing_a_reset():
     provider = TwoRoutesSkillProvider(env=TwoRoutesEnvironment(), both_resets=True)
     domain = RewardedRoutesPracticeDomain.from_provider(provider=provider)
-    for route in ("RouteA", "RouteB"):
+    for route, side in (("RouteA", "AfterA"), ("RouteB", "AfterB")):
         skill = provider.ground(name=route)
         effects = FrozenSkillEffects(
             table={skill: (skill.add_effects, skill.delete_effects, frozenset())}
@@ -36,4 +36,4 @@ def test_a_failed_route_try_ends_in_after_needing_a_reset():
         failed = [atoms for _, _, atoms in branches if "Done" not in _names(atoms=atoms)]
         assert failed, route
         for atoms in failed:
-            assert _names(atoms=atoms) == {"After"}, (route, _names(atoms=atoms))
+            assert _names(atoms=atoms) == {"After", side}, (route, _names(atoms=atoms))
