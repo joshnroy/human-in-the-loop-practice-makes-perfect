@@ -61,16 +61,22 @@ class TwoRoutesSkills:
         and the human's both start from there."""
         return (
             TwoRoutesSkills.build(
-                name=ROUTE_A, pre=("Ready",), add=("Done", "ViaA", "After"), delete=("Ready",)
+                name=ROUTE_A,
+                pre=("Ready",),
+                add=("Done", "ViaA", "After", "AfterA"),
+                delete=("Ready",),
             ),
             TwoRoutesSkills.build(
-                name=ROUTE_B, pre=("Ready",), add=("Done", "ViaB", "After"), delete=("Ready",)
+                name=ROUTE_B,
+                pre=("Ready",),
+                add=("Done", "ViaB", "After", "AfterB"),
+                delete=("Ready",),
             ),
             TwoRoutesSkills.build(
                 name=ROBOT_RESET,
                 pre=("After",),
                 add=("Ready",),
-                delete=("After", "Done", "ViaA", "ViaB"),
+                delete=("After", "AfterA", "AfterB", "Done", "ViaA", "ViaB"),
             ),
         )
 
@@ -81,7 +87,7 @@ class TwoRoutesSkills:
             name=HUMAN_RESET_B,
             pre=("After",),
             add=("Ready",),
-            delete=("After", "Done", "ViaA", "ViaB"),
+            delete=("After", "AfterA", "AfterB", "Done", "ViaA", "ViaB"),
         )
 
     @staticmethod

@@ -53,3 +53,33 @@ def test_the_provider_offers_both_resets_from_after() -> None:
     assert human is not None
     for skill in (robot_reset, human.skill):
         assert {a.predicate.name for a in skill.preconditions} == {"After"}
+
+
+def test_each_route_and_outcome_ends_in_its_own_state() -> None:
+    """Josh, 2026-11-16: the reward is tied to the state, so the four ends differ --
+    Done via A, Failed A, Done via B, Failed B -- and every one waits in After."""
+    ends = {}
+    for route in (ROUTE_A, ROUTE_B):
+        for succeed in (True, False):
+            env = make(
+                route_a_start=float(succeed), route_a_rate=0.0,
+                route_b_start=float(succeed), route_b_rate=0.0,
+            )  # fmt: skip
+            env.take_action(action=env.action_for(skill=route))
+            names = ("ready", "done", "via_a", "via_b", "after_a", "after_b", "after")
+            ends[route, succeed] = frozenset(n for n in names if env.flag(name=n))
+    assert ends[ROUTE_A, True] == {"after", "after_a", "done", "via_a"}
+    assert ends[ROUTE_A, False] == {"after", "after_a"}
+    assert ends[ROUTE_B, True] == {"after", "after_b", "done", "via_b"}
+    assert ends[ROUTE_B, False] == {"after", "after_b"}
+
+
+def test_the_skills_declare_the_states_the_environment_reaches() -> None:
+    provider = TwoRoutesSkillProvider(env=make(), both_resets=True)
+    by_name = {s.name: s for s in (*provider.skills(), provider.human_skill())}
+    for route, side in ((ROUTE_A, "AfterA"), (ROUTE_B, "AfterB")):
+        added = {a.predicate.name for a in by_name[route].add_effects}
+        assert {"After", side} <= added
+    for reset in (ROBOT_RESET, HUMAN_RESET_B):
+        deleted = {a.predicate.name for a in by_name[reset].delete_effects}
+        assert {"After", "AfterA", "AfterB", "Done", "ViaA", "ViaB"} <= deleted
