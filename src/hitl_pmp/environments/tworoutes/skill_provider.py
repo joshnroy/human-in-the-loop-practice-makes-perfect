@@ -5,7 +5,7 @@ from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Skill
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 
-from .environment import ROUTE_B, TwoRoutesEnvironment
+from .environment import ROUTE_A, ROUTE_B, TwoRoutesEnvironment
 from .predicates import TwoRoutesPredicates
 from .skills import TwoRoutesSkills
 
@@ -49,6 +49,12 @@ class TwoRoutesSkillProvider(SkillProvider):
     ) -> Action:
         del params, state
         return self.env.action_for(skill=ground_skill.skill.name)
+
+    def failure_kept_predicates(self) -> dict[str, frozenset[str]]:
+        return {
+            ROUTE_A: frozenset({"After", "AfterA"}),
+            ROUTE_B: frozenset({"After", "AfterB"}),
+        }
 
     def goal_rewards(self) -> dict[str, float]:
         return {"ViaA": self.env.route_a_reward, "ViaB": self.env.route_b_reward}

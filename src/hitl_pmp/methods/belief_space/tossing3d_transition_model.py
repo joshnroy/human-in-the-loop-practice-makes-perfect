@@ -322,6 +322,7 @@ def binary_outcomes(
     domain: PracticeDomain = TOSSING3D_DOMAIN,
 ) -> tuple[TransitionBranch, ...]:
     outcomes: list[TransitionBranch] = []
+    kept = dict(domain.failure_kept_predicates).get(ground_skill.skill.name)
     for success, branch_probability in ((True, probability), (False, 1.0 - probability)):
         # A belief certain of the outcome can still leave ~1e-16 on the other one from
         # rounding, and conditioning on an outcome it rules out is undefined.
@@ -337,6 +338,19 @@ def binary_outcomes(
                 ),
             )
             if success
+            else (
+                (
+                    1.0,
+                    frozenset(
+                        atom
+                        for atom in apply_success_effects(
+                            true_atoms=true_atoms, ground_skill=ground_skill, effects=effects
+                        )
+                        if atom in true_atoms or atom.predicate.name in kept
+                    ),
+                ),
+            )
+            if kept is not None
             else EmpiricalFailureEffects.outcomes(
                 counts=failure_effect_counts,
                 ground_skill=ground_skill,
