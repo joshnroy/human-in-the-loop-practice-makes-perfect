@@ -127,6 +127,13 @@ class SkillProvider(BaseModel, abc.ABC):
         del ground_skill, action
         return {}
 
+    def failure_kept_predicates(self) -> dict[str, frozenset[str]]:
+        """Skill name -> the predicates of its success effects that a failed execution
+        also adds, for a skill whose failure is known in advance (Two Routes: either
+        route, success or failure, ends in After and needs a reset). Its deletes apply
+        too. Empty by default: a failure's effects are then learned from real failures."""
+        return {}
+
     def goal_rewards(self) -> dict[str, float]:
         """What reaching a task's goal is worth, by the name of a predicate that holds
         in the goal state: a goal state holding several priced predicates is worth the
