@@ -143,7 +143,9 @@ class Method(BaseModel, abc.ABC):
         _create_explorer is only ever consulted for interaction requests)."""
         return self.get_task_policy(task=task)
 
-    def observe_practice_action_budget(self, *, remaining_actions: int) -> None:
+    def observe_practice_action_budget(
+        self, *, remaining_actions: int, remaining_steps: int | None = None
+    ) -> None:
         """Receive the session's remaining action slots immediately before a step.
 
         The current action is included. Both robot actions and requested resets

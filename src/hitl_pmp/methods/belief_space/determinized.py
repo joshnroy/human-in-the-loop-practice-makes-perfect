@@ -10,7 +10,7 @@ from __future__ import annotations
 import heapq
 import math
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any, get_args
 
 import numpy as np
@@ -87,6 +87,8 @@ class DeterminizedAStarPlanner(
         num_samples: int = NUM_SAMPLES,
         trace: SearchTrace | None = None,
         remaining_actions: int | None = None,
+        remaining_steps: float | None = None,
+        action_steps: Callable[[ActionT], float] | None = None,
     ) -> tuple[float, ActionT | StopAction]:
         """Search one sampled deterministic successor per applicable action.
 
@@ -102,6 +104,15 @@ class DeterminizedAStarPlanner(
         to the real practice session's remaining action slots. Without it, the
         iteration limit bounds cyclic search without imposing a depth cutoff.
         ``horizon`` must be None: there is no search depth to set.
+
+        Optional ``remaining_steps`` limits plans to the practice steps that are left,
+        counted with ``action_steps``, the caller's forecast of the control steps one
+        action takes: a path never takes an action that would overshoot, and a node
+        whose path has spent them all is not expanded. Such a node is still valued by
+        its stop value, as under ``remaining_actions``. The steps a path has spent are
+        part of its node's identity (``node_key``), so two routes to one belief that
+        spent different steps stay two nodes, each cut by its own count. With None no
+        step count is read and every key is the model's own, unchanged.
         """
         # ``horizon`` belongs to the shared interface for exact expectimax. This
         # planner has no depth to bound, so a caller passing one is configured wrongly.
@@ -112,6 +123,11 @@ class DeterminizedAStarPlanner(
             )
         assert remaining_actions is None or remaining_actions >= 0, (
             "remaining_actions must be non-negative"
+        )
+        if remaining_steps is not None and action_steps is None:
+            raise ValueError("remaining_steps needs action_steps, the forecast steps per action")
+        assert remaining_steps is None or remaining_steps >= 0, (
+            "remaining_steps must be non-negative"
         )
         assert self.max_iterations >= 1, "max_iterations must be positive"
         assert num_samples >= 1, "num_samples must be positive"
@@ -135,6 +151,8 @@ class DeterminizedAStarPlanner(
         best_objective_value = root_value
         best_action: ActionT | StopAction = STOP_ACTION
         best_path_depth = 0
+        best_path_steps = 0.0
+        over_budget_root_actions: list[ActionT] = []
         # Algorithm 3, line 3: Open <- {(b0, g=0)}.
         open_nodes: list[
             DeterminizedSearchQueueEntry[EnvironmentStateT, BeliefStateT, ActionT]
@@ -149,10 +167,20 @@ class DeterminizedAStarPlanner(
             # An identical state reached with fewer action slots has different
             # continuations. None preserves unrestricted graph-search merging.
             horizon=remaining_actions,
+            steps=None if remaining_steps is None else 0.0,
         )
         # Our sampled stopping objective J(C, b), cached per belief-space node with
-        # the cost it was evaluated at (a curtis node is reached at several costs).
-        values_by_key = {root_key: (root_value, summed_cost)}
+        # the cost it was evaluated at (a curtis node is reached at several costs). J
+        # does not read the steps spent, so this cache is keyed without them.
+        values_by_key = {
+            self.node_key(
+                model=model,
+                environment_state=environment_state,
+                summed_cost=summed_cost,
+                belief_state=belief_state,
+                horizon=remaining_actions,
+            ): (root_value, summed_cost)
+        }
         # Algorithm 3, line 3: Closed <- empty; Cost <- {b0: 0}. Here zero is
         # b0's cumulative search cost g (cost-to-come), not its objective value J.
         closed: set[object] = set()
@@ -247,6 +275,12 @@ class DeterminizedAStarPlanner(
             ):
                 diagnostics.action_horizon_terminal_nodes += 1
                 continue
+            if (
+                remaining_steps is not None
+                and current_node.path_recovery_info.steps >= remaining_steps
+            ):
+                diagnostics.step_budget_terminal_nodes += 1
+                continue
 
             edges = sampled_edges.get(current_node.cache_info.key)
             sample_new_edges = edges is None
@@ -274,6 +308,32 @@ class DeterminizedAStarPlanner(
                 sampled_cost,
                 estimated_observation_probability,
             ) in children:
+                next_steps = current_node.path_recovery_info.steps
+                if remaining_steps is not None:
+                    assert action_steps is not None
+                    forecast_steps = action_steps(action)
+                    assert math.isfinite(forecast_steps) and forecast_steps >= 0, (
+                        "forecast steps must be finite and non-negative"
+                    )
+                    next_steps += forecast_steps
+                    # Checked per path, not when the edge is sampled: a cached edge can
+                    # be relaxed again from a path that has spent fewer steps.
+                    if next_steps > remaining_steps:
+                        if (
+                            trace is not None
+                            and current_node.diagnostic_info.depth == 0
+                            and action not in over_budget_root_actions
+                        ):
+                            over_budget_root_actions.append(action)
+                            trace.record(
+                                event="action_rejected",
+                                node=0,
+                                action=DecisionLogEncoding.value(value=action),
+                                reason="exceeds_remaining_steps",
+                                forecast_steps=forecast_steps,
+                                remaining_steps=remaining_steps,
+                            )
+                        continue
                 next_cost = current_node.belief.summed_cost + sampled_cost
                 next_depth = current_node.diagnostic_info.depth + 1
                 # Only a root edge establishes the first action. Descendants inherit
@@ -285,7 +345,6 @@ class DeterminizedAStarPlanner(
                 )
                 key, value = self.compute_and_cache_stop_value(
                     values_by_key=values_by_key,
-                    diagnostics=diagnostics,
                     model=model,
                     environment_state=next_environment_state,
                     belief_state=next_belief,
@@ -294,8 +353,11 @@ class DeterminizedAStarPlanner(
                     remaining_actions=(
                         None if remaining_actions is None else remaining_actions - next_depth
                     ),
+                    steps=None if remaining_steps is None else next_steps,
                 )
                 child_is_new = key not in search_node_ids
+                if not child_is_new:
+                    diagnostics.merged_nodes += 1
                 child_search_node_id = search_node_ids.setdefault(key, len(search_node_ids))
                 if value == -math.inf:
                     if trace is not None and current_node.diagnostic_info.depth == 0:
@@ -378,6 +440,8 @@ class DeterminizedAStarPlanner(
                             ],
                             beats_stop=next_path_cost < 0.0,
                         )
+                        if remaining_steps is not None:
+                            path.update(forecast_steps=next_steps)
                     if self.log_full_search_tree:
                         if child_is_new:
                             trace.record(
@@ -427,6 +491,7 @@ class DeterminizedAStarPlanner(
                         best_objective_value = value
                         best_action = first_action
                         best_path_depth = next_depth
+                        best_path_steps = next_steps
                     sequence += 1
                     heapq.heappush(
                         open_nodes,
@@ -448,6 +513,7 @@ class DeterminizedAStarPlanner(
                                 action_path=action_path,
                                 observation_surprise=cumulative_surprise,
                                 heuristic_cost=cumulative_heuristic,
+                                steps=next_steps,
                             ),
                         ),
                     )
@@ -457,6 +523,8 @@ class DeterminizedAStarPlanner(
             diagnostics.termination_reason = "iteration_budget"
         elif diagnostics.action_horizon_terminal_nodes:
             diagnostics.termination_reason = "action_horizon_exhausted"
+        elif diagnostics.step_budget_terminal_nodes:
+            diagnostics.termination_reason = "step_budget_exhausted"
 
         if trace is not None:
             for path in root_action_paths:
@@ -490,6 +558,12 @@ class DeterminizedAStarPlanner(
                 draw_fields.update(
                     determinized_variant=self.variant, num_rollouts=self.num_rollouts
                 )
+            if remaining_steps is not None:
+                draw_fields.update(
+                    remaining_steps=remaining_steps,
+                    selected_path_steps=best_path_steps,
+                    step_budget_terminal_nodes=diagnostics.step_budget_terminal_nodes,
+                )
             trace.record(
                 event="search_summary",
                 node=0,
@@ -497,7 +571,7 @@ class DeterminizedAStarPlanner(
                 expanded_nodes=diagnostics.expanded_nodes,
                 traversed_nodes=iterations,
                 generated_successors=diagnostics.generated_successors,
-                unique_nodes=len(values_by_key),
+                unique_nodes=len(search_node_ids),
                 merged_nodes=diagnostics.merged_nodes,
                 reopened_nodes=reopened_nodes,
                 cached_successor_relaxations=cached_successor_relaxations,
@@ -545,19 +619,41 @@ class DeterminizedAStarPlanner(
         summed_cost: float,
         belief_state: BeliefStateT,
         horizon: int | None,
+        steps: float | None = None,
     ) -> object:
         """A search node's identity: with the accumulated cost (ours) or, as in
-        PO_DAStar, the belief alone, the cost being carried by g."""
+        PO_DAStar, the belief alone, the cost being carried by g.
+
+        Under a practice step budget ``steps``, the forecast steps the path has spent,
+        joins either key. Neither key determines it: the curtis key carries no cost at
+        all, and one cost is many step counts once a path mixes a person's ask (dear,
+        one step) with robot steps (cheap, many). Merged, a node keeps the steps of
+        whichever route reached it first or cheapest, and the budget cut then prunes
+        or admits continuations for the other route on the wrong count. With None the
+        key is the model's own."""
         if self.variant == "curtis":
-            return model.belief_cache_key(
+            key = model.belief_cache_key(
                 environment_state=environment_state, belief_state=belief_state, horizon=horizon
             )
-        return model.search_cache_key(
-            environment_state=environment_state,
-            summed_cost=summed_cost,
-            belief_state=belief_state,
-            horizon=horizon,
-        )
+        else:
+            key = model.search_cache_key(
+                environment_state=environment_state,
+                summed_cost=summed_cost,
+                belief_state=belief_state,
+                horizon=horizon,
+            )
+        if steps is None:
+            return key
+        return key, self.steps_key(steps=steps)
+
+    @staticmethod
+    def steps_key(*, steps: float) -> float:
+        """Steps spent as a merge key, independent of summation order: one multiset of
+        actions sums its forecasts (means of observed step counts, so inexact in
+        binary) to totals that differ in the last bits by order. Nine significant
+        digits, as for the model's cost key, keep those together and keep apart any
+        two totals a ten-thousandth of a step apart up to 1e5 steps."""
+        return float(f"{steps:.9g}")
 
     def generate_children(
         self,
@@ -637,15 +733,18 @@ class DeterminizedAStarPlanner(
         self,
         *,
         values_by_key: dict[object, tuple[float, float]],
-        diagnostics: DeterminizedSearchDiagnostics,
         model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
         environment_state: EnvironmentStateT,
         belief_state: BeliefStateT,
         summed_cost: float,
         num_samples: int,
         remaining_actions: int | None = None,
+        steps: float | None = None,
     ) -> tuple[object, float]:
         """Return the node key and J(C, b), computing J on a cache miss.
+
+        J is cached by the model's key alone; ``steps`` only joins the node key that is
+        returned, so one belief reached after different step counts is valued once.
 
         A curtis node is one belief reached at several costs. G separates into a
         policy-value term and a cost term, so J(C, b) = J(C', b) + G(0, C) - G(0, C'):
@@ -659,19 +758,19 @@ class DeterminizedAStarPlanner(
             belief_state=belief_state,
             horizon=remaining_actions,
         )
+        node_key = key if steps is None else (key, self.steps_key(steps=steps))
         cached = values_by_key.get(key)
         if cached is not None:
-            diagnostics.merged_nodes += 1
             cached_value, cached_cost = cached
             # Ours keys the cost itself, so a hit is the same cost up to `cost_key`.
             if self.variant != "curtis" or cached_cost == summed_cost:
-                return key, cached_value
+                return node_key, cached_value
             if cached_value != -math.inf:
                 shift = model.G(policy_value=0.0, summed_cost=summed_cost) - model.G(
                     policy_value=0.0, summed_cost=cached_cost
                 )
                 if not math.isnan(shift):
-                    return key, cached_value + shift
+                    return node_key, cached_value + shift
         value = model.J(
             belief_state=belief_state,
             summed_cost=summed_cost,
@@ -682,7 +781,7 @@ class DeterminizedAStarPlanner(
         )
         if cached is None or value != -math.inf:
             values_by_key[key] = (value, summed_cost)
-        return key, value
+        return node_key, value
 
     def sample_outcome(
         self,
