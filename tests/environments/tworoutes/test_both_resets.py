@@ -83,3 +83,17 @@ def test_the_skills_declare_the_states_the_environment_reaches() -> None:
     for reset in (ROBOT_RESET, HUMAN_RESET_B):
         deleted = {a.predicate.name for a in by_name[reset].delete_effects}
         assert {"After", "AfterA", "AfterB", "Done", "ViaA", "ViaB"} <= deleted
+
+
+def test_without_the_robot_reset_only_the_human_returns_to_ready() -> None:
+    """Josh, 2026-11-16: the toy as drawn has one reset, the human's."""
+    env = make(robot_reset=False)
+    names = {int(round(float(a[0]))) for a in env.get_valid_actions()}
+    assert env.action_for(skill=ROBOT_RESET)[0] not in names
+    provider = TwoRoutesSkillProvider(env=env, both_resets=True, robot_reset=False)
+    assert ROBOT_RESET not in {s.name for s in provider.skills()}
+    env.take_action(action=env.action_for(skill=ROUTE_A))
+    env.take_action(action=env.action_for(skill=ROBOT_RESET))
+    assert not env.flag(name="ready") and env.last_error is not None
+    assert env.reset_movables(destination=HUMAN_RESET_B)
+    assert env.flag(name="ready")

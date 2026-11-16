@@ -52,6 +52,8 @@ class TwoRoutesEnvironment(Environment):
     # (`HUMAN_RESET_B`) puts it back. Off: the original routes-own-resets structure.
     both_resets: bool = False
     robot_reset_steps: int = Field(default=1, ge=1)
+    # Under both_resets, False leaves the human's reset as the only way back to ready.
+    robot_reset: bool = True
     seed: int = 0
     learns: bool = True
     attempts: dict[str, int] = Field(default_factory=lambda: {ROUTE_A: 0, ROUTE_B: 0})
@@ -121,6 +123,7 @@ class TwoRoutesEnvironment(Environment):
                 not self.flag(name=needs)
                 or (skill == ROBOT_RESET) != self.both_resets
                 and (skill in (RESET_A, ROBOT_RESET))
+                or (skill == ROBOT_RESET and not self.robot_reset)
             ):
                 self.last_error = f"{skill}: preconditions do not hold"
             elif skill == RESET_A:
@@ -188,8 +191,10 @@ class TwoRoutesEnvironment(Environment):
         return True
 
     def get_valid_actions(self) -> list[Action]:
-        skip = RESET_A if self.both_resets else ROBOT_RESET
-        return [self.action_for(skill=skill) for skill in ROBOT_SKILL_NAMES if skill != skip]
+        skip = {RESET_A if self.both_resets else ROBOT_RESET}
+        if not self.robot_reset:
+            skip.add(ROBOT_RESET)
+        return [self.action_for(skill=skill) for skill in ROBOT_SKILL_NAMES if skill not in skip]
 
     def noop_action(self) -> Action:
         return np.array([NOOP_ID])
