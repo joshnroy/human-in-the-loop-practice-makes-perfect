@@ -5,7 +5,7 @@ from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Skill
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 
-from .environment import ROUTE_A, ROUTE_B, TwoRoutesEnvironment
+from .environment import ROBOT_RESET, ROUTE_A, ROUTE_B, TwoRoutesEnvironment
 from .predicates import TwoRoutesPredicates
 from .skills import TwoRoutesSkills
 
@@ -16,9 +16,16 @@ class TwoRoutesSkillProvider(SkillProvider):
     env: TwoRoutesEnvironment
     offer_human_reset: bool = True
     both_resets: bool = False
+    robot_reset: bool = True
 
     def skills(self) -> tuple[Skill, ...]:
-        return TwoRoutesSkills.both_resets() if self.both_resets else TwoRoutesSkills.all()
+        if not self.both_resets:
+            return TwoRoutesSkills.all()
+        return tuple(
+            skill
+            for skill in TwoRoutesSkills.both_resets()
+            if self.robot_reset or skill.name != ROBOT_RESET
+        )
 
     def human_skill(self) -> Skill:
         return (
