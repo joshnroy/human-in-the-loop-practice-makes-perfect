@@ -6,6 +6,7 @@ reward times competence is largest, so the value of a set of competences is
 largest route reward.
 """
 
+import hashlib
 from collections import OrderedDict
 from collections.abc import Collection, Mapping
 from typing import Any, ClassVar
@@ -161,28 +162,32 @@ class RewardedRoutesPracticeDomain(PracticeDomain):
 
     # A search values the same beliefs again and again -- J and the open-list bound value
     # each node, and a known curve reaches one belief by many paths -- and each value is
-    # a fresh fixed-seed draw of thousands of samples. Bounded: a prior grid's key holds
-    # its competences and weights, about 7 kB per route.
+    # a fresh fixed-seed draw of thousands of samples. Bounded, and each key a 32-byte
+    # digest: the bytes it digests run to tens of kB per prior grid, and a memo of
+    # them held ~240 MiB.
     VALUE_MEMO_SIZE: ClassVar[int] = 4096
-    _value_memo: ClassVar[OrderedDict[tuple[object, ...], float]] = OrderedDict()
+    _value_memo: ClassVar[OrderedDict[bytes, float]] = OrderedDict()
 
-    def value_memo_key(self, *, beliefs: Mapping[str, SkillBelief]) -> tuple[object, ...] | None:
+    def value_memo_key(self, *, beliefs: Mapping[str, SkillBelief]) -> bytes | None:
         """What the fixed-seed value depends on, exactly, or None to compute it afresh.
 
         A weighted belief's draw reads only its weights (which rows the uniforms pick)
         and competences (the rows' first column); the bytes tell -0.0 from 0.0, which
-        compare equal but need not give the same float."""
+        compare equal but need not give the same float. The key is the SHA-256 of those
+        bytes, each route's length-prefixed, after the routes and their rewards."""
         if type(self) is not RewardedRoutesPracticeDomain:
             return None
-        parts: list[object] = [self.route_rewards]
+        digest = hashlib.sha256(repr(self.route_rewards).encode())
         for name, _ in self.route_rewards:
             belief = beliefs[name]
             if type(belief) is not WeightedHypothesisBelief:
                 return None
-            parts.append(
+            encoded = (
                 np.array(belief.probabilities).tobytes() + np.array(belief.competences).tobytes()
             )
-        return tuple(parts)
+            digest.update(len(encoded).to_bytes(8, "big"))
+            digest.update(encoded)
+        return digest.digest()
 
     @staticmethod
     def clear_value_memo() -> None:
