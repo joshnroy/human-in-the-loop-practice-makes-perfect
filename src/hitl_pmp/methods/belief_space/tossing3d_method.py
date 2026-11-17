@@ -161,6 +161,9 @@ class Tossing3DPomdpMethod(EesMethod):
     # robot charge depends on the state, where steps times one price would charge every
     # skill alike (Two Routes' robot reset). Off: steps times the current step price.
     pomdp_learn_skill_costs: bool = False
+    # Skill name -> its cost per execution, told rather than learned (a human skill's
+    # too): the known-curves arm is given costs as well as competences.
+    pomdp_known_skill_costs: tuple[tuple[str, float], ...] = ()
     goal_pursuit_horizon: int | None = 0
     # A `.jsonl.zst` path is written one zstd frame per record (see JsonlLog.append).
     decision_log: Path | None = None
@@ -244,7 +247,15 @@ class Tossing3DPomdpMethod(EesMethod):
         estimates = {}
         steps: dict[str, float] = {}
         missing = set()
+        known = dict(self.pomdp_known_skill_costs)
         for ground in self._pomdp_model.ground_skills:
+            if ground.skill.name in known:
+                estimates[str(ground)] = known[ground.skill.name]
+                taken = self._execution_durations.get(ground, [])
+                steps[str(ground)] = (
+                    sum(taken) / len(taken) if taken else self.skill_cost_prior_steps
+                )
+                continue
             if self._human_reset(ground=ground, resets=resets) is not None:
                 key = self._human_reset_key(ground=ground)
                 observed = self._human_execution_costs.get(key, [])
