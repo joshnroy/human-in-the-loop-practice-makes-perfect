@@ -634,3 +634,27 @@ def test_a_period_schedule_re_solves_for_the_episodes_that_are_left(*, monkeypat
     method.choose_practice_target()
     assert budgets == [5, 3, 2]
     assert sum(method.dp_allocation().values()) <= 2
+
+
+class TestSetupResetsTrainNothing:
+    """The paper's learner updates only the skill being practiced (Josh, 2026-11-17):
+    a human reset DP asks for on the way to its practice target is setup, so its outcome
+    leaves DP's estimate of that reset where it was, as a robot reset's already does."""
+
+    @staticmethod
+    def _observed_human_tries(*, target: bool) -> int:
+        method = _build()
+        method.env.hard_reset()
+        human = _human(method=method)
+        if target:
+            method.begin_practice_attempt(ground_skill=_ground(method=method, name="PickWiper"))
+        method.record_human_skill_dispatch(ground_skill=human, before_atoms=frozenset())
+        method.observe_help_granted(state=method.env.get_current_state())
+        model = method.human_competence_model(ground_skill=human)
+        return sum(len(cycle) for cycle in model.cycle_observations)
+
+    def test_a_human_reset_on_the_way_to_a_target_is_not_learned_from(self) -> None:
+        assert self._observed_human_tries(target=True) == 0
+
+    def test_a_human_reset_outside_practice_setup_still_is(self) -> None:
+        assert self._observed_human_tries(target=False) == 1
