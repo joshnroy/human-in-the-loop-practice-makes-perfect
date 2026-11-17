@@ -1,6 +1,9 @@
 """State-attached measured facts; readiness is derived only from the clock."""
 
 import itertools
+from collections.abc import Sequence
+
+import numpy as np
 
 from hitl_pmp.core.problem.environment.types import Object, State, Type
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate
@@ -42,9 +45,23 @@ class RackServing3DAtoms:
         included, is neither."""
         if skill == "Sweep" and plate_count >= TWO_ROUTE_SWEEP_COUNT:
             return frozenset({("Served", ()), ("ServedThree", ())})
-        if skill == "GatherAndSweep" and plate_count == len(Objects.food):
+        if skill in ("GatherAndSweep", "Sweep5") and plate_count == len(Objects.food):
             return frozenset({("Served", ()), ("ServedFive", ())})
         return frozenset()
+
+    @staticmethod
+    def gathered(
+        *, on_rack_corners: Sequence[np.ndarray], center_y: float, blade_width: float
+    ) -> bool:
+        """`split_gather_and_sweep`'s Gathered: food is on the rack and every dumpling
+        there lies, footprint and all, inside the band the final sweep's blade covers,
+        centred on the plate's centre line. A start layout can already be gathered."""
+        if not on_rack_corners:
+            return False
+        return all(
+            float(np.max(np.abs(np.asarray(corners)[:, 1] - center_y))) <= blade_width / 2
+            for corners in on_rack_corners
+        )
 
     @staticmethod
     def with_summaries(
@@ -121,6 +138,8 @@ SERVED = RackServing3DAtoms.predicate(name="Served", types=())
 SERVED_THREE = RackServing3DAtoms.predicate(name="ServedThree", types=())
 SERVED_FIVE = RackServing3DAtoms.predicate(name="ServedFive", types=())
 TWO_ROUTE_PREDICATES = (SERVED, SERVED_THREE, SERVED_FIVE)
+# `split_gather_and_sweep` only: measured (`RackServing3DAtoms.gathered`).
+GATHERED = RackServing3DAtoms.predicate(name="Gathered", types=())
 _FOOD_CHAIN = frozenset(
     (first.name, second.name) for first, second in itertools.pairwise(Objects.food)
 )
@@ -149,8 +168,13 @@ DYNAMIC_PREDICATES = (
 
 class RackServing3DPredicates:
     @staticmethod
-    def all(*, two_route: bool = False) -> tuple[Predicate, ...]:
-        return (*DYNAMIC_PREDICATES, FOOD_ORDER, *(TWO_ROUTE_PREDICATES if two_route else ()))
+    def all(*, two_route: bool = False, split: bool = False) -> tuple[Predicate, ...]:
+        return (
+            *DYNAMIC_PREDICATES,
+            FOOD_ORDER,
+            *(TWO_ROUTE_PREDICATES if two_route else ()),
+            *((GATHERED,) if split else ()),
+        )
 
     @staticmethod
     def static_atoms() -> frozenset[GroundAtom]:

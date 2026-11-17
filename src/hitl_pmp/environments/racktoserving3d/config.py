@@ -76,6 +76,10 @@ class RackServingConfig(BaseModel):
     # planners and the deployed policies all read them through the provider.
     served_three_reward: Positive = 3.0
     served_five_reward: Positive = 5.0
+    # GatherAndSweep split in two (Josh, 2026-11-17), opt-in under `two_route_rewards`:
+    # Gather(s, delta) is its squeeze and gathers, and Sweep5(d) its final sweep, which
+    # needs the measured Gathered and is the five route. Sweep stays the three route.
+    split_gather_and_sweep: bool = False
     # RobotBatchReturn (Josh, 2026-11-13), opt-in: one robot skill that puts every
     # dumpling back on its start slot, the robot counterpart of the person's batch
     # return, offered in training only (`robot_batch_return.py`). It needs a start
@@ -398,6 +402,8 @@ class RackServingConfig(BaseModel):
             raise ValueError("start_layout custom needs exactly five custom_layout offsets")
         if self.two_route_rewards and not (self.bulk_transfer_only and self.sweep_skill):
             raise ValueError("two_route_rewards needs bulk_transfer_only and sweep_skill")
+        if self.split_gather_and_sweep and not self.two_route_rewards:
+            raise ValueError("split_gather_and_sweep needs two_route_rewards")
         if not self.two_route_rewards and (
             self.served_three_reward != 3.0 or self.served_five_reward != 5.0
         ):

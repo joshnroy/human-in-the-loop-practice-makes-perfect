@@ -305,61 +305,10 @@ class RackControllers:
                 f"GatherAndSweep requires s [{s_low},{s_high}] m,"
                 f" delta [{delta_low},{delta_high}] m and d [{d_low},{d_high}] m"
             )
-        backend, shelf, tool = self.backend, self.shelf, self.tool
-        config = backend.config
-        if not self.on_rack():
-            raise SkillFailed("no food is physically on the rack")
-        rack, tray = backend.support(name="rack_0"), backend.support(name="box_0")
-        self.require_open_exit(rack=rack, tray=tray)
-        geometry = self.stroke_geometry()
-        squeeze = GatherAndSweepPlanner.squeeze(s=s, **geometry)
-        self.metrics = {
-            "measured_gap_m": rack.x_min - tray.x_max,
-            "rack_top_m": rack.top_z,
-            "tray_top_m": tray.top_z,
-            "s_m": s,
-            "delta_m": delta,
-            "d_m": d,
-            "speed_m_s": self.final_sweep_speed(),
-            "max_rack_displacement_m": 0.0,
-            "strokes": [],
-        }
-        rack_pose = np.asarray(backend.core().get_object("rack_0").get_pose()[0]).copy()
-        stances = self.stances
+        geometry, rack_pose = self.begin_transfer(s=s, delta=delta, d=d)
+        config = self.backend.config
         with self.feedback():
-            for index, stroke in enumerate(squeeze):
-                self.push_stroke(
-                    stroke=stroke,
-                    base=stances.rear_base(y=float(stroke.start[1]), config=config),
-                    travel=self.to_rear if index == 0 else lambda: None,
-                    rack_pose=rack_pose,
-                    label=f"squeeze_{'plus' if index == 0 else 'minus'}_y",
-                )
-            names = self.on_rack() or list(backend.cube_names)
-            gather = GatherAndSweepPlanner.gather(
-                food_corners=np.stack([backend.corners(name=name) for name in names]),
-                delta=delta,
-                **geometry,
-            )
-            for side, stroke in zip((1, -1), gather, strict=True):
-
-                def to_side(*, side: int = side) -> None:
-                    here = shelf.data.qpos[shelf.ba].copy()
-                    route = (
-                        stances.rear_to_side(side=side, start=here, config=config)
-                        if side > 0
-                        else stances.side_to_side(side=side, config=config)
-                    )
-                    for index, waypoint in enumerate(route[:-1]):
-                        tool.move_base(target=waypoint, label=f"gather_route_{index}")
-
-                self.push_stroke(
-                    stroke=stroke,
-                    base=stances.side_base(side=side, config=config),
-                    travel=to_side,
-                    rack_pose=rack_pose,
-                    label=f"gather_{'plus' if side > 0 else 'minus'}_y",
-                )
+            self.gather_strokes(s=s, delta=delta, geometry=geometry, rack_pose=rack_pose)
             sweep = GatherAndSweepPlanner.sweep(
                 d=d,
                 plate_clear_z=self.plate_clear_z(),
@@ -369,10 +318,94 @@ class RackControllers:
 
             self.push_stroke(
                 stroke=sweep,
-                base=stances.rear_base(y=float(sweep.start[1]), config=config),
+                base=self.stances.rear_base(y=float(sweep.start[1]), config=config),
                 travel=self.to_rear,
                 rack_pose=rack_pose,
                 label="sweep",
+            )
+
+    def gather(self, *, s: float, delta: float) -> None:
+        """`split_gather_and_sweep`'s Gather: GatherAndSweep up to, not including, its
+        final sweep (Sweep5 is that sweep: `sweep`)."""
+        bounds = (self.gather_and_sweep_bounds or GATHER_AND_SWEEP_BOUNDS)[:2]
+        values = (s, delta)
+        if not np.isfinite(values).all() or any(
+            not low <= value <= high for value, (low, high) in zip(values, bounds, strict=True)
+        ):
+            (s_low, s_high), (delta_low, delta_high) = bounds
+            raise SkillFailed(
+                f"Gather requires s [{s_low},{s_high}] m and delta [{delta_low},{delta_high}] m"
+            )
+        geometry, rack_pose = self.begin_transfer(s=s, delta=delta, d=None)
+        with self.feedback():
+            self.gather_strokes(s=s, delta=delta, geometry=geometry, rack_pose=rack_pose)
+
+    def begin_transfer(
+        self, *, s: float, delta: float, d: float | None
+    ) -> tuple[dict[str, float], np.ndarray]:
+        """Refuse an empty rack or a closed exit, check the squeeze plans, reset the
+        metrics, and take the rack pose every stroke's displacement is measured from."""
+        backend = self.backend
+        if not self.on_rack():
+            raise SkillFailed("no food is physically on the rack")
+        rack, tray = backend.support(name="rack_0"), backend.support(name="box_0")
+        self.require_open_exit(rack=rack, tray=tray)
+        geometry = self.stroke_geometry()
+        GatherAndSweepPlanner.squeeze(s=s, **geometry)
+        self.metrics = {
+            "measured_gap_m": rack.x_min - tray.x_max,
+            "rack_top_m": rack.top_z,
+            "tray_top_m": tray.top_z,
+            "s_m": s,
+            "delta_m": delta,
+            **({"d_m": d} if d is not None else {}),
+            "speed_m_s": self.final_sweep_speed(),
+            "max_rack_displacement_m": 0.0,
+            "strokes": [],
+        }
+        rack_pose = np.asarray(backend.core().get_object("rack_0").get_pose()[0]).copy()
+        return geometry, rack_pose
+
+    def gather_strokes(
+        self, *, s: float, delta: float, geometry: dict[str, float], rack_pose: np.ndarray
+    ) -> None:
+        """The two x-squeeze passes, then the +y and -y gathers, planned from the food."""
+        backend, shelf, tool = self.backend, self.shelf, self.tool
+        config = backend.config
+        squeeze = GatherAndSweepPlanner.squeeze(s=s, **geometry)
+        stances = self.stances
+        for index, stroke in enumerate(squeeze):
+            self.push_stroke(
+                stroke=stroke,
+                base=stances.rear_base(y=float(stroke.start[1]), config=config),
+                travel=self.to_rear if index == 0 else lambda: None,
+                rack_pose=rack_pose,
+                label=f"squeeze_{'plus' if index == 0 else 'minus'}_y",
+            )
+        names = self.on_rack() or list(backend.cube_names)
+        gather = GatherAndSweepPlanner.gather(
+            food_corners=np.stack([backend.corners(name=name) for name in names]),
+            delta=delta,
+            **geometry,
+        )
+        for side, stroke in zip((1, -1), gather, strict=True):
+
+            def to_side(*, side: int = side) -> None:
+                here = shelf.data.qpos[shelf.ba].copy()
+                route = (
+                    stances.rear_to_side(side=side, start=here, config=config)
+                    if side > 0
+                    else stances.side_to_side(side=side, config=config)
+                )
+                for index, waypoint in enumerate(route[:-1]):
+                    tool.move_base(target=waypoint, label=f"gather_route_{index}")
+
+            self.push_stroke(
+                stroke=stroke,
+                base=stances.side_base(side=side, config=config),
+                travel=to_side,
+                rack_pose=rack_pose,
+                label=f"gather_{'plus' if side > 0 else 'minus'}_y",
             )
 
     def sweep(self, *, d: float) -> None:

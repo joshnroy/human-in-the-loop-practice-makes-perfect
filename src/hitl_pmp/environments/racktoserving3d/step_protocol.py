@@ -142,7 +142,9 @@ class RackServingStepProtocol(SimulatedStepProtocolHooks):
         """Under `two_route_rewards`, a Sweep or GatherAndSweep that has returned decides
         the task: solved when its own outcome holds (`served_verdict`)."""
         env = RackServingStepProtocol.env(problem=problem)
-        bulk = {SKILL_IDS["Sweep"], SKILL_IDS["GatherAndSweep"]}
+        bulk = {SKILL_IDS["Sweep"], SKILL_IDS["GatherAndSweep"]} | (
+            {SKILL_IDS["Sweep5"]} if env.config.split_gather_and_sweep else set()
+        )
         if not (env.config.two_route_rewards and action.size and int(action.flat[0]) in bulk):
             return None
         return ("Served", ()) in env.bulk_verdict()
@@ -162,7 +164,9 @@ class RackServingStepProtocol(SimulatedStepProtocolHooks):
     def evaluation_terminal_reason(*, problem: Problem, action: Action) -> str | None:
         """Under `bulk_transfer_only` a task's one Sweep or GatherAndSweep ends it."""
         env = RackServingStepProtocol.env(problem=problem)
-        bulk = {SKILL_IDS["Sweep"], SKILL_IDS["GatherAndSweep"]}
+        bulk = {SKILL_IDS["Sweep"], SKILL_IDS["GatherAndSweep"]} | (
+            {SKILL_IDS["Sweep5"]} if env.config.split_gather_and_sweep else set()
+        )
         if env.config.bulk_transfer_only and action.size and int(action.flat[0]) in bulk:
             return "bulk_attempt_finished"
         return None

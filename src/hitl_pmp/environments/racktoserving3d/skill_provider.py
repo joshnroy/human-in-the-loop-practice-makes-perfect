@@ -29,10 +29,14 @@ class RackServingSkillProvider(SkillProvider):
             # Evaluation tasks start from a full rack and never need a return.
             include_robot_batch_return=self.env.config.robot_batch_return
             and self.env.config.mode == "training",
+            split=self.env.config.split_gather_and_sweep,
         )
 
     def predicates(self) -> tuple[Predicate, ...]:
-        return RackServing3DPredicates.all(two_route=self.env.config.two_route_rewards)
+        return RackServing3DPredicates.all(
+            two_route=self.env.config.two_route_rewards,
+            split=self.env.config.split_gather_and_sweep,
+        )
 
     def goal_rewards(self) -> dict[str, float]:
         return self.env.config.two_route_goal_rewards()
@@ -45,9 +49,12 @@ class RackServingSkillProvider(SkillProvider):
 
     def sample_params(self, *, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
         # By name: the two-route variants are the same skills with success restated.
+        gather_and_sweep = self.env.config.gather_and_sweep_bounds()
         bounds = {
-            "GatherAndSweep": self.env.config.gather_and_sweep_bounds(),
+            "GatherAndSweep": gather_and_sweep,
             "Sweep": SWEEP_BOUNDS,
+            "Gather": gather_and_sweep[:2],
+            "Sweep5": gather_and_sweep[2:],
         }
         name = ground_skill.skill.name
         if name not in bounds:
@@ -77,7 +84,12 @@ class RackServingSkillProvider(SkillProvider):
         scraper enters, so the row is the same wherever the robot stands."""
         selection = self.env.config.sampler_features
         # By name: the two-route variants are the same skills with success restated.
-        if selection == "full_state" or ground_skill.skill.name not in ("GatherAndSweep", "Sweep"):
+        if selection == "full_state" or ground_skill.skill.name not in (
+            "GatherAndSweep",
+            "Sweep",
+            "Gather",
+            "Sweep5",
+        ):
             return None
         layout: list[float] = []
         if selection == "parameters_and_layout":
@@ -154,6 +166,18 @@ class RackServingActions:
             if not lower <= params[0] <= upper:
                 raise ValueError("Sweep d is outside the declared bounds")
             continuous = np.array([0.0, 0.0, params[0]])
+        split = {
+            Skills.GATHER.name: (gather_and_sweep_bounds[:2], slice(0, 2)),
+            Skills.SWEEP5.name: (gather_and_sweep_bounds[2:], slice(2, 3)),
+        }
+        if skill.name in split:
+            bounds, slots = split[skill.name]
+            if any(
+                not lower <= value <= upper
+                for value, (lower, upper) in zip(params, bounds, strict=True)
+            ):
+                raise ValueError(f"{skill.name} parameters are outside the declared bounds")
+            continuous[slots] = params
         food_index = 0
         if skill in (Skills.PICK_FOOD, Skills.PLACE_FOOD_ON_TRAY, Skills.RETURN_FOOD_TO_RACK):
             food_index = Objects.food.index(ground_skill.objects[1])

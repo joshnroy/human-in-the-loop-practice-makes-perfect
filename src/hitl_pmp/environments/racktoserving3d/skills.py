@@ -19,6 +19,7 @@ from .predicates import (
     ANY_FOOD_ON_RACK,
     FOOD_AVAILABLE,
     FOOD_ORDER,
+    GATHERED,
     HAND_EMPTY,
     HOLDING_FOOD,
     HOLDING_SCRAPER,
@@ -45,6 +46,9 @@ SKILL_IDS = {
     "ReturnFoodToRack": 5,
     "Sweep": 6,
     "RobotBatchReturn": 7,
+    # `split_gather_and_sweep` only.
+    "Gather": 8,
+    "Sweep5": 9,
 }
 # GatherAndSweep(s, delta, d): s (m) is how far behind the rack's front edge the two
 # x-squeeze passes stop; delta (m) is how far from the line y = c (the plate centre's
@@ -293,6 +297,27 @@ class RackServing3DSkills:
             "conditional_add_effects": frozenset(),
         }
     )
+    # `split_gather_and_sweep`: GatherAndSweep's squeeze and gathers, learned on its
+    # own; it ends with the food gathered (measured), nothing served yet.
+    GATHER: ClassVar[Skill] = GATHER_AND_SWEEP.model_copy(
+        update={
+            "name": "Gather",
+            "param_dim": 2,
+            "add_effects": frozenset({_atom(predicate=GATHERED)}),
+            "delete_effects": frozenset(),
+            "conditional_add_effects": frozenset(),
+        }
+    )
+    # Its final sweep, from gathered food: the five route, as GatherAndSweep was.
+    SWEEP5: ClassVar[Skill] = TWO_ROUTE_GATHER_AND_SWEEP.model_copy(
+        update={
+            "name": "Sweep5",
+            "param_dim": 1,
+            "preconditions": TWO_ROUTE_GATHER_AND_SWEEP.preconditions | {_atom(predicate=GATHERED)},
+            "delete_effects": TWO_ROUTE_GATHER_AND_SWEEP.delete_effects
+            | {_atom(predicate=GATHERED)},
+        }
+    )
     TWO_ROUTE_HUMAN_BATCH_RETURN: ClassVar[Skill] = HUMAN_BATCH_RETURN.model_copy(
         update={
             "delete_effects": HUMAN_BATCH_RETURN.delete_effects
@@ -319,14 +344,20 @@ class RackServing3DSkills:
         include_placement: bool = True,
         two_route: bool = False,
         include_robot_batch_return: bool = False,
+        split: bool = False,
     ) -> tuple[Skill, ...]:
         skills = RackServing3DSkills
         robot_return = (
             skills.TWO_ROUTE_ROBOT_BATCH_RETURN if two_route else skills.ROBOT_BATCH_RETURN
         )
+        bulk = (
+            (skills.GATHER, skills.SWEEP5)
+            if split
+            else (skills.TWO_ROUTE_GATHER_AND_SWEEP if two_route else skills.GATHER_AND_SWEEP,)
+        )
         return (
             skills.PICK_SCRAPER,
-            skills.TWO_ROUTE_GATHER_AND_SWEEP if two_route else skills.GATHER_AND_SWEEP,
+            *bulk,
             skills.RETURN_SCRAPER,
             skills.PICK_FOOD,
             *((skills.PLACE_FOOD_ON_TRAY,) if include_placement else ()),

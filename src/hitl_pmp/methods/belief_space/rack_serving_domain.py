@@ -36,6 +36,12 @@ RACK_ROBOT_SKILLS = (
 )
 # Two ways to empty the rack with the scraper held, both all-or-nothing in this model.
 RACK_SWEEP_SKILLS = ("GatherAndSweep", "Sweep")
+# `RackServingConfig.split_gather_and_sweep`: GatherAndSweep as Gather, which reaches
+# the measured Gathered, then Sweep5, the bulk attempt from it. Kept out of
+# RACK_ROBOT_SKILLS and RACK_SWEEP_SKILLS so a model without them is the old one.
+RACK_CHAIN_SKILLS = ("Gather", "Sweep5")
+# Every skill that is a task's one bulk attempt under `bulk_transfer_only`.
+RACK_BULK_SKILLS = (*RACK_SWEEP_SKILLS, "Sweep5")
 RACK_HUMAN_SKILLS = ("human_batch_return", "human_tool_recovery")
 # The robot's own batch return (`RackServingConfig.robot_batch_return`): offered in
 # practice only, so it is never a deployment transition and not in RACK_ROBOT_SKILLS.
@@ -60,6 +66,12 @@ RACK_SKILL_STEPS: dict[str, tuple[float, float]] = {
     "PlaceFoodOnTray": (296.0, 166.0),
     "ReturnFoodToRack": (499.0, 212.0),
     "Sweep": (969.0, 889.0),
+    # `split_gather_and_sweep`, measured 2026-11-17 on the launch scene (middle_three,
+    # `scripts/measure_serving_routes.py`, six five-route episodes): Gather reached
+    # Gathered in 4 (1797, 1778, 1794, 1710 steps) and missed in 2 (1689, 1686);
+    # Sweep5 from Gathered served all five in 3 (389, 383, 383) and four in 1 (413).
+    "Gather": (1770.0, 1688.0),
+    "Sweep5": (385.0, 413.0),
 }
 
 
@@ -75,7 +87,12 @@ class RackServingDeployment:
 
     @staticmethod
     @cache
-    def transitions() -> dict[RackDeploymentState, tuple[tuple[str, RackDeploymentState], ...]]:
+    def transitions(
+        *, chain: bool = False
+    ) -> dict[RackDeploymentState, tuple[tuple[str, RackDeploymentState], ...]]:
+        """With `chain`, one more state, (5, "gathered", False): the scraper held over
+        a full, gathered rack, reached by Gather and left only by Sweep5 or by putting
+        the scraper back."""
         moves = {}
         for on_rack in range(RACK_NUM_FOOD + 1):
             for hand in ("empty", "scraper", "food"):
@@ -102,7 +119,14 @@ class RackServingDeployment:
                     if hand == "food":
                         options.append(("PlaceFoodOnTray", (on_rack, "empty", home)))
                         options.append(("ReturnFoodToRack", (on_rack + 1, "empty", home)))
+                    if chain and state == (RACK_NUM_FOOD, "scraper", False):
+                        options.append(("Gather", (RACK_NUM_FOOD, "gathered", False)))
                     moves[state] = tuple(options)
+        if chain:
+            moves[RACK_NUM_FOOD, "gathered", False] = (
+                ("ReturnScraper", (RACK_NUM_FOOD, "empty", True)),
+                ("Sweep5", (0, "scraper", False)),
+            )
         return moves
 
     @staticmethod
@@ -200,7 +224,10 @@ class RackServingDeployment:
             if "HoldingFood" in names
             else "empty"
         )
-        return names.count("OnRack"), hand, "ScraperHome" in names
+        on_rack = names.count("OnRack")
+        if hand == "scraper" and on_rack == RACK_NUM_FOOD and "Gathered" in names:
+            hand = "gathered"
+        return on_rack, hand, "ScraperHome" in names
 
     @staticmethod
     def _initial(
@@ -209,7 +236,7 @@ class RackServingDeployment:
         dict[RackDeploymentState, NDArray[np.float64]],
         dict[RackDeploymentState, NDArray[np.float64]],
     ]:
-        moves = RackServingDeployment.transitions()
+        moves = RackServingDeployment.transitions(chain="Gather" in competences)
         size = len(next(iter(competences.values())))
         value = {
             state: np.full(size, float(state[0] == 0 and state[1] != "food")) for state in moves
@@ -232,7 +259,7 @@ class RackServingDeployment:
     ]:
         """One more allowed skill: each state's value and expected steps per sample, and
         the option whose batch-mean value is largest (None when stopping is)."""
-        moves = RackServingDeployment.transitions()
+        moves = RackServingDeployment.transitions(chain="Gather" in competences)
         size = len(next(iter(competences.values())))
         value, steps = {}, {}
         choices: dict[RackDeploymentState, tuple[str, RackDeploymentState] | None] = {}
@@ -247,7 +274,7 @@ class RackServingDeployment:
                         continue
                     competence = competences[skill]
                     success_steps, failure_steps = RACK_SKILL_STEPS[skill]
-                    ends = one_bulk_attempt and skill in RACK_SWEEP_SKILLS
+                    ends = one_bulk_attempt and skill in RACK_BULK_SKILLS
                     failed = 0.0 if ends else previous[state]
                     failed_steps = 0.0 if ends else previous_steps[state]
                     priced = bool(bulk_rewards) and skill in (bulk_rewards or {})
@@ -325,7 +352,8 @@ class RackServingPracticeDomain(PracticeDomain):
         rewards = provider.goal_rewards()
         if not rewards:
             return self
-        return self.model_copy(
+        domain = self.with_split(provider=provider)
+        return domain.model_copy(
             update={
                 "bulk_rewards": tuple(
                     (
@@ -337,16 +365,35 @@ class RackServingPracticeDomain(PracticeDomain):
                         ),
                     )
                     for skill in provider.skills()
-                    if skill.name in RACK_SWEEP_SKILLS
+                    if skill.name in RACK_BULK_SKILLS
                     and any(atom.predicate.name in rewards for atom in skill.add_effects)
                 )
+            }
+        )
+
+    def with_split(self, *, provider: SkillProvider) -> "RackServingPracticeDomain":
+        """With `split_gather_and_sweep`'s Gather and Sweep5 on offer, this domain with a
+        belief for each, appended after every other so no prior seed moves, each
+        learning its own parameters' sampler as GatherAndSweep learned all three, and
+        GatherAndSweep optional, so its belief is dropped; itself otherwise."""
+        if not set(RACK_CHAIN_SKILLS) <= {skill.name for skill in provider.skills()}:
+            return self
+        return self.model_copy(
+            update={
+                "belief_sources": (
+                    *self.belief_sources,
+                    *((name, PracticeExampleSource.SAMPLER) for name in RACK_CHAIN_SKILLS),
+                ),
+                "optional_skill_names": self.optional_skill_names
+                | {"GatherAndSweep", *RACK_CHAIN_SKILLS},
+                "failure_effect_skills": self.failure_effect_skills | set(RACK_CHAIN_SKILLS),
             }
         )
 
     def robot_skills(self) -> tuple[str, ...]:
         """The modelled robot skills this domain still has beliefs for."""
         believed = dict(self.belief_sources)
-        return tuple(name for name in RACK_ROBOT_SKILLS if name in believed)
+        return tuple(name for name in (*RACK_ROBOT_SKILLS, *RACK_CHAIN_SKILLS) if name in believed)
 
     def sample_thetas(
         self, *, beliefs: Mapping[str, SkillBelief], sample_skills: SampleSkills, count: int
@@ -454,10 +501,13 @@ class RackServingPracticeDomain(PracticeDomain):
         named is no way to deploy in this bound (the model's net-of-charges bound asks
         for one route at a time). Skills that are not bulk transfers keep their reach."""
         draws = self._reach_draws(beliefs=beliefs)
+        if routes is not None and set(routes) & set(RACK_CHAIN_SKILLS):
+            # Gather and Sweep5 are one route: a try of either is a try of the chain.
+            routes = (*routes, *RACK_CHAIN_SKILLS)
         reach = tuple(
             (name, self._reach(draws=draws[name], tries_left=tries_left))
             for name in self.robot_skills()
-            if routes is None or name not in RACK_SWEEP_SKILLS or name in routes
+            if routes is None or name not in RACK_BULK_SKILLS or name in routes
         )
         deployment = self._deployment() | {"step_weight": 0.0}
         key = (reach, deployment["horizon"], deployment["one_bulk_attempt"], self.bulk_rewards)

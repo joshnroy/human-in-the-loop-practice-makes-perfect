@@ -18,7 +18,7 @@ from .controllers import RackControllers
 from .food import RackFoodController
 from .objects import RackServing3DObjects as Objects
 from .pick_plannable import RackPickPlannable
-from .predicates import AbstractAtom, RackServing3DAtoms
+from .predicates import GATHERED, AbstractAtom, RackServing3DAtoms
 from .skills import SKILL_IDS
 
 HUMAN_RETURN_SETTLE_STEPS = 20
@@ -74,6 +74,8 @@ class RackServingEnvironment(SweepOffShelf3DEnvironment):
         )
         if self.config.two_route_rewards:
             atoms |= self._bulk_verdict
+        if self.config.split_gather_and_sweep:
+            atoms |= self._gathered()
         features = backend.features()
         data = {obj: features[obj.name] for obj in Objects.all_objects()}
         data[Objects.scene] = np.array(
@@ -81,6 +83,16 @@ class RackServingEnvironment(SweepOffShelf3DEnvironment):
             dtype=float,
         )
         return SweepOffShelf3DState(data=data, abstract_atoms=atoms)
+
+    def _gathered(self) -> frozenset[AbstractAtom]:
+        backend, controllers = self.backend(), self.rack_controllers()
+        geometry = controllers.stroke_geometry()
+        gathered = RackServing3DAtoms.gathered(
+            on_rack_corners=[backend.corners(name=name) for name in controllers.on_rack()],
+            center_y=geometry["plate_center_y"],
+            blade_width=geometry["blade_width"],
+        )
+        return frozenset({(GATHERED.name, ())}) if gathered else frozenset()
 
     def _bookkeeping(self) -> tuple[int, int]:
         state = self.get_current_state()
@@ -127,6 +139,10 @@ class RackServingEnvironment(SweepOffShelf3DEnvironment):
                 if not self.config.sweep_skill:
                     raise SkillFailed("Sweep is not enabled (RackServingConfig.sweep_skill)")
                 controllers.sweep(d=float(values[4]))
+            elif self.config.split_gather_and_sweep and skill_id == SKILL_IDS["Gather"]:
+                controllers.gather(s=float(values[2]), delta=float(values[3]))
+            elif self.config.split_gather_and_sweep and skill_id == SKILL_IDS["Sweep5"]:
+                controllers.sweep(d=float(values[4]))
             elif skill_id == SKILL_IDS["ReturnScraper"]:
                 controllers.return_scraper()
             elif skill_id == SKILL_IDS["PickFood"]:
@@ -166,7 +182,11 @@ class RackServingEnvironment(SweepOffShelf3DEnvironment):
             )
             if refusal is not None:
                 self._pick_refusals[name] = refusal
-        bulk = {SKILL_IDS[name]: name for name in ("Sweep", "GatherAndSweep")}
+        bulk = {
+            SKILL_IDS[name]: name
+            for name in ("Sweep", "GatherAndSweep", "Sweep5")
+            if name != "Sweep5" or self.config.split_gather_and_sweep
+        }
         if self.config.two_route_rewards and values.shape == (5,) and values[0] in bulk:
             self._bulk_verdict = RackServing3DAtoms.served_verdict(
                 skill=bulk[int(values[0])], plate_count=backend.plate_count()
