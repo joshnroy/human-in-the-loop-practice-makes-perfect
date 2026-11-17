@@ -4,10 +4,12 @@ import numpy as np
 from pydantic import PrivateAttr
 
 from hitl_pmp.core.problem.tasks.tasks import Tasks
-from hitl_pmp.core.problem.tasks.types import Goal, Task
+from hitl_pmp.core.problem.tasks.types import Goal, GroundAtom, Task
 
 from .environment import RackServingEnvironment
 from .predicates import RackServing3DPredicates
+from .toy_environment import RackServingToyEnvironment
+from .toy_interface import ServingToyPredicates
 
 SCENE_SEED_LIMIT = 2**31 - 1
 
@@ -48,3 +50,20 @@ class RackServingTasks(Tasks):
 
     def build_task(self, *, scene_seed: int) -> Task:
         return Task(initial_state=self.env.reset_to_seed(seed=scene_seed), goal=self.goal())
+
+
+class RackServingToyTasks(RackServingTasks):
+    """`--env racktoserving3d`'s tasks: the toy's one goal, `Served`. Either route
+    reaches it, and which one did is in the state (`ServedThree`/`ServedFive`)."""
+
+    env: RackServingToyEnvironment
+
+    def goal(self) -> Goal:
+        return Goal(
+            atoms=frozenset({
+                GroundAtom(
+                    predicate=ServingToyPredicates.get(name="Served"),
+                    objects=(RackServingToyEnvironment.robot,),
+                )
+            })
+        )

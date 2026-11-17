@@ -1,4 +1,4 @@
-"""Opt-in `gather_delta_high`: a wider GatherAndSweep delta range, everything else as is."""
+"""Opt-in `gather_delta_high`: a wider gather delta range, everything else as is."""
 
 import importlib.util
 
@@ -6,25 +6,23 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.environment.types import State
 from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
 from hitl_pmp.environments.racktoserving3d.controllers import RackControllers
 from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
-from hitl_pmp.environments.racktoserving3d.objects import RackServing3DObjects as Objects
 from hitl_pmp.environments.racktoserving3d.skill_provider import RackServingSkillProvider
 from hitl_pmp.environments.racktoserving3d.skills import GATHER_AND_SWEEP_BOUNDS, SWEEP_BOUNDS
-from hitl_pmp.environments.racktoserving3d.skills import RackServing3DSkills as Skills
+from hitl_pmp.environments.racktoserving3d.toy_environment import RackServingToyEnvironment
+from hitl_pmp.environments.racktoserving3d.toy_interface import GATHER, SWEEP3, TOY_SKILL_IDS
 from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import SkillFailed
 
 needs_kinder = pytest.mark.skipif(
     importlib.util.find_spec("kinder") is None, reason="KINDER is not installed"
 )
-BULK = (Objects.robot, Objects.scraper, Objects.rack, Objects.tray, *Objects.food)
 
 
 def _provider(*, config):
-    return RackServingSkillProvider(env=RackServingEnvironment(config=config))
+    return RackServingSkillProvider(env=RackServingToyEnvironment(config=config))
 
 
 def test_the_declared_bounds_are_unchanged_by_default():
@@ -47,21 +45,21 @@ def test_a_delta_range_must_stay_nonempty_and_below_the_gather_start(*, high):
 def test_the_sampler_draws_delta_over_the_wider_range_and_sweep_is_untouched():
     provider = _provider(config=RackServingConfig(gather_delta_high=0.2))
     rng = np.random.default_rng(3)
-    ground = GroundSkill(skill=Skills.GATHER_AND_SWEEP, objects=BULK)
+    ground = provider.ground(name=GATHER)
     samples = np.array([provider.sample_params(ground_skill=ground, rng=rng) for _ in range(400)])
     assert samples[:, 1].min() >= 0.005 and samples[:, 1].max() <= 0.2
     assert samples[:, 1].max() > 0.18
-    sweep = GroundSkill(skill=Skills.SWEEP, objects=BULK)
+    sweep = provider.ground(name=SWEEP3)
     depths = np.array([provider.sample_params(ground_skill=sweep, rng=rng)[0] for _ in range(200)])
     assert depths.min() >= SWEEP_BOUNDS[0][0] and depths.max() <= SWEEP_BOUNDS[0][1]
 
 
 def test_an_action_inside_the_wider_range_encodes_only_when_it_is_configured():
-    ground = GroundSkill(skill=Skills.GATHER_AND_SWEEP, objects=BULK)
-    params = np.array([0.07, 0.15, 0.10])
+    params = np.array([0.07, 0.15])
     wide = _provider(config=RackServingConfig(gather_delta_high=0.2))
+    ground = wide.ground(name=GATHER)
     action = wide.compute_action(ground_skill=ground, params=params, state=State(data={}))
-    np.testing.assert_array_equal(action, [1, 0, 0.07, 0.15, 0.10])
+    np.testing.assert_array_equal(action, [TOY_SKILL_IDS[GATHER], 0, 0.07, 0.15, 0.0])
     with pytest.raises(ValueError, match="outside the declared bounds"):
         _provider(config=RackServingConfig()).compute_action(
             ground_skill=ground, params=params, state=State(data={})
