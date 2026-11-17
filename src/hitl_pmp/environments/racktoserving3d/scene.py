@@ -90,6 +90,7 @@ def build_scene(*, config: RackServingConfig) -> dict[str, Any]:
             "mass": config.dumpling_mass,
             "friction": list(config.dumpling_friction),
             "contact_dimension": config.dumpling_contact_dimension,
+            "collision": config.dumpling_collision,
             "rgba": [0.88, 0.78, 0.59, 1],
         }
         region = point_region(
@@ -134,9 +135,11 @@ def build_scene(*, config: RackServingConfig) -> dict[str, Any]:
             for key in RackServingConfig.model_fields
             if key.startswith("corelle_") and key != "corelle_mass"
         }
+        if config.plate_tuck > 0:
+            profile["plate_tuck"] = config.plate_tuck
     return {
         "description": (
-            f"Movable cooling rack to movable {serving_noun}; rigid dumpling proxies. "
+            f"Cooling rack to {serving_noun}, both welded to the counter; rigid dumpling proxies. "
             "Hardware height, mass, friction and cooling are unverified assumptions."
         ),
         "robots": {"tidybot": {"robot": {}}},

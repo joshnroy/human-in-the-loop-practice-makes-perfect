@@ -13,7 +13,7 @@ from .environment import RackServingEnvironment
 from .objects import RackServing3DObjects as Objects
 from .predicates import RackServing3DAtoms, RackServing3DPredicates
 from .semantics import HUMAN_BATCH_RETURN, HUMAN_TOOL_RECOVERY
-from .skills import GATHER_AND_SWEEP_BOUNDS, SKILL_IDS
+from .skills import GATHER_AND_SWEEP_BOUNDS, SKILL_IDS, SWEEP_BOUNDS
 from .skills import RackServing3DSkills as Skills
 
 
@@ -22,10 +22,24 @@ class RackServingSkillProvider(SkillProvider):
     offer_human_reset: bool = True
 
     def skills(self) -> tuple[Skill, ...]:
-        return Skills.robot_skills()
+        return Skills.robot_skills(
+            include_sweep=self.env.config.sweep_skill,
+            include_placement=not self.env.config.bulk_transfer_only,
+            two_route=self.env.config.two_route_rewards,
+            # Evaluation tasks start from a full rack and never need a return.
+            include_robot_batch_return=self.env.config.robot_batch_return
+            and self.env.config.mode == "training",
+            split=self.env.config.split_gather_and_sweep,
+        )
 
     def predicates(self) -> tuple[Predicate, ...]:
-        return RackServing3DPredicates.all()
+        return RackServing3DPredicates.all(
+            two_route=self.env.config.two_route_rewards,
+            split=self.env.config.split_gather_and_sweep,
+        )
+
+    def goal_rewards(self) -> dict[str, float]:
+        return self.env.config.two_route_goal_rewards()
 
     def types(self) -> tuple[Type, ...]:
         return Objects.all_types()
@@ -34,20 +48,71 @@ class RackServingSkillProvider(SkillProvider):
         return Objects.all_objects()
 
     def sample_params(self, *, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
-        if ground_skill.skill != Skills.GATHER_AND_SWEEP:
+        # By name: the two-route variants are the same skills with success restated.
+        gather_and_sweep = self.env.config.gather_and_sweep_bounds()
+        bounds = {
+            "GatherAndSweep": gather_and_sweep,
+            "Sweep": SWEEP_BOUNDS,
+            "Gather": gather_and_sweep[:2],
+            "Sweep5": gather_and_sweep[2:],
+        }
+        name = ground_skill.skill.name
+        if name not in bounds:
             return np.zeros(0)
-        return np.array([rng.uniform(lower, upper) for lower, upper in GATHER_AND_SWEEP_BOUNDS])
+        return np.array([rng.uniform(lower, upper) for lower, upper in bounds[name]])
 
     def compute_action(
         self, *, ground_skill: GroundSkill, params: np.ndarray, state: State
     ) -> Action:
         del state
-        return RackServingActions.encode(ground_skill=ground_skill, params=params)
+        return RackServingActions.encode(
+            ground_skill=ground_skill,
+            params=params,
+            gather_and_sweep_bounds=self.env.config.gather_and_sweep_bounds(),
+        )
+
+    def hand_selected_feature_transform(
+        self, *, ground_skill: GroundSkill, state: State, params: np.ndarray
+    ) -> list[float] | None:
+        """The learned sampler's row for Sweep and GatherAndSweep, as
+        `RackServingConfig.sampler_features` selects: `[1, layout, parameters]`,
+        `[1, parameters]`, or None for the method's own full-state row. The layout is
+        each of the grounding's dumplings' (x, y) from the rack's centre, in the
+        grounding's order. That order is slot order: the skills' FoodOrder chain admits
+        one grounding, and a lined-up start and the person's batch return place
+        `cube_0`..`cube_4` across the rack in that order. Nothing of the robot or the
+        scraper enters, so the row is the same wherever the robot stands."""
+        selection = self.env.config.sampler_features
+        # By name: the two-route variants are the same skills with success restated.
+        if selection == "full_state" or ground_skill.skill.name not in (
+            "GatherAndSweep",
+            "Sweep",
+            "Gather",
+            "Sweep5",
+        ):
+            return None
+        layout: list[float] = []
+        if selection == "parameters_and_layout":
+            x_min, y_min, x_max, y_max = (
+                float(value)
+                for obj in ground_skill.objects
+                if obj.type == Objects.rack_type
+                for value in state[obj][:4]
+            )
+            for obj in ground_skill.objects:
+                if obj.type == Objects.food_type:
+                    layout += [
+                        float(state[obj][0]) - (x_min + x_max) / 2,
+                        float(state[obj][1]) - (y_min + y_max) / 2,
+                    ]
+        return [1.0, *layout, *(float(value) for value in params)]
 
     def human_cube_bin_reset_skills(self) -> tuple[GroundSkill, ...]:
         if not self.offer_human_reset or self.env.config.mode == "deployment":
             return ()
-        batch, tool = Skills.human_skills(mode=self.env.config.mode)
+        batch, tool = Skills.human_skills(
+            mode=self.env.config.mode, two_route=self.env.config.two_route_rewards
+        )
         return (
             GroundSkill(
                 skill=batch, objects=(Objects.robot, Objects.rack, Objects.tray, *Objects.food)
@@ -74,23 +139,45 @@ class RackServingActions:
     """Encode [robot skill ID, food index, squeeze s m, gather delta m, sweep depth d m]."""
 
     @staticmethod
-    def encode(*, ground_skill: GroundSkill, params: np.ndarray) -> Action:
+    def encode(
+        *,
+        ground_skill: GroundSkill,
+        params: np.ndarray,
+        gather_and_sweep_bounds: tuple[tuple[float, float], ...] = GATHER_AND_SWEEP_BOUNDS,
+    ) -> Action:
         skill = ground_skill.skill
         if skill.name in (HUMAN_BATCH_RETURN, HUMAN_TOOL_RECOVERY):
             raise PermissionError("human interventions are not robot actions")
-        if skill not in Skills.robot_skills():
+        if skill.name not in SKILL_IDS:
             raise ValueError(f"unknown rack-serving robot skill: {skill.name}")
         params = np.asarray(params, dtype=float)
         if params.shape != (skill.param_dim,) or not np.isfinite(params).all():
             raise ValueError(f"{skill.name} requires {skill.param_dim} finite parameters")
         continuous = np.zeros(3)
-        if skill == Skills.GATHER_AND_SWEEP:
+        if skill.name == Skills.GATHER_AND_SWEEP.name:
             if any(
                 not lower <= value <= upper
-                for value, (lower, upper) in zip(params, GATHER_AND_SWEEP_BOUNDS, strict=True)
+                for value, (lower, upper) in zip(params, gather_and_sweep_bounds, strict=True)
             ):
                 raise ValueError("GatherAndSweep s/delta/d are outside the declared bounds")
             continuous = params
+        if skill.name == Skills.SWEEP.name:
+            ((lower, upper),) = SWEEP_BOUNDS
+            if not lower <= params[0] <= upper:
+                raise ValueError("Sweep d is outside the declared bounds")
+            continuous = np.array([0.0, 0.0, params[0]])
+        split = {
+            Skills.GATHER.name: (gather_and_sweep_bounds[:2], slice(0, 2)),
+            Skills.SWEEP5.name: (gather_and_sweep_bounds[2:], slice(2, 3)),
+        }
+        if skill.name in split:
+            bounds, slots = split[skill.name]
+            if any(
+                not lower <= value <= upper
+                for value, (lower, upper) in zip(params, bounds, strict=True)
+            ):
+                raise ValueError(f"{skill.name} parameters are outside the declared bounds")
+            continuous[slots] = params
         food_index = 0
         if skill in (Skills.PICK_FOOD, Skills.PLACE_FOOD_ON_TRAY, Skills.RETURN_FOOD_TO_RACK):
             food_index = Objects.food.index(ground_skill.objects[1])

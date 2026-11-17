@@ -1,6 +1,9 @@
 """State-attached measured facts; readiness is derived only from the clock."""
 
 import itertools
+from collections.abc import Sequence
+
+import numpy as np
 
 from hitl_pmp.core.problem.environment.types import Object, State, Type
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate
@@ -8,6 +11,11 @@ from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate
 from .objects import RackServing3DObjects as Objects
 
 AbstractAtom = tuple[str, tuple[str, ...]]
+# `RackServingConfig.two_route_rewards`: ServedThree and ServedFive never hold
+# together: which one a solved task holds is decided by the bulk skill that solved it
+# (`RackServing3DAtoms.served_verdict`). What each is worth is the config's
+# (`RackServingConfig.two_route_goal_rewards`).
+TWO_ROUTE_SWEEP_COUNT = 3
 
 
 class RackServing3DAtoms:
@@ -26,6 +34,33 @@ class RackServing3DAtoms:
             holds=lambda state, objects: RackServing3DAtoms.holds(
                 state=state, name=name, objects=objects
             ),
+        )
+
+    @staticmethod
+    def served_verdict(*, skill: str, plate_count: int) -> frozenset[AbstractAtom]:
+        """The two-route outcome facts of a bulk skill that has just returned (Josh,
+        2026-11-12): a Sweep that left three or more on the plate is Served and
+        ServedThree, whatever more it landed; a GatherAndSweep that left all five is
+        Served and ServedFive; anything else, a GatherAndSweep that landed three or four
+        included, is neither."""
+        if skill == "Sweep" and plate_count >= TWO_ROUTE_SWEEP_COUNT:
+            return frozenset({("Served", ()), ("ServedThree", ())})
+        if skill in ("GatherAndSweep", "Sweep5") and plate_count == len(Objects.food):
+            return frozenset({("Served", ()), ("ServedFive", ())})
+        return frozenset()
+
+    @staticmethod
+    def gathered(
+        *, on_rack_corners: Sequence[np.ndarray], center_y: float, blade_width: float
+    ) -> bool:
+        """`split_gather_and_sweep`'s Gathered: food is on the rack and every dumpling
+        there lies, footprint and all, inside the band the final sweep's blade covers,
+        centred on the plate's centre line. A start layout can already be gathered."""
+        if not on_rack_corners:
+            return False
+        return all(
+            float(np.max(np.abs(np.asarray(corners)[:, 1] - center_y))) <= blade_width / 2
+            for corners in on_rack_corners
         )
 
     @staticmethod
@@ -98,6 +133,13 @@ PICK_PLANNABLE = RackServing3DAtoms.predicate(
 )
 ANY_FOOD_ON_RACK = RackServing3DAtoms.predicate(name="AnyFoodOnRack", types=())
 ANY_FOOD_OFF_RACK = RackServing3DAtoms.predicate(name="AnyFoodOffRack", types=())
+# Two-route only: Served is the shared goal; the other two say how well it was met.
+SERVED = RackServing3DAtoms.predicate(name="Served", types=())
+SERVED_THREE = RackServing3DAtoms.predicate(name="ServedThree", types=())
+SERVED_FIVE = RackServing3DAtoms.predicate(name="ServedFive", types=())
+TWO_ROUTE_PREDICATES = (SERVED, SERVED_THREE, SERVED_FIVE)
+# `split_gather_and_sweep` only: measured (`RackServing3DAtoms.gathered`).
+GATHERED = RackServing3DAtoms.predicate(name="Gathered", types=())
 _FOOD_CHAIN = frozenset(
     (first.name, second.name) for first, second in itertools.pairwise(Objects.food)
 )
@@ -126,8 +168,13 @@ DYNAMIC_PREDICATES = (
 
 class RackServing3DPredicates:
     @staticmethod
-    def all() -> tuple[Predicate, ...]:
-        return (*DYNAMIC_PREDICATES, FOOD_ORDER)
+    def all(*, two_route: bool = False, split: bool = False) -> tuple[Predicate, ...]:
+        return (
+            *DYNAMIC_PREDICATES,
+            FOOD_ORDER,
+            *(TWO_ROUTE_PREDICATES if two_route else ()),
+            *((GATHERED,) if split else ()),
+        )
 
     @staticmethod
     def static_atoms() -> frozenset[GroundAtom]:
@@ -137,8 +184,10 @@ class RackServing3DPredicates:
         )
 
     @staticmethod
-    def goal_atoms() -> frozenset[GroundAtom]:
+    def goal_atoms(*, two_route: bool = False) -> frozenset[GroundAtom]:
         """Delivery is the goal, independently of how the robot accomplished it."""
+        if two_route:
+            return frozenset({GroundAtom(predicate=SERVED, objects=())})
         return frozenset(
             GroundAtom(predicate=ON_TRAY, objects=(food, Objects.tray)) for food in Objects.food
         )

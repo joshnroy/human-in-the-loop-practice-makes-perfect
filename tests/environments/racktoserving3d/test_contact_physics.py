@@ -23,15 +23,9 @@ from hitl_pmp.environments.racktoserving3d.scene import (
     "serving_target", ["round_plate", "slate", "lipped_platter", "corelle_plate"]
 )
 @pytest.mark.parametrize("tilt", [0, 15, 45])
-def test_production_food_settles_on_priority_tray(
-    *, tilt: float, serving_target: str, request: pytest.FixtureRequest
-) -> None:
-    if (tilt, serving_target) == (45, "corelle_plate"):
-        # Measured 2026-11-04: dropped at 45 degrees, the potsticker slides to the rim
-        # and creeps there at up to ~5 mm/s, below the 0.02 m/s settled-delivery limit.
-        request.applymarker(
-            pytest.mark.xfail(strict=True, reason="potsticker creeps against the Corelle rim")
-        )
+def test_production_food_settles_on_priority_tray(*, tilt: float, serving_target: str) -> None:
+    # The full 41-part potsticker crept against the Corelle rim at 45 degrees (~5 mm/s,
+    # measured 2026-11-04); the production single-hull collision settles there.
     _settles(tilt=tilt, serving_target=serving_target)
 
 
@@ -51,7 +45,7 @@ def _settles(*, tilt: float, serving_target: str) -> None:
     }[serving_target]
     root = ET.Element("mujoco")
     ET.SubElement(root, "option", timestep="0.0005")
-    ET.SubElement(root, "asset").extend(RackPotsticker.assets())
+    ET.SubElement(root, "asset").extend(RackPotsticker.assets(collision=config.dumpling_collision))
     world = ET.SubElement(root, "worldbody")
     ET.SubElement(world, "geom", type="plane", size="1 1 0.1")
     for kind, name in ((serving_type, "box_0"), (DUMPLING_TYPE, "cube_0")):
@@ -100,7 +94,7 @@ def test_platter_lip_stops_food_sliding_toward_its_far_edge() -> None:
     scene = build_scene(config=config)
     root = ET.Element("mujoco")
     ET.SubElement(root, "option", timestep="0.0005")
-    ET.SubElement(root, "asset").extend(RackPotsticker.assets())
+    ET.SubElement(root, "asset").extend(RackPotsticker.assets(collision=config.dumpling_collision))
     world = ET.SubElement(root, "worldbody")
     ET.SubElement(world, "geom", type="plane", size="1 1 0.1")
     for kind, name in ((PLATTER_TYPE, "box_0"), (DUMPLING_TYPE, "cube_0")):
@@ -149,7 +143,7 @@ def test_corelle_scoring_in_native_physics_holds_on_every_step(
     scene = build_scene(config=config)
     root = ET.Element("mujoco")
     ET.SubElement(root, "option", timestep="0.0005")
-    ET.SubElement(root, "asset").extend(RackPotsticker.assets())
+    ET.SubElement(root, "asset").extend(RackPotsticker.assets(collision=config.dumpling_collision))
     world = ET.SubElement(root, "worldbody")
     ET.SubElement(world, "geom", name="floor", type="plane", size="1 1 0.1")
     plate_options = scene["objects"][CORELLE_TYPE]["box_0"]

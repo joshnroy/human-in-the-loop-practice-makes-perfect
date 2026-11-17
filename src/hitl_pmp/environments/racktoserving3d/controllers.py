@@ -6,7 +6,7 @@ from typing import Any, ClassVar, Literal
 
 import numpy as np
 from pydantic import BaseModel, ConfigDict
-from scipy.spatial.transform import Rotation
+from scipy.spatial.transform import Rotation, Slerp
 
 from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import SkillFailed
 
@@ -14,8 +14,8 @@ from .backend import RackServingBackend
 from .config import RackServingConfig
 from .food import RackFoodController
 from .servo import SweepServo
-from .skills import GATHER_AND_SWEEP_BOUNDS, SWEEP_SPEED_M_S
-from .stroke import GatherAndSweepPlanner, Stroke
+from .skills import GATHER_AND_SWEEP_BOUNDS, SWEEP_BOUNDS, SWEEP_SPEED_M_S
+from .stroke import BladeHeightFeedback, GatherAndSweepPlanner, Stroke
 from .tool import RackScraper, RackShelfSkills
 
 RELEASE_RETREAT = 0.03
@@ -109,10 +109,25 @@ class RackControllers:
     SETTLE_STEPS: ClassVar[int] = 30
     SETTLE_TOLERANCE: ClassVar[float] = 0.005
     SETTLE_LIMIT: ClassVar[float] = 0.06
+    # A food under the blade held it 4.4 mm and 5.2 mm above its levelling target.
+    REST_ABOVE_LIMIT: ClassVar[float] = 0.010
+    FOOD_SETTLE_STEPS: ClassVar[int] = 40
+    STILL_STEPS: ClassVar[int] = 3
+    # `RackServingConfig.settle_until_still`, read once per instance.
+    settle_until_still: bool = False
+    # `RackServingConfig.gather_and_sweep_bounds()` when `gather_delta_high` is set, read
+    # once per instance; None reads the module's bounds at call time, which the
+    # measurement probes in scripts/ replace in their own process.
+    gather_and_sweep_bounds: tuple[tuple[float, float], ...] | None = None
 
     def __init__(self, *, backend: RackServingBackend, step_limit: int = 12000):
         self.backend = backend
+        self.settle_until_still = backend.config.settle_until_still
+        if backend.config.gather_delta_high is not None:
+            self.gather_and_sweep_bounds = backend.config.gather_and_sweep_bounds()
         self.shelf = RackShelfSkills(env=backend.env(), tick_limit=step_limit)
+        if backend.config.base_step_limit is not None:
+            self.shelf.base_step_limit = backend.config.base_step_limit
         self.shelf.cupboard_geoms |= backend.body_geoms(name="rack_0")
         self.tool = RackScraper(shelf=self.shelf, config=backend.config)
         self.held_food: str | None = None
@@ -225,23 +240,62 @@ class RackControllers:
         self.shelf.in_hand = np.linalg.inv(self.shelf.site_pose()) @ self.tool.wiper_pose()
         return body @ np.linalg.inv(self.shelf.in_hand)
 
-    def move_tool(self, *, body: np.ndarray, label: str) -> None:
+    def move_tool(
+        self,
+        *,
+        body: np.ndarray,
+        label: str,
+        may_rest_above: bool = False,
+        axis_clipped: bool = True,
+    ) -> np.ndarray:
+        """Drive the measured scraper to ``body``; return the pose it reached.
+
+        With ``may_rest_above``, a scraper that stays up to ``REST_ABOVE_LIMIT`` above
+        ``body``, on it horizontally and in rotation, counts as arrived: something
+        under the blade is holding it up, and pressing down a sixth time would not
+        change that. Only a move that is about to rise anyway may ask for this.
+
+        ``axis_clipped`` is `TableWiper.line`'s: which joint paths each waypoint's
+        segment is checked along.
+        """
         for _ in range(5):
             target = self.hand_for_tool(body=body)
             self.tool.line(
-                position=target[:3, 3], rotation=target[:3, :3], label=label, holding=True
+                position=target[:3, 3],
+                rotation=target[:3, :3],
+                label=label,
+                holding=True,
+                rest_above=self.REST_ABOVE_LIMIT if may_rest_above else 0.0,
+                axis_clipped=axis_clipped,
             )
             actual = self.tool.wiper_pose()
             if (
                 np.linalg.norm(actual[:3, 3] - body[:3, 3]) < 0.003
                 and self.tool.rotation_error(actual=actual[:3, :3], target=body[:3, :3]) < 1.0
             ):
-                return
-        raise SkillFailed(f"{label}: measured scraper pose failed to converge")
+                return actual
+        offset = actual[:3, 3] - body[:3, 3]
+        position_error = float(np.linalg.norm(offset))
+        angle_error = self.tool.rotation_error(actual=actual[:3, :3], target=body[:3, :3])
+        if (
+            may_rest_above
+            and 0 < offset[2] <= self.REST_ABOVE_LIMIT
+            and np.linalg.norm(offset[:2]) < 0.003
+            and angle_error < 1.0
+        ):
+            self.metrics.setdefault("rested_above", []).append({
+                "label": label,
+                "above_m": float(offset[2]),
+            })
+            return actual
+        raise SkillFailed(
+            f"{label}: measured scraper pose failed to converge "
+            f"({position_error * 1000:.2f} mm / {angle_error:.2f} deg)"
+        )
 
     def gather_and_sweep(self, *, s: float, delta: float, d: float) -> None:
         """Squeeze toward the plate in two passes, gather from +y then -y, then sweep."""
-        bounds = GATHER_AND_SWEEP_BOUNDS
+        bounds = self.gather_and_sweep_bounds or GATHER_AND_SWEEP_BOUNDS
         values = (s, delta, d)
         if not np.isfinite(values).all() or any(
             not low <= value <= high for value, (low, high) in zip(values, bounds, strict=True)
@@ -251,71 +305,155 @@ class RackControllers:
                 f"GatherAndSweep requires s [{s_low},{s_high}] m,"
                 f" delta [{delta_low},{delta_high}] m and d [{d_low},{d_high}] m"
             )
-        backend, shelf, tool = self.backend, self.shelf, self.tool
-        config = backend.config
+        geometry, rack_pose = self.begin_transfer(s=s, delta=delta, d=d)
+        config = self.backend.config
+        with self.feedback():
+            self.gather_strokes(s=s, delta=delta, geometry=geometry, rack_pose=rack_pose)
+            sweep = GatherAndSweepPlanner.sweep(
+                d=d,
+                plate_clear_z=self.plate_clear_z(),
+                plate_tuck=config.plate_tuck,
+                **geometry,
+            )
+
+            self.push_stroke(
+                stroke=sweep,
+                base=self.stances.rear_base(y=float(sweep.start[1]), config=config),
+                travel=self.to_rear,
+                rack_pose=rack_pose,
+                label="sweep",
+            )
+
+    def gather(self, *, s: float, delta: float) -> None:
+        """`split_gather_and_sweep`'s Gather: GatherAndSweep up to, not including, its
+        final sweep (Sweep5 is that sweep: `sweep`)."""
+        bounds = (self.gather_and_sweep_bounds or GATHER_AND_SWEEP_BOUNDS)[:2]
+        values = (s, delta)
+        if not np.isfinite(values).all() or any(
+            not low <= value <= high for value, (low, high) in zip(values, bounds, strict=True)
+        ):
+            (s_low, s_high), (delta_low, delta_high) = bounds
+            raise SkillFailed(
+                f"Gather requires s [{s_low},{s_high}] m and delta [{delta_low},{delta_high}] m"
+            )
+        geometry, rack_pose = self.begin_transfer(s=s, delta=delta, d=None)
+        with self.feedback():
+            self.gather_strokes(s=s, delta=delta, geometry=geometry, rack_pose=rack_pose)
+
+    def begin_transfer(
+        self, *, s: float, delta: float, d: float | None
+    ) -> tuple[dict[str, float], np.ndarray]:
+        """Refuse an empty rack or a closed exit, check the squeeze plans, reset the
+        metrics, and take the rack pose every stroke's displacement is measured from."""
+        backend = self.backend
         if not self.on_rack():
             raise SkillFailed("no food is physically on the rack")
         rack, tray = backend.support(name="rack_0"), backend.support(name="box_0")
-        if rack.top_z < tray.top_z or tray.x_max > rack.x_min:
-            raise SkillFailed("live rack/tray geometry no longer provides a downward open exit")
+        self.require_open_exit(rack=rack, tray=tray)
         geometry = self.stroke_geometry()
-        squeeze = GatherAndSweepPlanner.squeeze(s=s, **geometry)
+        GatherAndSweepPlanner.squeeze(s=s, **geometry)
         self.metrics = {
             "measured_gap_m": rack.x_min - tray.x_max,
             "rack_top_m": rack.top_z,
             "tray_top_m": tray.top_z,
             "s_m": s,
             "delta_m": delta,
-            "d_m": d,
-            "speed_m_s": SWEEP_SPEED_M_S,
+            **({"d_m": d} if d is not None else {}),
+            "speed_m_s": self.final_sweep_speed(),
             "max_rack_displacement_m": 0.0,
             "strokes": [],
         }
         rack_pose = np.asarray(backend.core().get_object("rack_0").get_pose()[0]).copy()
+        return geometry, rack_pose
+
+    def gather_strokes(
+        self, *, s: float, delta: float, geometry: dict[str, float], rack_pose: np.ndarray
+    ) -> None:
+        """The two x-squeeze passes, then the +y and -y gathers, planned from the food."""
+        backend, shelf, tool = self.backend, self.shelf, self.tool
+        config = backend.config
+        squeeze = GatherAndSweepPlanner.squeeze(s=s, **geometry)
         stances = self.stances
-        with self.feedback():
-            for index, stroke in enumerate(squeeze):
-                self.push_stroke(
-                    stroke=stroke,
-                    base=stances.rear_base(y=float(stroke.start[1]), config=config),
-                    travel=self.to_rear if index == 0 else lambda: None,
-                    rack_pose=rack_pose,
-                    label=f"squeeze_{'plus' if index == 0 else 'minus'}_y",
-                )
-            names = self.on_rack() or list(backend.cube_names)
-            gather = GatherAndSweepPlanner.gather(
-                food_corners=np.stack([backend.corners(name=name) for name in names]),
-                delta=delta,
-                **geometry,
+        for index, stroke in enumerate(squeeze):
+            self.push_stroke(
+                stroke=stroke,
+                base=stances.rear_base(y=float(stroke.start[1]), config=config),
+                travel=self.to_rear if index == 0 else lambda: None,
+                rack_pose=rack_pose,
+                label=f"squeeze_{'plus' if index == 0 else 'minus'}_y",
             )
-            for side, stroke in zip((1, -1), gather, strict=True):
+        names = self.on_rack() or list(backend.cube_names)
+        gather = GatherAndSweepPlanner.gather(
+            food_corners=np.stack([backend.corners(name=name) for name in names]),
+            delta=delta,
+            **geometry,
+        )
+        for side, stroke in zip((1, -1), gather, strict=True):
 
-                def to_side(*, side: int = side) -> None:
-                    here = shelf.data.qpos[shelf.ba].copy()
-                    route = (
-                        stances.rear_to_side(side=side, start=here, config=config)
-                        if side > 0
-                        else stances.side_to_side(side=side, config=config)
-                    )
-                    for index, waypoint in enumerate(route[:-1]):
-                        tool.move_base(target=waypoint, label=f"gather_route_{index}")
-
-                self.push_stroke(
-                    stroke=stroke,
-                    base=stances.side_base(side=side, config=config),
-                    travel=to_side,
-                    rack_pose=rack_pose,
-                    label=f"gather_{'plus' if side > 0 else 'minus'}_y",
+            def to_side(*, side: int = side) -> None:
+                here = shelf.data.qpos[shelf.ba].copy()
+                route = (
+                    stances.rear_to_side(side=side, start=here, config=config)
+                    if side > 0
+                    else stances.side_to_side(side=side, config=config)
                 )
-            sweep = GatherAndSweepPlanner.sweep(d=d, plate_clear_z=self.plate_clear_z(), **geometry)
+                for index, waypoint in enumerate(route[:-1]):
+                    tool.move_base(target=waypoint, label=f"gather_route_{index}")
 
             self.push_stroke(
-                stroke=sweep,
-                base=stances.rear_base(y=float(sweep.start[1]), config=config),
+                stroke=stroke,
+                base=stances.side_base(side=side, config=config),
+                travel=to_side,
+                rack_pose=rack_pose,
+                label=f"gather_{'plus' if side > 0 else 'minus'}_y",
+            )
+
+    def sweep(self, *, d: float) -> None:
+        """GatherAndSweep's final stroke alone: no squeeze and no gathers."""
+        ((d_low, d_high),) = SWEEP_BOUNDS
+        if not np.isfinite(d) or not d_low <= d <= d_high:
+            raise SkillFailed(f"Sweep requires d [{d_low},{d_high}] m")
+        backend = self.backend
+        if not self.on_rack():
+            raise SkillFailed("no food is physically on the rack")
+        rack, tray = backend.support(name="rack_0"), backend.support(name="box_0")
+        self.require_open_exit(rack=rack, tray=tray)
+        geometry = self.stroke_geometry()
+        self.metrics = {
+            "measured_gap_m": rack.x_min - tray.x_max,
+            "rack_top_m": rack.top_z,
+            "tray_top_m": tray.top_z,
+            "d_m": d,
+            "speed_m_s": self.final_sweep_speed(),
+            "max_rack_displacement_m": 0.0,
+            "strokes": [],
+        }
+        rack_pose = np.asarray(backend.core().get_object("rack_0").get_pose()[0]).copy()
+        stroke = GatherAndSweepPlanner.sweep(
+            d=d,
+            plate_clear_z=self.plate_clear_z(),
+            plate_tuck=backend.config.plate_tuck,
+            **geometry,
+        )
+        with self.feedback():
+            self.push_stroke(
+                stroke=stroke,
+                base=self.stances.rear_base(y=float(stroke.start[1]), config=backend.config),
                 travel=self.to_rear,
                 rack_pose=rack_pose,
                 label="sweep",
             )
+
+    def require_open_exit(self, *, rack: Any, tray: Any) -> None:
+        """The rack's front edge must drop onto the plate: the rack top at or above the
+        plate, and the scored region not past the rack's front edge unless the plate is
+        deliberately tucked under it (`RackServingConfig.plate_tuck`)."""
+        tucked = self.backend.config.plate_tuck > 0
+        if rack.top_z < tray.top_z or (tray.x_max > rack.x_min and not tucked):
+            raise SkillFailed("live rack/tray geometry no longer provides a downward open exit")
+
+    def final_sweep_speed(self) -> float:
+        return float(self.backend.config.final_sweep_speed or SWEEP_SPEED_M_S)
 
     def on_rack(self) -> list[str]:
         backend = self.backend
@@ -388,7 +526,8 @@ class RackControllers:
     ) -> None:
         """Raise, travel, approach, lower onto the stroke start, push at fixed speed, lift."""
         backend, shelf, tool = self.backend, self.shelf, self.tool
-        speed = SWEEP_SPEED_M_S
+        # Only the final sweep carries a floor; squeezes and gathers keep the constant.
+        speed = SWEEP_SPEED_M_S if stroke.floor_z is None else self.final_sweep_speed()
         rack = backend.support(name="rack_0")
         tool.require_held(label=f"{label}_start")
         shelf.in_hand = np.linalg.inv(shelf.site_pose()) @ tool.wiper_pose()
@@ -439,6 +578,15 @@ class RackControllers:
                 distance = min(stroke.length, distance + speed * 0.1)
             desired_body = body.copy()
             desired_body[:3, 3] += stroke.point(distance=distance) - stroke.start
+            limit = backend.config.blade_height_feedback_limit
+            if limit > 0 and stroke.floor_z is not None:
+                # The final sweep only: the gathers and squeezes glide on the rack.
+                edge = tool.blade_edge().mean(axis=0)
+                desired_body[2, 3] -= BladeHeightFeedback.lowering(
+                    planned_z=float(stroke.point(distance=actual)[2]),
+                    actual_z=float(edge[2]),
+                    limit=limit,
+                )
             waypoint = self.hand_for_tool(body=desired_body)
             shelf.base_target = base.copy()
             arm = tool.ik(
@@ -477,6 +625,13 @@ class RackControllers:
         4 mm into the rack, beyond the support allowance; with the arm stretched, a
         6 cm vertical raise is near-singular (0.7 rad of joint 4, 3.6 mm IK error).
 
+        "Over the rack or the plate" is the whole area the strokes work in: the
+        rectangle spanning the rack, the plate out to its outer rim, and the gap
+        between them. Only the rack and the plate's well once counted, and a Sweep that
+        failed at the plate left the blade resting on the rim 6 mm outside the well:
+        every later stroke then raised straight up from the rim and refused at 0 steps
+        (Della c6ed1a6 Curtis seed 0: 76 calls in a row).
+
         So when the blade's edge centre is over the rack or the plate and its lowest
         point is within ``EXIT_BAND`` of the rack top or the plate's sweep floor, it
         is first lifted to ``LIFT_OFF_HEIGHT`` above that floor in ``LIFT_OFF_STEP``
@@ -492,32 +647,39 @@ class RackControllers:
         edge = tool.blade_edge()
         low = float(edge[:, 2].min())
         x, y = edge.mean(axis=0)[:2]
-        over = any(
-            region.x_min <= x <= region.x_max and region.y_min <= y <= region.y_max
-            for region in (backend.support(name="rack_0"), backend.support(name="box_0"))
-        )
+        work = self.stroke_geometry()
+        reach = work["plate_radius"]
+        y_min = min(work["rack_y_min"], work["plate_center_y"] - reach)
+        y_max = max(work["rack_y_max"], work["plate_center_y"] + reach)
+        over = work["plate_center_x"] - reach <= x <= work["rack_back"] and y_min <= y <= y_max
         if not over or low >= floor + EXIT_BAND:
             return
         here = shelf.site_pose()
         rise = max(0.0, floor + LIFT_OFF_HEIGHT - low)
-        if rise > 0:
-            tool.line(
-                position=here[:3, 3] + [0.0, 0.0, rise],
-                rotation=here[:3, :3],
-                label=f"{label}_lift_off",
-                holding=True,
-                step=LIFT_OFF_STEP,
-            )
         toward = shelf.data.qpos[shelf.ba][:2] - edge.mean(axis=0)[:2]
         toward /= np.linalg.norm(toward)
-        here = shelf.site_pose()
-        tool.line(
-            position=here[:3, 3] + EXIT_RETREAT * np.r_[toward, 0.0],
-            rotation=here[:3, :3],
-            label=f"{label}_exit_retreat",
-            holding=True,
-            step=EXIT_STEP,
-        )
+        lift = np.array([0.0, 0.0, rise])
+        retreat = EXIT_RETREAT * np.r_[toward, 0.0]
+        moves = [(lift, "lift_off", LIFT_OFF_STEP), (retreat, "exit_retreat", EXIT_STEP)]
+        # From the rear stance the arm reaching the plate is nearly straight: lifting
+        # there asks 0.3 rad of joints 3 and 5 per 2 mm, and IK fails within 2 cm,
+        # while drawing the blade toward the base is well conditioned. So when the
+        # lift cannot be planned where the blade is, the retreat goes first.
+        if rise > 0 and not tool.line_plannable(
+            position=here[:3, 3] + lift, rotation=here[:3, :3], holding=True, step=LIFT_OFF_STEP
+        ):
+            moves.reverse()
+        for offset, name, step in moves:
+            if not offset.any():
+                continue
+            here = shelf.site_pose()
+            tool.line(
+                position=here[:3, 3] + offset,
+                rotation=here[:3, :3],
+                label=f"{label}_{name}",
+                holding=True,
+                step=step,
+            )
 
     def settle_stroke_end(
         self,
@@ -533,8 +695,11 @@ class RackControllers:
         The push loop ends on progress along travel only, so a blade the food has held
         back or lifted stops short. This commands the end pose plus an accumulated
         correction of the measured error, for at most ``SETTLE_STEPS`` steps, and never
-        commands the edge more than 2 mm below the planned end, so it cannot press into
-        the rack. Error along the blade's own length is neither corrected nor waited
+        commands the edge centre more than 2 mm below the planned end. The entire
+        blade and joint path still need the collision guard: a tilted corner can
+        dip lower. Unsafe corrections are backtracked toward the measured pose;
+        when no checked correction is available, this optional settling ends.
+        Error along the blade's own length is neither corrected nor waited
         for: dragging the blade sideways rearranged the food and made the next gather
         climb a dumpling, failing (0.10, 0.0, 0.08) on 7/7 real-arm layouts (2026-11-03).
         Returns the full edge error before and after, in metres; reaching the tolerance
@@ -554,17 +719,56 @@ class RackControllers:
             error = correctable()
             if np.linalg.norm(error) < self.SETTLE_TOLERANCE:
                 break
-            offset = np.clip(offset + error, -self.SETTLE_LIMIT, self.SETTLE_LIMIT)
-            offset[2] = max(offset[2], -0.002)
+            proposed = np.clip(offset + error, -self.SETTLE_LIMIT, self.SETTLE_LIMIT)
+            proposed[2] = max(proposed[2], -0.002)
             desired = body.copy()
-            desired[:3, 3] += end_offset + offset
-            waypoint = self.hand_for_tool(body=desired)
+            desired[:3, 3] += end_offset + proposed
             shelf.base_target = base.copy()
-            arm = tool.ik(
-                position=waypoint[:3, 3], rotation=waypoint[:3, :3], holding=True, seed=arm
-            )
+            correction, fraction = self.settling_correction(body=desired, label=label)
+            if correction is None:
+                break
+            offset += fraction * (proposed - offset)
+            arm = correction
+            # Execution failures, lost grasps and exhausted budgets must propagate.
             tool.step(arm=arm, label=f"{label}_settle")
         return before, float(np.linalg.norm(stroke.end - tool.blade_edge().mean(axis=0)))
+
+    def settling_correction(
+        self, *, body: np.ndarray, label: str
+    ) -> tuple[np.ndarray | None, float]:
+        """Find a smaller checked correction; never execute a rejected joint path."""
+        tool, shelf = self.tool, self.shelf
+        current = tool.wiper_pose().copy()
+        rotation = Slerp([0, 1], Rotation.from_matrix([current[:3, :3], body[:3, :3]]))
+        reason = ""
+        for fraction in (1.0, 0.5, 0.25, 0.125, 0.0625, 0.03125):
+            candidate = np.eye(4)
+            candidate[:3, :3] = rotation(fraction).as_matrix()
+            candidate[:3, 3] = current[:3, 3] + fraction * (body[:3, 3] - current[:3, 3])
+            waypoint = self.hand_for_tool(body=candidate)
+            try:
+                arm = tool.ik(
+                    position=waypoint[:3, 3],
+                    rotation=waypoint[:3, :3],
+                    holding=True,
+                    seed=shelf.data.qpos[shelf.qa].copy(),
+                )
+            except SkillFailed as exc:
+                reason = str(exc)
+                continue
+            if fraction < 1:
+                self.metrics.setdefault("settling_corrections", []).append({
+                    "label": label,
+                    "fraction": fraction,
+                    "reason": reason,
+                })
+            return arm, fraction
+        self.metrics.setdefault("settling_corrections", []).append({
+            "label": label,
+            "fraction": 0,
+            "reason": reason,
+        })
+        return None, 0.0
 
     def release_swept_food(
         self, *, rotation: np.ndarray | None = None, retreat: np.ndarray | None = None
@@ -586,14 +790,52 @@ class RackControllers:
             level = np.eye(4)
             level[:3, :3] = rotation
             level[:3, 3] = edge - tool.blade_edge(pose=level).mean(axis=0)
-            self.move_tool(body=level, label="sweep_level")
+            # A blade that ends its stroke on a food cannot come down to 2 mm; it is
+            # about to rise, so it rises from where it rests. A blade that did level
+            # still rises from the level pose, as it always has. The move is checked
+            # along the straight joint path the servo follows, and no other: the blade
+            # starts at its working height, where the axis-clipped path of a clear
+            # 1 cm waypoint can dip a blade end past the rack's support allowance.
+            reached = self.move_tool(
+                body=level, label="sweep_level", may_rest_above=True, axis_clipped=False
+            )
             lifted_body = level.copy()
+            if reached[2, 3] - level[2, 3] >= 0.003:
+                lifted_body[2, 3] = reached[2, 3]
         lifted_body[2, 3] += 0.06
         self.move_tool(body=lifted_body, label="sweep_lift")
-        self.shelf.hold(count=40, label="food_settle")
+        self.settle_food()
+
+    def settle_food(self) -> None:
+        """Hold still `FOOD_SETTLE_STEPS` steps for the swept food, or, with
+        `settle_until_still`, only until every dumpling has been still `STILL_STEPS`
+        steps in a row: under the linear and angular speeds `settled_on_tray` scores."""
+        if not self.settle_until_still:
+            self.shelf.hold(count=self.FOOD_SETTLE_STEPS, label="food_settle")
+            return
+        still = 0
+        for _ in range(self.FOOD_SETTLE_STEPS):
+            self.shelf.hold(count=1, label="food_settle")
+            still = still + 1 if self.food_still() else 0
+            if still >= self.STILL_STEPS:
+                return
+
+    def food_still(self) -> bool:
+        model, data = self.backend.model(), self.backend.data()
+        for name in self.backend.cube_names:
+            address = model.jnt_dofadr[model.body_jntadr[model.body(name).id]]
+            velocity = data.qvel[address : address + 6]
+            if np.linalg.norm(velocity[:3]) > 0.02 or np.linalg.norm(velocity[3:]) > 0.5:
+                return False
+        return True
 
     def pick_food(self, *, name: str) -> None:
         RackFoodController(controllers=self).pick(name=name)
 
     def place_food(self, *, name: str, destination: str) -> None:
         RackFoodController(controllers=self).place(name=name, destination=destination)
+
+    def robot_batch_return(self) -> None:
+        from .robot_batch_return import RackRobotBatchReturn
+
+        RackRobotBatchReturn(controllers=self).run()

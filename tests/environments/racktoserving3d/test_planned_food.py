@@ -12,6 +12,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
+
 FIXTURES = Path(__file__).parent / "fixtures"
 HELD_ON_RIM = FIXTURES / "held_food_pad_on_plate_rim.json"
 
@@ -26,7 +28,10 @@ def restored(*, fixture: Path):
 
     plain = json.loads(fixture.read_text())
     config = RackServingConfig.model_validate({
-        k: v for k, v in plain.get("config", {}).items() if k in RackServingConfig.model_fields
+        # These recorded states predate the solid collision surface.
+        "surface_kind": "wire",
+        "food_handling": "physical",
+        **{k: v for k, v in plain.get("config", {}).items() if k in RackServingConfig.model_fields},
     })
     env = RackServingEnvironment(config=config)
     RackServingTasks(env=env, seed=0).sample_train_task()
@@ -35,6 +40,15 @@ def restored(*, fixture: Path):
     for joint, value in plain["robot_joints"].items():
         data.qpos[model.jnt_qposadr[model.joint(joint).id]] = value
     for name, pose in plain["free_bodies"].items():
+        if name in ("rack_0", "box_0"):
+            # Welded since 2026-11-06; the fixture predates that and is restored
+            # exactly, including a plate a push had already moved. A welded pose is
+            # otherwise fixed from reset on, so the controllers' long-lived IK data
+            # is told of the move here.
+            backend.core().get_object(name).set_pose(pose[:3], pose[3:])
+            ik_data = env.rack_controllers().shelf.ik_data
+            ik_data.mocap_pos[:], ik_data.mocap_quat[:] = data.mocap_pos, data.mocap_quat
+            continue
         address = model.jnt_qposadr[model.joint(f"{name}_joint").id]
         data.qpos[address : address + 7] = pose
     data.qvel[:] = 0.0
@@ -74,7 +88,7 @@ def test_planned_pick_then_place_on_the_counter(*, skill, location):
     in the counter's legs ("No collision-free food grasp"), 0-step."""
     from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
 
-    env = RackServingEnvironment()
+    env = RackServingEnvironment(config=RackServingConfig(food_handling="physical"))
     try:
         env.reset_to_seed(seed=0)
         env.take_action(action=np.array([3.0, 0, 0, 0, 0]))

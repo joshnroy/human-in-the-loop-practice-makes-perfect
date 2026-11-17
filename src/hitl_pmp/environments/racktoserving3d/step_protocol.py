@@ -22,6 +22,7 @@ from .problem import RackServingProblem
 from .recording import RackServingReplayRenderer
 from .semantics import HUMAN_BATCH_RETURN, HUMAN_TOOL_RECOVERY
 from .skill_provider import RackServingSkillProvider
+from .skills import SKILL_IDS
 
 
 class RackServingStepProtocol(SimulatedStepProtocolHooks):
@@ -127,8 +128,26 @@ class RackServingStepProtocol(SimulatedStepProtocolHooks):
     def goal_check(*, problem: Problem, task: Task) -> Callable[[], bool]:
         """Use the same live rack verdict as skill-step evaluation, not KINDER's shelf goal."""
         del task
-        backend = RackServingStepProtocol.env(problem=problem).backend()
+        env = RackServingStepProtocol.env(problem=problem)
+        if env.config.two_route_rewards:
+            # The verdict is the bulk skill's own, taken when it returns
+            # (`evaluation_solved_after_action`): no tick mid-skill scores the task or
+            # stops the controller.
+            return lambda: False
+        backend = env.backend()
         return lambda: bool(backend.task_succeeded())
+
+    @staticmethod
+    def evaluation_solved_after_action(*, problem: Problem, action: Action) -> bool | None:
+        """Under `two_route_rewards`, a Sweep or GatherAndSweep that has returned decides
+        the task: solved when its own outcome holds (`served_verdict`)."""
+        env = RackServingStepProtocol.env(problem=problem)
+        bulk = {SKILL_IDS["Sweep"], SKILL_IDS["GatherAndSweep"]} | (
+            {SKILL_IDS["Sweep5"]} if env.config.split_gather_and_sweep else set()
+        )
+        if not (env.config.two_route_rewards and action.size and int(action.flat[0]) in bulk):
+            return None
+        return ("Served", ()) in env.bulk_verdict()
 
     @staticmethod
     def interrupted(*, problem: Problem, action: Action) -> None:
@@ -142,11 +161,27 @@ class RackServingStepProtocol(SimulatedStepProtocolHooks):
         )
 
     @staticmethod
+    def evaluation_terminal_reason(*, problem: Problem, action: Action) -> str | None:
+        """Under `bulk_transfer_only` a task's one Sweep or GatherAndSweep ends it."""
+        env = RackServingStepProtocol.env(problem=problem)
+        bulk = {SKILL_IDS["Sweep"], SKILL_IDS["GatherAndSweep"]} | (
+            {SKILL_IDS["Sweep5"]} if env.config.split_gather_and_sweep else set()
+        )
+        if env.config.bulk_transfer_only and action.size and int(action.flat[0]) in bulk:
+            return "bulk_attempt_finished"
+        return None
+
+    @staticmethod
     def last_skill_error(*, problem: Problem) -> str | None:
         return RackServingStepProtocol.env(problem=problem).last_skill_error()
 
     @staticmethod
     def last_skill_trace(*, problem: Problem) -> dict[str, Any] | None:
-        """No rack-specific trace builder exists; shelf skill IDs are not interchangeable."""
-        del problem
-        return None
+        """No rack-specific trace builder exists; shelf skill IDs are not interchangeable.
+
+        Under `two_route_rewards` every robot event carries the plate count after it,
+        so an evaluation task's reward by count can be read from its last event."""
+        env = RackServingStepProtocol.env(problem=problem)
+        if not env.config.two_route_rewards:
+            return None
+        return {"plate_count": env.backend().plate_count()}

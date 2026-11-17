@@ -87,14 +87,17 @@ def test_object_names_features_and_scene_exclusion():
 
 
 def test_robot_ids_bounds_and_human_separation():
-    assert [SKILL_IDS[skill.name] for skill in Skills.robot_skills()] == list(range(6))
-    assert GATHER_AND_SWEEP_BOUNDS == ((0.03, 0.14), (0.005, 0.075), (0.04, 0.12))
+    assert [SKILL_IDS[skill.name] for skill in Skills.robot_skills()] == list(range(7))
+    assert Skills.SWEEP.param_dim == 1
+    assert GATHER_AND_SWEEP_BOUNDS == ((0.03, 0.14), (0.005, 0.075), (0.0, 0.12))
     assert Skills.GATHER_AND_SWEEP.name == "GatherAndSweep"
     assert Skills.GATHER_AND_SWEEP.param_dim == 3
     assert "SweepRack" not in SKILL_IDS
     assert SKILL_IDS["GatherAndSweep"] == 1
     assert all(
-        skill.param_dim == 0 for skill in Skills.robot_skills() if skill != Skills.GATHER_AND_SWEEP
+        skill.param_dim == 0
+        for skill in Skills.robot_skills()
+        if skill not in (Skills.GATHER_AND_SWEEP, Skills.SWEEP)
     )
     assert not {skill.name for skill in Skills.human_skills()} & set(SKILL_IDS)
     assert Skills.human_skills(mode="deployment") == ()
@@ -153,13 +156,22 @@ def test_robot_can_pick_and_return_from_each_supported_destination(*, source):
     assert _atom(predicate=HAND_EMPTY, objects=(Objects.robot,)) in returned
 
 
-@pytest.mark.parametrize("count", [1, 3, 5])
-def test_sweep_promises_only_food_measured_on_rack(*, count):
-    atoms = _start(rack_count=count, elsewhere="SpilledCounter", held_scraper=True)
+@pytest.mark.parametrize("skill", [Skills.GATHER_AND_SWEEP, Skills.SWEEP])
+@pytest.mark.parametrize("count", [1, 3, 4])
+def test_a_rack_missing_any_food_cannot_be_swept(*, skill, count):
+    # Josh, 2026-11-06: a sweep is a full-rack stroke; food left after a partial one is
+    # picked, not swept again past the food already served.
+    for elsewhere in ("OnTray", "SpilledCounter"):
+        atoms = _start(rack_count=count, elsewhere=elsewhere, held_scraper=True)
+        assert not _groundings(skill=skill, atoms=atoms)
+
+
+def test_sweep_promises_every_food_on_the_full_rack():
+    atoms = _start(rack_count=5, held_scraper=True)
     (sweep,) = _groundings(skill=Skills.GATHER_AND_SWEEP, atoms=atoms)
     promised = sweep.expected_add_effects(before_atoms=atoms)
     assert {atom for atom in promised if atom.predicate == ON_TRAY} == {
-        _atom(predicate=ON_TRAY, objects=(food, Objects.tray)) for food in Objects.food[:count]
+        _atom(predicate=ON_TRAY, objects=(food, Objects.tray)) for food in Objects.food
     }
     after = _apply(ground=sweep, atoms=atoms)
     assert _atom(predicate=ANY_FOOD_ON_RACK) not in after

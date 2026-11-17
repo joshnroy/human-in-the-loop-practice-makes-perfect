@@ -65,8 +65,33 @@ CHAIN_STEP_DEG = 15.0
 # IKFast samples the Kinova's redundant joint, so even its closest solution to a
 # neighbouring pose can sit about 0.4 rad away; a branch flip is over 2 rad.
 BRANCH_JUMP_RAD = 1.2
+# A planned base path is checked against the MuJoCo guard at most this far apart on
+# every axis (m, rad), finer than the executor's own check (`RackScraper.step`: five
+# configurations across one 15 mm / 0.015 rad base step).
+BASE_PATH_CHECK = 0.001
+# The body-check spacing each base plan is searched at, in turn, until its path passes
+# that check: upstream's (None) first, as nearly every path does; a search at 1 mm
+# costs about ten times one at upstream's 1 cm.
+BASE_REPLAN_STEPS = (None, 0.003, BASE_PATH_CHECK)
+# How far the robot's batch return keeps the chassis from the counter (its top and
+# legs) on the base paths it plans, when a path that does exists: what the base may be
+# off its path while it follows it (`RackScraper.follow_base_path` ends within 3 mm).
+# Planned to touch nothing and no more, a path passed leg_1 0.21 mm clear; the base
+# followed it 0.18 mm off, and the executor's check of the line to its next command
+# cut 0.011 mm into the leg (robot batch return after a Sweep, seed 2, 2026-11-13).
+# Set on the shelf only for the return's own motions (`RackRobotBatchReturn`), so
+# every other skill's base plans are unchanged.
+BASE_CLEARANCE_M = 0.003
 # Base candidates tried per skill before refusing; each costs IK and possibly a BiRRT.
 MAX_STANCES = 400
+# Closed planning scenes kept for reuse (`RackPyBulletSim.reuse`): one per plan open at
+# once, and no plan opens a second while it plans.
+MAX_IDLE_SCENES = 2
+# Restages before a scene is disconnected instead of kept. PyBullet keeps every
+# collision shape a removed body used (it refuses `removeCollisionShape` on them), so a
+# kept client grows with each restage; a fresh build every 25 bounds that and still
+# saves 24 of every 25 robot loads.
+MAX_RESTAGES = 25
 
 
 class RackPyBulletSim(KitchenPyBulletSim):
@@ -76,18 +101,37 @@ class RackPyBulletSim(KitchenPyBulletSim):
     movables: ClassVar[tuple[str, ...]] = ("rack_0", "box_0", "wiper_0")
     movable_prefix: ClassVar[str] = "cube_"
 
+    # Whether a closed scene is kept, robot loaded, and rebuilt in place by the next
+    # `from_shelf`. Loading the Kinova URDF is 0.75 s and a build loads it twice
+    # (upstream's stock robot, then the vision-bracelet one replacing it): 1.5 s of each
+    # build, 13 builds in one robot batch return. Everything else is rebuilt from the
+    # new state exactly as a fresh build makes it (`_restage`).
+    reuse: ClassVar[bool] = True
+    _idle: ClassVar[list["RackPyBulletSim"]] = []
+
     def __init__(self, initial_state: Any, *, model: Any, data: Any, base_q: Any) -> None:  # noqa: PLR0917 -- upstream signature
         super().__init__(initial_state, model=model, data=data, base_q=base_q)
+        # The robot as loaded, before anything poses it, for `_restage` to return to.
+        self._as_loaded = self._robot_state()
+        self._restages = 0
         client = self.physics_client_id
         if self._cupboard1_shelf_id is not None:
             p.removeBody(self._cupboard1_shelf_id, physicsClientId=client)
-            # Upstream's set_state poses this id from the state's cupboard_1.
-            self._cupboard1_shelf_id = self._mirrored["cupboard_1"]
-        for name, body in list(self._cubes.items()):
+        for body in self._cubes.values():
             p.removeBody(body, physicsClientId=client)
-            self._cubes[name] = self._mirrored[name]
         for body in self._static_colliders.values():
             p.removeBody(body, physicsClientId=client)
+        self._rack_scene(model=model, data=data, base_q=base_q)
+        self._fresh_attributes = frozenset({*vars(self), "_fresh_attributes", "ignores_food"})
+
+    def _rack_scene(self, *, model: Any, data: Any, base_q: Any) -> None:
+        """This scene's own bodies, once upstream's stand-ins for them are gone."""
+        client = self.physics_client_id
+        if self._cupboard1_shelf_id is not None:
+            # Upstream's set_state poses this id from the state's cupboard_1.
+            self._cupboard1_shelf_id = self._mirrored["cupboard_1"]
+        for name in list(self._cubes):
+            self._cubes[name] = self._mirrored[name]
         self._static_colliders = {}
         # Upstream plans the mobile base only as a 2-D footprint, but a low reach can
         # fold the hand back into the TidyBot's own chassis, which MuJoCo collides
@@ -104,6 +148,71 @@ class RackPyBulletSim(KitchenPyBulletSim):
         ]
         self._chassis_links = tuple(range(names.index(CHASSIS_CHECKED_FROM), len(names)))
         self.place_chassis()
+        # Every planning query is getClosestPoints, which ignores collision filters; the
+        # contact pairs performCollisionDetection caches are never read. Unfiltered, each
+        # check recomputed the scene's own resting contacts (the dumplings on the rack),
+        # 2 ms of a 5.7 ms check. The call still refreshes the AABBs `near_bodies` reads.
+        for index in range(p.getNumBodies(physicsClientId=client)):
+            body = p.getBodyUniqueId(index, physicsClientId=client)
+            for link in range(-1, p.getNumJoints(body, physicsClientId=client)):
+                p.setCollisionFilterGroupMask(body, link, 0, 0, physicsClientId=client)
+
+    def near_bodies(
+        self, *, bodies: Iterable[int], held_object: int | None, margin: float
+    ) -> list[int]:
+        """Those of `bodies` whose AABB comes within `margin` of the AABB of the robot
+        (and `held_object`) as posed now: the only ones getClosestPoints can find
+        within `margin`, since every AABB contains its shape."""
+        client = self.physics_client_id
+        p.performCollisionDetection(physicsClientId=client)
+        robot = self.robot.robot_id
+        parts = [(robot, link) for link in range(-1, p.getNumJoints(robot, physicsClientId=client))]
+        if held_object is not None:
+            parts += [
+                (held_object, link)
+                for link in range(-1, p.getNumJoints(held_object, physicsClientId=client))
+            ]
+        boxes = np.array([p.getAABB(body, link, physicsClientId=client) for body, link in parts])
+        lower, upper = boxes[:, 0].min(axis=0) - margin, boxes[:, 1].max(axis=0) + margin
+        overlapping = p.getOverlappingObjects(
+            lower.tolist(), upper.tolist(), physicsClientId=client
+        )
+        found = {body for body, _ in overlapping or ()}
+        return [body for body in bodies if body in found]
+
+    def robot_collides_at_base(  # noqa: PLR0917 -- upstream signature
+        self,
+        base_pose: SE2,
+        joints: Any,
+        held_object: int | None = None,
+        collision_bodies: set[int] | None = None,
+        distance_threshold: float = 1e-6,
+    ) -> bool:
+        """Upstream's check, over only the obstacles near the robot (`near_bodies`)."""
+        from pybullet_helpers.inverse_kinematics import (
+            check_collisions_with_held_object,
+            set_robot_joints_with_held_object,
+        )
+
+        if collision_bodies is None:
+            collision_bodies = self.get_collision_bodies(held_object=held_object)
+        offset = self.base_link_to_held_obj if held_object is not None else None
+        self.set_robot_base(base_pose)
+        set_robot_joints_with_held_object(
+            self.robot, self.physics_client_id, held_object, offset, list(joints)
+        )
+        near = self.near_bodies(
+            bodies=collision_bodies, held_object=held_object, margin=distance_threshold
+        )
+        return check_collisions_with_held_object(
+            self.robot,
+            near,
+            self.physics_client_id,
+            held_object,
+            offset,
+            list(joints),
+            distance_threshold=distance_threshold,
+        )
 
     def place_chassis(self) -> None:
         from pybullet_helpers.geometry import multiply_poses, set_pose
@@ -139,12 +248,97 @@ class RackPyBulletSim(KitchenPyBulletSim):
             held, self._chassis, distance=margin, physicsClientId=client
         )
 
+    # Welded food handling plans against the fixtures alone (`WeldedFood`).
+    ignores_food: bool = False
+
+    def get_collision_bodies(self, held_object: int | None = None) -> set[int]:  # noqa: PLR0917 -- upstream signature
+        bodies = super().get_collision_bodies(held_object=held_object)
+        if self.ignores_food:
+            bodies -= {
+                body
+                for name, body in self._mirrored.items()
+                if name.startswith(self.movable_prefix)
+            }
+        return bodies
+
     @classmethod
-    def from_shelf(cls, *, shelf: Any) -> "RackPyBulletSim":
+    def from_shelf(cls, *, shelf: Any, ignores_food: bool = False) -> "RackPyBulletSim":
         state = shelf.core._get_object_centric_state()  # noqa: SLF001
-        sim = cls(state, model=shelf.model, data=shelf.data, base_q=shelf.ba)
+        idle = RackPyBulletSim._idle
+        if cls.reuse and cls is RackPyBulletSim and idle:
+            sim = idle.pop()
+            sim._restage(state=state, model=shelf.model, data=shelf.data, base_q=shelf.ba)
+        else:
+            sim = cls(state, model=shelf.model, data=shelf.data, base_q=shelf.ba)
+        sim.ignores_food = ignores_food
         sim.set_state(state)
         return sim
+
+    def close(self) -> None:
+        """Kept for the next `from_shelf` while `reuse` holds (at most `MAX_IDLE_SCENES`
+        of them, each restaged at most `MAX_RESTAGES` times), else disconnected;
+        closing twice is closing once."""
+        idle = RackPyBulletSim._idle
+        if any(sim is self for sim in idle):
+            return
+        if (
+            self.reuse
+            and type(self) is RackPyBulletSim
+            and len(idle) < MAX_IDLE_SCENES
+            and self._restages < MAX_RESTAGES
+        ):
+            idle.append(self)
+            return
+        super().close()
+
+    def _robot_state(self) -> tuple[Any, Any, list[tuple[float, float]]]:
+        client, robot = self.physics_client_id, self.robot.robot_id
+        joints = [
+            p.getJointState(robot, joint, physicsClientId=client)[:2]
+            for joint in range(p.getNumJoints(robot, physicsClientId=client))
+        ]
+        return (
+            p.getBasePositionAndOrientation(robot, physicsClientId=client),
+            p.getBaseVelocity(robot, physicsClientId=client),
+            joints,
+        )
+
+    def _restage(self, *, state: Any, model: Any, data: Any, base_q: Any) -> None:
+        """Return this scene to exactly what a fresh build for `state` makes, the
+        loaded robot kept: every other body removed and mirrored again, the robot back
+        to its as-loaded pose, and every attribute as `__init__` leaves it."""
+        self._restages += 1
+        client, robot = self.physics_client_id, self.robot.robot_id
+        bodies = [
+            p.getBodyUniqueId(index, physicsClientId=client)
+            for index in range(p.getNumBodies(physicsClientId=client))
+        ]
+        for body in bodies:
+            if body != robot:
+                p.removeBody(body, physicsClientId=client)
+        (position, orientation), (linear, angular), joints = self._as_loaded
+        p.resetBasePositionAndOrientation(robot, position, orientation, physicsClientId=client)
+        p.resetBaseVelocity(robot, linear, angular, physicsClientId=client)
+        for joint, (angle, velocity) in enumerate(joints):
+            p.resetJointState(robot, joint, angle, velocity, physicsClientId=client)
+        for name in set(vars(self)) - self._fresh_attributes:
+            delattr(self, name)
+        # Upstream's own containers as its __init__ leaves them, its stand-ins for
+        # the cubes and the cupboard to be replaced by `_rack_scene` as there.
+        names = state.get_object_names()
+        self.base_link_to_held_obj = None
+        self._bins, self._bin_walls, self._bin_poses, self._boxes = {}, {}, {}, {}
+        self._static_boxes, self._bounding_boxes = {}, {}
+        self._static_base_obstacles = []
+        self._static_colliders = {}
+        self._cubes = {name: -1 for name in names if "cube" in name}
+        self._cupboard1_shelf_id = -1 if "cupboard_1" in names else None
+        self._mirror_scene(state=state, model=model, data=data, base_q=base_q)
+        self._rack_scene(model=model, data=data, base_q=base_q)
+        if "ignores_food" in vars(self):
+            del self.ignores_food
+        if frozenset(vars(self)) | {"ignores_food"} != self._fresh_attributes:
+            raise RuntimeError("a restaged planning scene differs from a fresh build")
 
 
 class ScraperPlan(BaseModel):
@@ -326,29 +520,78 @@ class ScraperMotionPlanner:
         guard: Callable[[np.ndarray], bool],
         held: HeldObject | None = None,
         ignore: tuple[str, ...] | None = None,
+        clearance_guard: Callable[[np.ndarray], bool] | None = None,
     ) -> list[np.ndarray]:
+        """A base path from `base` to `target` on which `guard` holds at every
+        configuration at most `BASE_PATH_CHECK` apart, or PlanningRefused.
+
+        `clearance_guard` is `guard` with a clearance (`BASE_CLEARANCE_M`). The path
+        `guard` alone admits is kept when it has that clearance throughout, so a path
+        that had it is planned exactly as before. Otherwise the path is planned again
+        under `clearance_guard`; only when no such path exists (the base starts or
+        must end closer to the counter than the clearance) is the first path returned.
+
+        Upstream checks the 3-D body 1 cm / 0.01 rad apart, and a chassis corner
+        sweeping past a thin counter leg can collide for less than that between two
+        clear checks; the executor, which checks every few millimetres, then stops
+        mid-path, and a replan from there plans the same grazing segment again. So the
+        path is checked at `BASE_PATH_CHECK`, and if any configuration fails, planned
+        again with the body checked that densely throughout.
+        """
         if np.linalg.norm(target[:2] - base[:2]) < 0.005 and abs(target[2] - base[2]) < 0.005:
             return [base.copy(), target.copy()]
-        path = KitchenMotionPlanner.plan_base(
-            sim=sim,
-            state=state,
-            target=target,
-            arm=arm,
-            what=what,
-            held=held,
-            ignore=(
-                *((() if held is None else ("wiper_0",)) if ignore is None else ignore),
-                *ScraperMotionPlanner.counter_colliders(state=state),
-            ),
-            also_collides=lambda pose: not guard(np.array([pose.x, pose.y, pose.theta()])),
+        ignored = (
+            *((() if held is None else ("wiper_0",)) if ignore is None else ignore),
+            *ScraperMotionPlanner.counter_colliders(state=state),
         )
-        # Unwrap the heading so the base turns the short way between waypoints.
-        out = [base.copy()]
-        for pose in path[1:]:
-            pose = pose.copy()
-            pose[2] = out[-1][2] + (pose[2] - out[-1][2] + np.pi) % (2 * np.pi) - np.pi
-            out.append(pose)
-        return out
+
+        def planned(*, within: Callable[[np.ndarray], bool]) -> list[np.ndarray]:
+            for step in BASE_REPLAN_STEPS:
+                path = KitchenMotionPlanner.plan_base(
+                    sim=sim,
+                    state=state,
+                    target=target,
+                    arm=arm,
+                    what=what,
+                    held=held,
+                    ignore=ignored,
+                    also_collides=lambda pose: not within(np.array([pose.x, pose.y, pose.theta()])),
+                    **(
+                        {}
+                        if step is None
+                        else {"body_check_xy_step": step, "body_check_rot_step": step}
+                    ),
+                )
+                # Unwrap the heading so the base turns the short way between waypoints.
+                out = [base.copy()]
+                for pose in path[1:]:
+                    pose = pose.copy()
+                    pose[2] = out[-1][2] + (pose[2] - out[-1][2] + np.pi) % (2 * np.pi) - np.pi
+                    out.append(pose)
+                if ScraperMotionPlanner.base_path_clear(path=out, guard=within):
+                    return out
+            raise PlanningRefused(f"No base path to {what} clear at {BASE_PATH_CHECK} m spacing")
+
+        path = planned(within=guard)
+        if clearance_guard is None or ScraperMotionPlanner.base_path_clear(
+            path=path, guard=clearance_guard
+        ):
+            return path
+        try:
+            return planned(within=clearance_guard)
+        except PlanningRefused:
+            return path
+
+    @staticmethod
+    def base_path_clear(*, path: list[np.ndarray], guard: Callable[[np.ndarray], bool]) -> bool:
+        """Whether `guard` holds along each straight segment of `path`, at most
+        `BASE_PATH_CHECK` apart on every axis, as `follow_base_path` drives it."""
+        for begin, end in zip(path[:-1], path[1:], strict=True):
+            count = max(1, int(np.ceil(np.max(np.abs(end - begin)) / BASE_PATH_CHECK)))
+            for fraction in np.linspace(0.0, 1.0, count + 1)[1:]:
+                if not guard(begin + fraction * (end - begin)):
+                    return False
+        return True
 
     @staticmethod
     def counter_colliders(*, state: Any) -> tuple[str, ...]:
@@ -455,6 +698,9 @@ class ScraperMotionPlanner:
                         arm=arm,
                         what="the scraper pick stance",
                         guard=ScraperMotionPlanner.base_guard(ok=ok, arm=arm),
+                        clearance_guard=ScraperMotionPlanner.clearance_guard(
+                            tool=tool, ok=ok, arm=arm
+                        ),
                     )
                     sim.set_robot_base(SE2(*(float(v) for v in stance)))
                     arm_path = ScraperMotionPlanner.plan_arm_to(
@@ -568,6 +814,9 @@ class ScraperMotionPlanner:
                             arm=carry[-1],
                             what="the scraper return stance",
                             guard=ScraperMotionPlanner.base_guard(ok=ok, arm=carry[-1]),
+                            clearance_guard=ScraperMotionPlanner.clearance_guard(
+                                tool=tool, ok=ok, arm=carry[-1]
+                            ),
                             held=held,
                         )
                         sim.set_robot_base(SE2(*(float(v) for v in stance)))
@@ -605,6 +854,7 @@ class ScraperMotionPlanner:
         carry_height: float,
         deadline_s: float,
         what: str,
+        tuck_first: bool = False,
     ) -> tuple[ScraperPlan, ReachCandidate]:
         """The first candidate stance whose hover is collision-free, whose scripted
         contact motion its own `contact` check accepts from that hover, and to which a
@@ -612,6 +862,8 @@ class ScraperMotionPlanner:
 
         Before the base moves the arm keeps its configuration, or (if the base cannot
         move with it) tucks: holding, up to `carry_height`; empty, to the home arm.
+        `tuck_first` tries the tuck first: a hand left low over the counter can graze
+        it from tracking error while the base drives under a path checked clear.
         `held_name`, when given, is carried rigidly (HeldObject) and has no footprint.
         """
         from time import monotonic
@@ -620,7 +872,8 @@ class ScraperMotionPlanner:
         lower, upper = ScraperMotionPlanner.limits(shelf=shelf)
         arm = shelf.data.qpos[shelf.qa].copy()
         base = shelf.data.qpos[shelf.ba].copy()
-        sim = RackPyBulletSim.from_shelf(shelf=shelf)
+        ignores_food = bool(getattr(tool, "ignores_food", False))
+        sim = RackPyBulletSim.from_shelf(shelf=shelf, ignores_food=ignores_food)
         state = shelf.core._get_object_centric_state()  # noqa: SLF001
         ok = ScraperMotionPlanner.mujoco_guard(tool=tool, holding=False)
         deadline = monotonic() + deadline_s
@@ -632,7 +885,13 @@ class ScraperMotionPlanner:
                 if held_name is None
                 else HeldObject.grasped(sim=sim, arm=arm, name=held_name, riders=())
             )
-            ignore = () if held_name is None else (held_name,)
+            ignore: tuple[str, ...] = () if held_name is None else (held_name,)
+            if ignores_food:
+                ignore = tuple(
+                    name
+                    for name in state.get_object_names()
+                    if name.startswith(RackPyBulletSim.movable_prefix)
+                )
             carries: list[list[np.ndarray]] = [[arm.copy()]]
             if held is None:
                 tuck: list[float] | None = list(np.asarray(shelf.home_arm, dtype=float))
@@ -661,6 +920,8 @@ class ScraperMotionPlanner:
                     )
                 except PlanningRefused as exc:
                     failures.append(str(exc))
+            if tuck_first:
+                carries.reverse()
             for candidate in candidates:
                 if monotonic() >= deadline:
                     failures.append("deadline")
@@ -697,6 +958,9 @@ class ScraperMotionPlanner:
                             arm=carry[-1],
                             what=what,
                             guard=ScraperMotionPlanner.base_guard(ok=ok, arm=carry[-1]),
+                            clearance_guard=ScraperMotionPlanner.clearance_guard(
+                                tool=tool, ok=ok, arm=carry[-1]
+                            ),
                             held=held,
                             ignore=ignore,
                         )
@@ -737,7 +1001,9 @@ class ScraperMotionPlanner:
         ok = ScraperMotionPlanner.mujoco_guard(tool=tool, holding=held_name is not None)
         if not ok(base=base, arm=arm):
             return True
-        sim = RackPyBulletSim.from_shelf(shelf=shelf)
+        sim = RackPyBulletSim.from_shelf(
+            shelf=shelf, ignores_food=bool(getattr(tool, "ignores_food", False))
+        )
         try:
             sim.set_robot_base(SE2(*(float(v) for v in base)))
             held = (
@@ -769,13 +1035,14 @@ class ScraperMotionPlanner:
         more conservatively than PyBullet's mirror of the plate, so a path PyBullet
         clears with the margin can still be refused mid-motion without it."""
 
-        def ok(*, base: np.ndarray, arm: Any) -> bool:
+        def ok(*, base: np.ndarray, arm: Any, clearance: float = 0.0) -> bool:
             try:
                 tool.check_configuration(
                     base=np.asarray(base, dtype=float),
                     arm=np.asarray(arm[:7], dtype=float),
                     holding=holding,
                     inflate=TOOL_INFLATE_M,
+                    chassis_clearance=clearance,
                 )
             except SkillFailed:
                 return False
@@ -788,7 +1055,25 @@ class ScraperMotionPlanner:
         return lambda q: ok(base=base, arm=q)
 
     @staticmethod
-    def base_guard(*, ok: Callable[..., bool], arm: Any) -> Callable[[np.ndarray], bool]:
+    def clearance_guard(
+        *, tool: Any, ok: Callable[..., bool], arm: Any
+    ) -> Callable[[np.ndarray], bool] | None:
+        """`base_guard` with the chassis kept `shelf.base_clearance` from the fixtures,
+        or None while that is zero: only the robot's batch return sets it, so every
+        other skill plans its base exactly as it always did."""
+        clearance = float(getattr(tool.shelf, "base_clearance", 0.0))
+        if not clearance:
+            return None
+        return ScraperMotionPlanner.base_guard(ok=ok, arm=arm, clearance=clearance)
+
+    @staticmethod
+    def base_guard(
+        *, ok: Callable[..., bool], arm: Any, clearance: float = 0.0
+    ) -> Callable[[np.ndarray], bool]:
+        """`ok` over base poses with the arm held at `arm`; with `clearance`, the chassis
+        must also keep that far from the fixtures."""
+        if clearance:
+            return lambda pose: ok(base=pose, arm=arm, clearance=clearance)
         return lambda pose: ok(base=pose, arm=arm)
 
     @staticmethod
