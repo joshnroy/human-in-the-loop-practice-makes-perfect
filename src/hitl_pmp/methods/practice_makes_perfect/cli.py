@@ -773,6 +773,13 @@ class Tossing3DPomdpCli(EesCli):
             "learning update at the session boundary: an approximation.",
         )
         parser.add_argument(
+            "--pomdp-learn-skill-costs",
+            action="store_true",
+            help="Price each robot skill, like the human's, at the mean cost its "
+            "executions were charged (the --skill-cost-prior-steps prior until it has "
+            "run), instead of its steps times the current robot step price.",
+        )
+        parser.add_argument(
             "--pomdp-skill-step-costs",
             type=Path,
             default=None,
@@ -931,6 +938,7 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_learning_time_scale=args.pomdp_learning_time_scale,
                 pomdp_linear_cost_lambda=args.pomdp_linear_cost_lambda,
                 pomdp_skill_step_costs=skill_step_costs,
+                pomdp_learn_skill_costs=args.pomdp_learn_skill_costs,
                 **(
                     {}
                     if args.skill_cost_prior_steps is None

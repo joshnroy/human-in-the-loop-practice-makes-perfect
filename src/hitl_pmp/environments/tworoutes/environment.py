@@ -62,6 +62,9 @@ class TwoRoutesEnvironment(Environment):
     chained_route_b: bool = False
     route_b2_start: float = Field(default=0.1, ge=0.0, le=1.0)
     route_b2_rate: float = Field(default=0.05, ge=0.0)
+    # What one step of the robot's own reset costs (`TwoRoutesCosts.robot_step`); every
+    # other robot step -- a practice try, a STOP -- is free.
+    robot_reset_price: float = Field(default=0.0, ge=0.0)
     seed: int = 0
     learns: bool = True
     # False for one execution that only sets up another skill's practice (DP): it runs
@@ -200,6 +203,14 @@ class TwoRoutesEnvironment(Environment):
         if skill == ROUTE_B:
             return self.build_state(after=True, after_b=True, mid_b=succeeded)
         return self.build_state(after=True, after_b2=True, via_b=succeeded, done=succeeded)
+
+    def cost_observation(self) -> dict[str, float | bool]:
+        """A robot step from an end state (`after`, not mid-route) can only be the robot's
+        reset, so a state-dependent cost function prices the reset alone."""
+        return {
+            "resetting": self.flag(name="after") and not self.flag(name="mid_b"),
+            "robot_reset_price": self.robot_reset_price,
+        }
 
     def log_attempts(self) -> None:
         if self.attempts_log is None:
