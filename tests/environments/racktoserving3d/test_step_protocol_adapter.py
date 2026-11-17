@@ -129,21 +129,17 @@ def test_evaluation_never_offers_human_skills_even_for_a_training_problem(*, tmp
 
 
 def test_human_cost_and_log_names_match_rack_destinations():
-    assert RackServingStepProtocol.human_skill_names() == {
-        "human_batch_return": "human_batch_return",
-        "human_tool_recovery": "human_tool_recovery",
-    }
+    assert RackServingStepProtocol.human_skill_names() == {"human_reset": "human_reset"}
 
 
-def test_goal_check_reads_live_rack_verdict_not_shelf_goal(*, tmp_path, monkeypatch):
+def test_goal_check_reads_the_toy_state_not_shelf_goal(*, tmp_path):
     problem = RackServingStepProtocol.build_evaluation_problem(args=_args(tmp_path=tmp_path))
-    backend = Mock()
-    backend.task_succeeded.side_effect = [False, True, False]
-    monkeypatch.setattr(RackServingEnvironment, "backend", lambda self: backend)
     task = _task(problem=problem)
     check = RackServingStepProtocol.goal_check(problem=problem, task=task)
-    assert [check(), check(), check()] == [False, True, False]
-    backend.core.assert_not_called()
+    assert check() is False
+    problem.env._toy_flags = frozenset({"NeedsReset", "AfterSweep3", "Served", "ServedThree"})
+    assert check() is True
+    assert problem.env._backend is None
     assert RackServingStepProtocol.task_seed(task=task) == 29
 
 
@@ -202,7 +198,10 @@ def test_interruption_adoption_delegates_to_rack_environment(*, tmp_path, monkey
 def test_no_shelf_trace_or_native_setup_during_evaluation_cleanup(*, tmp_path):
     problem = RackServingStepProtocol.build_evaluation_problem(args=_args(tmp_path=tmp_path))
     RackServingStepProtocol.interrupted(problem=problem, action=np.zeros(4))
-    assert RackServingStepProtocol.last_skill_trace(problem=problem) is None
+    assert RackServingStepProtocol.last_skill_trace(problem=problem) == {
+        "toy_state": ["FullRack"],
+        "measured": None,
+    }
     assert problem.env._backend is None
 
 
@@ -254,3 +253,15 @@ def test_real_entry_builds_ees_with_rack_context_and_closes_resources(
     assert call["recorder"].header.environment == "racktoserving3d"
     assert closed == [call["problem"].env]
     assert call["problem"].env._backend is None
+
+
+def test_a_route_skills_attempt_ends_the_task_and_nothing_else_does():
+    from hitl_pmp.environments.racktoserving3d.skills import SKILL_IDS
+    from hitl_pmp.environments.racktoserving3d.toy_interface import TOY_SKILL_IDS
+
+    ends = {"sweep3", "gather", "sweep5"}
+    for name, skill in {**TOY_SKILL_IDS, **SKILL_IDS}.items():
+        reason = RackServingStepProtocol.one_shot_failure_reason(
+            action=np.array([skill, 0, 0, 0, 0], dtype=float)
+        )
+        assert reason == ("route_failed" if name in ends else None), name

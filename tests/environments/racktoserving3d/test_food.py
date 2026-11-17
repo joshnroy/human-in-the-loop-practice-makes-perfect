@@ -12,6 +12,7 @@ from hitl_pmp.environments.racktoserving3d.food import (
     RackFoodController,
     _FoodMotion,
 )
+from hitl_pmp.environments.racktoserving3d.planning import ScraperMotionPlanner
 from hitl_pmp.environments.racktoserving3d.semantics import CircularSupport, SupportRegion
 from hitl_pmp.environments.racktoserving3d.tool import RackScraper
 from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import Frames, SkillFailed
@@ -21,7 +22,7 @@ from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import Frames, SkillF
 def food():
     pose = Frames.pose(rotation=np.eye(3), position=[1.2, 0, 1.1])
     backend = SimpleNamespace(
-        config=RackServingConfig(),
+        config=RackServingConfig(food_handling="physical"),
         cube_names=("cube_0", "cube_1"),
         sync_clock=Mock(),
         ledger=SimpleNamespace(ready=True),
@@ -47,6 +48,9 @@ def food():
         held_cube=None,
         hold=Mock(),
         site_pose=Mock(return_value=pose),
+        # No gripper geometry: the pads reach no lower than the food they hold.
+        gripper_geoms=set(),
+        data=None,
         model=SimpleNamespace(
             nu=2,
             actuator=lambda index: SimpleNamespace(
@@ -65,11 +69,14 @@ def food():
     helper = RackFoodController(controllers=controllers)
     helper.motion = SimpleNamespace(
         line=Mock(),
+        line_plannable=Mock(return_value=True),
         transit=Mock(),
         move_base=Mock(),
         plan_base=Mock(),
         check_arm_clearance=Mock(),
         departing_from_contacts=Mock(side_effect=nullcontext),
+        depart=Mock(),
+        settle_lost_food=Mock(),
         departing={},
         departing_food={},
     )
@@ -101,11 +108,44 @@ def test_occupied_hand_is_not_opened(*, food):
     assert food.shelf.grip == 1.0
 
 
+def _refused(*, message: str) -> SkillFailed:
+    """A food plan's refusal as the food skills raise it: wrapping the planner's."""
+    from hitl_pmp.environments.racktoserving3d.planning import PlanningRefused
+
+    failure = SkillFailed(message)
+    failure.__cause__ = PlanningRefused(message)
+    return failure
+
+
 def test_no_reachable_grasp_does_not_move(*, food):
-    food._plan_pick.side_effect = SkillFailed("no collision-free food grasp")
-    with pytest.raises(SkillFailed, match="collision-free"):
+    food._plan_pick.side_effect = _refused(message="no collision-free food grasp")
+    with (
+        patch.object(ScraperMotionPlanner, "start_blocked", return_value=False),
+        pytest.raises(SkillFailed, match="collision-free"),
+    ):
         food.pick(name="cube_0")
     food.shelf.hold.assert_not_called()
+    food._follow.assert_not_called()
+
+
+def test_a_refusal_from_a_blocked_start_rises_and_plans_once_more(*, food):
+    food._plan_pick.side_effect = _refused(message="no collision-free food grasp")
+    food.motion.line = Mock()
+    food.motion.shelf = SimpleNamespace(
+        site_pose=food.shelf.site_pose,
+        data=SimpleNamespace(qpos=np.zeros(10)),
+        ba=[0, 1, 2],
+        qa=list(range(3, 10)),
+    )
+    with (
+        patch.object(ScraperMotionPlanner, "start_blocked", return_value=True),
+        pytest.raises(SkillFailed, match="after escaping the start"),
+    ):
+        food.pick(name="cube_0")
+    assert [call.kwargs["label"] for call in food.motion.line.call_args_list] == [
+        "food_pick_escape"
+    ]
+    assert food._plan_pick.call_count == 2
     food._follow.assert_not_called()
 
 
@@ -125,7 +165,7 @@ def test_failed_contact_does_not_claim_or_lift_food(*, food):
 
 
 def test_food_closure_uses_configured_calibration_without_changing_grasp_semantics(*, food):
-    food.backend.config = RackServingConfig(food_grip_command=0.85)
+    food.backend.config = RackServingConfig(food_handling="physical", food_grip_command=0.85)
     with pytest.raises(SkillFailed, match="bilateral"):
         food.pick(name="cube_0")
     assert food.shelf.grip == 0.85
@@ -137,7 +177,7 @@ def _closing_limit(*, food) -> float:
 
 
 def test_pick_closes_force_limited_and_stays_limited_through_the_lift(*, food):
-    food.backend.config = RackServingConfig(food_grip_force=20.0)
+    food.backend.config = RackServingConfig(food_handling="physical", food_grip_force=20.0)
     food.backend.held.side_effect = [False, False, False, True, True]
     seen = []
     food.motion.line = Mock(
@@ -159,7 +199,7 @@ def test_losing_the_food_restores_the_grippers_own_force_limit(*, food):
 
 
 def test_release_restores_the_grippers_own_force_limit(*, food):
-    food.backend.config = RackServingConfig(food_grip_force=20.0)
+    food.backend.config = RackServingConfig(food_handling="physical", food_grip_force=20.0)
     food._limit_grip(newtons=20.0)
     food.shelf.grip = 1.0
     food.backend.held.side_effect = [True, True, False]
@@ -229,7 +269,11 @@ def test_payload_uses_ellipsoid_support_not_bounding_box(*, depth, blocked):
     motion.food = SimpleNamespace(
         carried="cube_0",
         target_geoms={0},
-        backend=SimpleNamespace(cube_names=("cube_0",), body_geoms=Mock(return_value={0})),
+        backend=SimpleNamespace(
+            cube_names=("cube_0",),
+            body_geoms=Mock(return_value={0}),
+            config=RackServingConfig(food_handling="physical"),
+        ),
     )
     with patch.object(RackScraper, "check_configuration"):
         if blocked:
@@ -246,6 +290,7 @@ def test_lost_food_clears_bookkeeping_without_opening_hand(*, food):
         food._require_held(name="cube_0")
     assert food.carried is food.controllers.held_food is food.shelf.held_cube is None
     assert food.shelf.grip == 1.0
+    food.motion.settle_lost_food.assert_called_once_with()
 
 
 def test_successful_pick_requires_contact_after_lift(*, food):
@@ -540,6 +585,7 @@ def test_carried_food_collides_by_ellipsoid_shape_not_bounding_box(*, gap, block
         target_geoms={0},
         backend=SimpleNamespace(
             cube_names=("cube_0", "cube_1"),
+            config=RackServingConfig(food_handling="physical"),
             body_geoms=lambda *, name: {0} if name == "cube_0" else {1},
         ),
     )

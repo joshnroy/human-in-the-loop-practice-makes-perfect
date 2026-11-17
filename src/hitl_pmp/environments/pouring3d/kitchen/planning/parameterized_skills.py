@@ -25,6 +25,8 @@ from kinder.envs.dynamic3d.object_types import (
 )
 from kinder_models.dynamic3d.tossing.parameterized_skills import plan_checked_arm_motion
 from kinder_models.dynamic3d.utils import (
+    BASE_BODY_CHECK_ROT_STEP,
+    BASE_BODY_CHECK_XY_STEP,
     IKFAST_MAX_ATTEMPTS,
     WORLD_X_BOUNDS,
     WORLD_Y_BOUNDS,
@@ -34,7 +36,7 @@ from kinder_models.dynamic3d.utils import (
     run_base_motion_planning,
 )
 from pybullet_helpers.geometry import Pose
-from pybullet_helpers.ikfast.utils import IKFastHyperparameters, ikfast_closest_inverse_kinematics
+from pybullet_helpers.ikfast.utils import IKFastHyperparameters
 from pybullet_helpers.inverse_kinematics import (
     check_collisions_with_held_object,
     set_robot_joints_with_held_object,
@@ -46,6 +48,7 @@ from spatialmath import SE2
 from tomsgeoms2d.structs import Rectangle
 from tomsgeoms2d.utils import geom2ds_intersect
 
+from .ikfast_closest import IKFastClosest
 from .utils import PLANNING_MARGIN_M, UPRIGHT_TILT_LIMIT_DEG, KitchenPyBulletSim
 
 # An arm motion whose start lies inside the planning margin, but at least this far from
@@ -251,8 +254,8 @@ class KitchenMotionPlanner:
         current = list(sim.robot.get_joint_positions())
         if reference is not None:
             sim.robot.set_joints(list(reference))
-        solutions = ikfast_closest_inverse_kinematics(
-            sim.robot,
+        solutions = IKFastClosest.solve(
+            robot=sim.robot,
             world_from_target=target,
             hyperparameters=IKFastHyperparameters(
                 max_time=np.inf, max_attempts=IKFAST_MAX_ATTEMPTS
@@ -282,11 +285,15 @@ class KitchenMotionPlanner:
         held: HeldObject | None = None,
         ignore: tuple[str, ...] = (),
         also_collides: Callable[[SE2], bool] | None = None,
+        body_check_xy_step: float = BASE_BODY_CHECK_XY_STEP,
+        body_check_rot_step: float = BASE_BODY_CHECK_ROT_STEP,
     ) -> list[np.ndarray]:
         """A base path to `target` (x, y, yaw), the arm (and anything held) carried as
         it is: the 2-D footprint against obstacle footprints, the 3-D body against the
         scene. `ignore` names objects with no 2-D footprint, such as one the hand
-        carries above the base. `also_collides` is any further check of a base pose."""
+        carries above the base. `also_collides` is any further check of a base pose.
+        The 3-D checks are at most `body_check_xy_step` / `body_check_rot_step` apart
+        along the path (upstream's spacing unless given)."""
         body_collides = KitchenMotionPlanner.body_check(
             sim=sim, arm=arm, held=held, also_collides=also_collides
         )
@@ -298,6 +305,8 @@ class KitchenMotionPlanner:
             seed=0,
             disable_collision_objects=list(ignore) or None,
             body_collision_fn=body_collides,
+            body_check_xy_step=body_check_xy_step,
+            body_check_rot_step=body_check_rot_step,
         )
         if path is None:
             raise PlanningRefused(f"No collision-free base path to {what}")

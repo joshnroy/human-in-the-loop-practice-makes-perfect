@@ -2,15 +2,15 @@
 
 TableWiper is ported from scratch/prototypes/sweeptable-kitchen/src/hitl_pmp/
 environments/sweeptable3d/wiper.py. RackScraper adds counter-home configuration
-and full-box clearance without modifying the source benchmark. Only
-initialize_rest writes a live object pose; measured in_hand transforms are
-kinematic bookkeeping, never an attachment.
+and full-box clearance without modifying the source benchmark. Optional home
+attachment anchors the parked scraper; only setup, human reset and a completed
+return may write its home pose. Physical handling remains available.
 """
 
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from itertools import product
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 from scipy.spatial.transform import Rotation, Slerp
@@ -21,6 +21,7 @@ from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import (
     WiperLost,
 )
 
+from .scraper_attachment import ScraperAttachment
 from .servo import JointStep
 from .transit import (
     ArmTransit,
@@ -44,9 +45,12 @@ SCRAPER_RETURN_STANDOFF = 0.05
 PLANNED_JOINT_STEP = 0.05
 PLANNED_BASE_FRACTION = 0.8
 PLANNED_JOINT_LAG = 0.03
-# A held tool whose start no plan can leave first backs off this far and rises this far.
+# A start no plan can leave (`BlockedStart`) is left along a checked line this
+# long (straight up first), or a held tool backs off ESCAPE_BACK_M and rises ESCAPE_UP_M;
+# failing every line, the base backs away ESCAPE_BACK_M.
 ESCAPE_BACK_M = 0.10
 ESCAPE_UP_M = 0.06
+ESCAPE_STEP_M = 0.005
 PLANNED_CATCH_UP_STEPS = 20
 
 
@@ -62,17 +66,144 @@ def wiper_unwatched(*, shelf: ShelfSkills) -> Generator[None, None, None]:
 
 
 class RackShelfSkills(ShelfSkills):
-    """Optional compatibility subclass; existing ShelfSkills instances also work."""
+    """Shelf servo aware of an optional rigid scraper grasp."""
+
+    # The chassis clearance base paths are planned with (`planning.BASE_CLEARANCE_M`):
+    # zero except while the robot's batch return runs.
+    base_clearance: float = 0.0
+
+    scraper_attachment: str = "physical"
 
     def wiper_unwatched(self) -> Any:
         return wiper_unwatched(shelf=self)
+
+    def pads_hold_wiper(self) -> bool:
+        if self.scraper_attachment == "grasp_weld" and ScraperAttachment.grasped(
+            model=self.model, data=self.data
+        ):
+            return True
+        return super().pads_hold_wiper()
+
+
+class BlockedStart:
+    """Leaving a start no plan can begin from, shared by every PyBullet-planned skill.
+
+    PyBullet's mirror keeps a 15 mm margin from everything, so a configuration MuJoCo
+    shows clear (a hand left just above the rack, a held dumpling resting on its
+    wires) can be one no plan begins from, and the skill refuses at 0 steps on every
+    call. `tool` is the motion that executes: a `RackScraper` or the food's motion.
+    """
+
+    @staticmethod
+    def plan(
+        *,
+        tool: Any,
+        make_plan: Callable[[], Any],
+        held_name: str | None,
+        holding: bool,
+        label: str,
+        distance: float = ESCAPE_UP_M,
+        back_first: bool = False,
+        prepare: Callable[[], None] | None = None,
+    ) -> Any:
+        """`make_plan()`, or, if it is refused from a start the planner's own checks
+        reject (`ScraperMotionPlanner.start_blocked`, `held_name` included), the plan
+        made once more after `escape`. From a start that is not blocked a refusal
+        moves nothing. `prepare` runs first when an escape is needed (an empty food
+        hand opens)."""
+        from .planning import PlanningRefused, ScraperMotionPlanner
+
+        try:
+            return make_plan()
+        except (PlanningRefused, SkillFailed) as exc:
+            # Only a planner refusal (raised, or wrapped by the food skills) can be a
+            # blocked start; any other failure (no free placement) stands as it is.
+            refused = isinstance(exc, PlanningRefused) or isinstance(exc.__cause__, PlanningRefused)
+            reason = str(exc)
+            if not refused:
+                raise
+            if not ScraperMotionPlanner.start_blocked(tool=tool, held_name=held_name):
+                raise SkillFailed(reason) from exc
+        if prepare is not None:
+            prepare()
+        BlockedStart.escape(
+            tool=tool,
+            label=label,
+            holding=holding,
+            distance=distance,
+            back_first=back_first,
+            reason=reason,
+        )
+        try:
+            return make_plan()
+        except (PlanningRefused, SkillFailed) as again:
+            raise SkillFailed(f"after escaping the start: {again}") from again
+
+    @staticmethod
+    def escape(
+        *,
+        tool: Any,
+        label: str,
+        holding: bool,
+        distance: float,
+        back_first: bool,
+        reason: str,
+    ) -> None:
+        """Move the hand, and whatever it holds, out of a blocked start along the first
+        line `line_plannable` accepts (every waypoint's IK and joint segment checked by
+        the execution guard before the first step), keeping the hand's rotation: with
+        `back_first`, back off the base's heading ESCAPE_BACK_M and up ESCAPE_UP_M (a
+        held tool's old escape); then `distance` along each of `directions`. Failing
+        every line, back the base away, checked by the MuJoCo guard. An escape that
+        cannot finish never starts."""
+        from .planning import ScraperMotionPlanner
+
+        shelf = tool.shelf
+        here = shelf.site_pose()
+        rotation = here[:3, :3]
+        base = shelf.data.qpos[shelf.ba].copy()
+        heading = np.array([np.cos(base[2]), np.sin(base[2]), 0.0])
+        offsets = [distance * direction for direction in BlockedStart.directions()]
+        if back_first:
+            offsets.insert(0, -ESCAPE_BACK_M * heading + [0.0, 0.0, ESCAPE_UP_M])
+        for offset in offsets:
+            target = here[:3, 3] + offset
+            if not tool.line_plannable(
+                position=target, rotation=rotation, holding=holding, step=ESCAPE_STEP_M
+            ):
+                continue
+            tool.line(
+                position=target,
+                rotation=rotation,
+                label=label,
+                holding=holding,
+                step=ESCAPE_STEP_M,
+                steps_per=5,
+            )
+            return
+        back = base - ESCAPE_BACK_M * heading
+        arm = shelf.data.qpos[shelf.qa].copy()
+        ok = ScraperMotionPlanner.mujoco_guard(tool=tool, holding=holding)
+        if not all(ok(base=pose, arm=arm) for pose in segment_samples(start=base, target=back)):
+            raise SkillFailed(f"{reason}; escape refused: no checked line out, nor back-away")
+        tool.follow_base_path(path=[base, back], label=f"{label}_back")
+
+    @staticmethod
+    def directions() -> list[np.ndarray]:
+        """Straight up, then up and away along each of eight headings, then level."""
+        headings = [
+            np.array([np.cos(angle), np.sin(angle), 0.0])
+            for angle in np.deg2rad(np.arange(0.0, 360.0, 45.0))
+        ]
+        tilted = [(heading + [0.0, 0.0, 1.0]) / np.sqrt(2.0) for heading in headings]
+        return [np.array([0.0, 0.0, 1.0]), *tilted, *headings]
 
 
 class TableWiper:
     """Attach to one live ShelfSkills without resetting it or replacing its recorder.
 
-    Only initialize_rest writes an object pose, for scene setup or a human reset.
-    Pick and place command the robot exclusively through ShelfSkills control steps.
+    Pick and place drive the robot through ShelfSkills control steps. Optional
+    attachment can snap a completed return to its verified seat.
     """
 
     def __init__(
@@ -84,6 +215,8 @@ class TableWiper:
         home_front: float | None = None,
         base: np.ndarray | None = None,
     ) -> None:
+        self.attachment = "physical"
+        self.planned_joint_step = PLANNED_JOINT_STEP
         self.shelf = shelf
         self.core = shelf.core
         self.model = shelf.model
@@ -145,6 +278,7 @@ class TableWiper:
 
     def initialize_rest(self) -> None:
         """Set up the rest pose; privileged setup/human reset only, never a skill."""
+        self.release_attachments()
         pose = self.rest_pose()
         quaternion = Rotation.from_matrix(pose[:3, :3]).as_quat()[[3, 0, 1, 2]]
         obj = self.core.get_object("wiper_0")
@@ -153,7 +287,42 @@ class TableWiper:
         self.shelf.in_hand = None
         self.shelf.grip = 0.0
         self.shelf.sim.forward()
+        self.anchor_home()
         self.shelf.hold(count=20, label="wiper_initialize_rest")
+
+    def release_attachments(self) -> None:
+        if self.attachment != "physical":
+            ScraperAttachment.release_home(model=self.model, data=self.data)
+            ScraperAttachment.release_grasp(model=self.model, data=self.data)
+
+    def anchor_home(self) -> None:
+        if self.attachment != "physical":
+            ScraperAttachment.anchor_home(model=self.model, data=self.data)
+
+    def accept_grasp(self) -> None:
+        """Only called after bilateral handle contact has verified the physical grasp."""
+        self.release_attachments()
+        if self.attachment == "grasp_weld":
+            ScraperAttachment.attach_grasp(model=self.model, data=self.data)
+
+    def park_after_seating(self) -> None:
+        """Anchor only a completed return with support and a pose close to its seat."""
+        if self.attachment == "physical":
+            return
+        pose, home = self.wiper_pose(), self.rest_pose()
+        if (
+            not self.table_support()
+            or np.linalg.norm(pose[:3, 3] - home[:3, 3]) > 0.005
+            or self.rotation_error(actual=pose[:3, :3], target=home[:3, :3]) > 5.0
+        ):
+            raise SkillFailed("PlaceWiper: scraper has not reached its home seat")
+        self.release_attachments()
+        quaternion = Rotation.from_matrix(home[:3, :3]).as_quat()[[3, 0, 1, 2]]
+        obj = self.core.get_object("wiper_0")
+        obj.set_pose(home[:3, 3], quaternion)
+        obj.set_velocity([0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
+        self.shelf.sim.forward()
+        self.anchor_home()
 
     def at_home(self) -> bool:
         """Read live support, orientation, overhang, velocity and robot clearance."""
@@ -211,7 +380,7 @@ class TableWiper:
         """Plan the base and the arm to a hover in front of the handle (PyBullet) and
         follow both, then approach the live handle end-on, verify the grasp, lift and
         tilt 45 degrees as scripted contact motions. A refused plan moves nothing."""
-        from .planning import PlanningRefused, ScraperMotionPlanner
+        from .planning import ScraperMotionPlanner
 
         shelf = self.shelf
         if shelf.in_hand is not None or shelf.pads_hold_wiper():
@@ -221,17 +390,23 @@ class TableWiper:
             rotation = pose[:3, :3] @ self.hand_in_body
             grasp = self.grasp_world(pose=pose)
             pre = grasp - PRE_GRASP * rotation[:, 2]
-            try:
-                plan = ScraperMotionPlanner.plan_pick(
+
+            # A food pick that failed can leave the empty hand just above the rack,
+            # within the planner's margin of the food on it, so no base path can start.
+            plan = BlockedStart.plan(
+                tool=self,
+                make_plan=lambda: ScraperMotionPlanner.plan_pick(
                     tool=self,
                     grasp=grasp,
                     pre=pre,
                     rotation=rotation,
                     preferred=self.base,
                     after=self.lift_waypoints(pose=pose),
-                )
-            except PlanningRefused as exc:
-                raise SkillFailed(str(exc)) from exc
+                ),
+                held_name=None,
+                holding=False,
+                label="pick_wiper_escape",
+            )
             shelf.grip = 0.0
             self.follow_base_path(path=plan.base_path, label="pick_wiper_base")
             self.follow_arm_path(path=plan.arm_after_base, label="pick_wiper_pre")
@@ -263,6 +438,7 @@ class TableWiper:
             shelf.hold(count=40, label="pick_wiper_close")
             if not self.pads_hold_grip():
                 raise SkillFailed("PickWiper: both pads must hold the handle before lifting")
+            self.accept_grasp()
             shelf.in_hand = np.linalg.inv(shelf.site_pose()) @ self.wiper_pose()
             lifted = grasp + [0, 0, LIFT]
             self.line(
@@ -309,35 +485,6 @@ class TableWiper:
         except WiperLost as exc:
             raise SkillFailed(f"PickWiper: {exc}") from exc
 
-    def escape(self, *, label: str, reason: str) -> None:
-        """Back the held tool away from the base's heading and up, as the scripted
-        return used to before circulating; every waypoint's IK and joint segment is
-        checked before the first step, so an escape that cannot finish never starts."""
-        shelf = self.shelf
-        here = shelf.site_pose()
-        heading = float(shelf.data.qpos[shelf.ba[2]])
-        target = here[:3, 3] + np.array([
-            -ESCAPE_BACK_M * np.cos(heading),
-            -ESCAPE_BACK_M * np.sin(heading),
-            ESCAPE_UP_M,
-        ])
-        arm = shelf.data.qpos[shelf.qa].copy()
-        count = max(1, int(np.ceil(np.linalg.norm(target - here[:3, 3]) / 0.01)))
-        for fraction in np.linspace(0, 1, count + 1)[1:]:
-            previous = arm
-            try:
-                arm = self.ik(
-                    position=(1 - fraction) * here[:3, 3] + fraction * target,
-                    rotation=here[:3, :3],
-                    holding=True,
-                    seed=previous,
-                )
-            except SkillFailed as exc:
-                raise SkillFailed(f"{reason}; escape refused: {exc}") from exc
-            if float(np.max(np.abs((arm - previous + np.pi) % (2 * np.pi) - np.pi))) > 0.6:
-                raise SkillFailed(f"{reason}; escape refused: IK branch jump")
-        self.line(position=target, rotation=here[:3, :3], label=label, holding=True)
-
     def lift_waypoints(self, *, pose: np.ndarray) -> list[tuple[np.ndarray, np.ndarray]]:
         """The hand poses the scripted lift and tilt pass through from the grasp of a
         scraper at `pose`, with the nominal grasp, so a stance can be checked for them
@@ -369,7 +516,7 @@ class TableWiper:
         can shift the physical grasp, so it is remeasured before lowering rather than
         commanding a stale tool pose. A refused plan moves nothing.
         """
-        from .planning import PlanningRefused, ScraperMotionPlanner
+        from .planning import ScraperMotionPlanner
 
         shelf = self.shelf
         self.require_held(label="place_wiper_start")
@@ -380,29 +527,22 @@ class TableWiper:
         if self.is_bench_scraper:
             preferred[0] -= SCRAPER_RETURN_STANDOFF
 
-        def make_plan() -> Any:
-            return ScraperMotionPlanner.plan_return(
+        # A sweep that failed mid-stroke leaves the blade on the rack. Back the held
+        # tool away from the base's heading and up first, as the scripted return did.
+        plan_and_hover = BlockedStart.plan(
+            tool=self,
+            make_plan=lambda: ScraperMotionPlanner.plan_return(
                 tool=self,
                 seat=grasp + [0, 0, PLACE_CLEARANCE],
                 rotation=rotation,
                 preferred=preferred,
                 carry_height=float(grasp[2] + LIFT),
-            )
-
-        try:
-            plan_and_hover = make_plan()
-        except PlanningRefused as exc:
-            # A plan cannot start from a configuration its own checks reject (a sweep
-            # that failed mid-stroke leaves the blade on the rack). Leave it along a
-            # straight line checked whole before moving, then plan once more; from a
-            # start that is not blocked, a refusal moves nothing.
-            if not ScraperMotionPlanner.start_blocked(tool=self, held_name="wiper_0"):
-                raise SkillFailed(str(exc)) from exc
-            self.escape(label="place_wiper_escape", reason=str(exc))
-            try:
-                plan_and_hover = make_plan()
-            except PlanningRefused as again:
-                raise SkillFailed(f"after escaping the start: {again}") from again
+            ),
+            held_name="wiper_0",
+            holding=True,
+            label="place_wiper_escape",
+            back_first=True,
+        )
         plan, hover = plan_and_hover
         try:
             self.follow_arm_path(path=plan.arm_before_base, label="place_wiper_raise")
@@ -431,6 +571,7 @@ class TableWiper:
             )
             if self.is_bench_scraper:
                 self.seat_scraper(position=grasp + [0, 0, PLACE_CLEARANCE], rotation=rotation)
+            self.park_after_seating()
             with wiper_unwatched(shelf=shelf):
                 shelf.grip = 0.0
                 shelf.hold(count=30, label="place_wiper_release")
@@ -603,7 +744,7 @@ class TableWiper:
         return min(heights, default=float("inf"))
 
     def geom_rotation(self, *, geom: int) -> np.ndarray:
-        return Rotation.from_quat(self.model.geom_quat[geom][[1, 2, 3, 0]]).as_matrix()
+        return ModelConstants.geom_rotation(model=self.model, geom=geom)
 
     @staticmethod
     def coax_hand_rotation(*, body_rotation: np.ndarray) -> np.ndarray:
@@ -633,7 +774,9 @@ class TableWiper:
         holding: bool,
         seed: np.ndarray | None = None,
         tolerance: float = 0.008,
+        axis_clipped: bool = True,
     ) -> np.ndarray:
+        """``axis_clipped`` is for a subclass that checks the joint path to the waypoint."""
         shelf = self.shelf
         arm, penetration = shelf.ik(
             position=position,
@@ -662,8 +805,14 @@ class TableWiper:
         step: float = 0.01,
         steps_per: int = 3,
         settle: int = 40,
+        rest_above: float = 0.0,
+        axis_clipped: bool = True,
     ) -> None:
-        """Interpolate Cartesian position and rotation on one guarded IK branch."""
+        """Interpolate Cartesian position and rotation on one guarded IK branch.
+
+        ``axis_clipped=False`` checks each waypoint's joint segment along the straight
+        path the servo follows and no other (`RackScraper.check_arm_segment`).
+        """
         shelf = self.shelf
         start = shelf.site_pose()
         distance = float(np.linalg.norm(position - start[:3, 3]))
@@ -680,6 +829,7 @@ class TableWiper:
                     rotation=slerp(fraction).as_matrix(),
                     holding=holding,
                     seed=previous,
+                    axis_clipped=axis_clipped,
                 )
             except SkillFailed as exc:
                 raise SkillFailed(f"{label}: Cartesian fraction {fraction:.3f}: {exc}") from exc
@@ -694,9 +844,37 @@ class TableWiper:
             rotation=rotation,
             label=label,
             limit=settle,
+            rest_above=rest_above,
         )
         if holding:
             self.require_held(label=label)
+
+    def line_plannable(
+        self, *, position: np.ndarray, rotation: np.ndarray, holding: bool, step: float = 0.01
+    ) -> bool:
+        """Whether ``line`` to this pose finds every waypoint's IK, checked as ``ik``
+        checks it, on one branch; nothing moves."""
+        shelf = self.shelf
+        start = shelf.site_pose()
+        distance = float(np.linalg.norm(position - start[:3, 3]))
+        angle = self.rotation_error(actual=start[:3, :3], target=rotation)
+        count = max(1, int(np.ceil(max(distance / step, angle / 3.0))))
+        slerp = Slerp([0, 1], Rotation.from_matrix([start[:3, :3], rotation]))
+        arm = shelf.data.qpos[shelf.qa].copy()
+        for fraction in np.linspace(0, 1, count + 1)[1:]:
+            previous = arm
+            try:
+                arm = self.ik(
+                    position=(1 - fraction) * start[:3, 3] + fraction * position,
+                    rotation=slerp(fraction).as_matrix(),
+                    holding=holding,
+                    seed=previous,
+                )
+            except SkillFailed:
+                return False
+            if float(np.max(np.abs((arm - previous + np.pi) % (2 * np.pi) - np.pi))) > 0.6:
+                return False
+        return True
 
     def transit(
         self,
@@ -743,7 +921,7 @@ class TableWiper:
         current = shelf.data.qpos[shelf.qa].copy()
         for waypoint in path[1:]:
             delta = (np.asarray(waypoint, dtype=float) - current + np.pi) % (2 * np.pi) - np.pi
-            count = max(1, int(np.ceil(np.max(np.abs(delta)) / PLANNED_JOINT_STEP)))
+            count = max(1, int(np.ceil(np.max(np.abs(delta)) / self.planned_joint_step)))
             for index in range(1, count + 1):
                 point = current + delta * (index / count)
                 # Advance only once the arm has caught up: loaded, it lags the command
@@ -769,22 +947,82 @@ class TableWiper:
         rotation: np.ndarray,
         label: str,
         limit: int,
+        rest_above: float = 0.0,
     ) -> None:
+        """Hold ``arm`` until the hand is on its target, or fail on a tracking error.
+
+        A hand up to ``rest_above`` over its target, on it horizontally and in
+        rotation, is not a tracking error: what it holds is resting on something.
+        """
         error, angle = float("inf"), float("inf")
+        offset = np.full(3, np.inf)
         for _ in range(limit):
             self.step(arm=arm, label=label)
             pose = self.shelf.site_pose()
-            error = float(np.linalg.norm(pose[:3, 3] - position))
+            offset = pose[:3, 3] - position
+            error = float(np.linalg.norm(offset))
             angle = self.rotation_error(actual=pose[:3, :3], target=rotation)
             if error < 0.001 and angle < 0.5:
                 return
+        resting = 0 < offset[2] <= rest_above and np.linalg.norm(offset[:2]) <= 0.005
+        if resting and np.isfinite([error, angle]).all() and angle <= 2.0:
+            return
         if not np.isfinite([error, angle]).all() or error > 0.005 or angle > 2.0:
             raise SkillFailed(
                 f"{label}: hand tracking error {error * 1000:.1f} mm / {angle:.1f} deg"
             )
 
 
+class ModelConstants:
+    """Per-model constants the executor's checks read on every configuration: the
+    half extents of an obstacle set and a geom's rotation in its body. Computed once
+    per model (a reset builds a new one) and handed out read-only; nothing in this
+    package writes `geom_type`, `geom_size`, `geom_rbound` or `geom_quat`."""
+
+    MAX_ENTRIES: ClassVar[int] = 256
+    _cache: ClassVar[dict[tuple[int, str, bytes], tuple[Any, np.ndarray]]] = {}
+
+    @staticmethod
+    def half_extents(*, model: Any, geoms: np.ndarray) -> np.ndarray:
+        """`geoms_half_extents(model=model, geoms=geoms)`."""
+        geoms = np.asarray(geoms, dtype=int)
+        return ModelConstants._cached(
+            model=model,
+            kind="extents",
+            key=geoms.tobytes(),
+            compute=lambda: geoms_half_extents(model=model, geoms=geoms),
+        )
+
+    @staticmethod
+    def geom_rotation(*, model: Any, geom: int) -> np.ndarray:
+        return ModelConstants._cached(
+            model=model,
+            kind="rotation",
+            key=int(geom).to_bytes(8, "little", signed=True),
+            compute=lambda: Rotation.from_quat(model.geom_quat[geom][[1, 2, 3, 0]]).as_matrix(),
+        )
+
+    @staticmethod
+    def _cached(*, model: Any, kind: str, key: bytes, compute: Callable[[], Any]) -> np.ndarray:
+        cache = ModelConstants._cache
+        entry = cache.get((id(model), kind, key))
+        # The model itself is kept with its entry, so an id reused by a later model
+        # never matches.
+        if entry is not None and entry[0] is model:
+            return entry[1]
+        value = np.array(compute(), dtype=float)
+        value.flags.writeable = False
+        if len(cache) >= ModelConstants.MAX_ENTRIES:
+            cache.clear()
+        cache[id(model), kind, key] = (model, value)
+        return value
+
+
 SUPPORT_ALLOWANCE = 0.003
+# A box overlap this shallow is contact, not penetration: the arm tracks to millimetres,
+# and a blade leaving the rack's front edge sags below its top while its back face is
+# still microns inside the front face.
+GRAZE = 1e-4
 
 
 def box_overlap(
@@ -823,7 +1061,8 @@ class RackScraper(TableWiper):
     Configuration is duck typed: counter_height, counter_front_x and tool_rest_y
     default to 0.9, 0.98 and -0.34 respectively. Explicit home_top, home_front,
     rest_y and base take precedence. top/front retain the rack's sweep geometry;
-    rest_pose is the setup callback and initialize_rest is the only pose writer.
+    rest_pose is the setup callback; optional attachment snaps only setup, human
+    recovery and a verified return to this pose.
     The backend owns the actual two-box blade/full-width-handle geometry.
     """
 
@@ -843,6 +1082,13 @@ class RackScraper(TableWiper):
         super().__init__(
             shelf=shelf, rest_y=rest_y, home_top=home_top, home_front=home_front, base=base
         )
+        self.attachment = getattr(config, "scraper_attachment", "physical")
+        if getattr(config, "planned_joint_step", None) is not None:
+            self.planned_joint_step = float(config.planned_joint_step)
+        if isinstance(shelf, RackShelfSkills):
+            shelf.scraper_attachment = self.attachment
+        elif self.attachment == "grasp_weld":
+            raise ValueError("grasp_weld requires RackShelfSkills for held-tool monitoring")
         if not self.is_bench_scraper:
             raise SkillFailed("RackScraper requires a physical box blade and full-width handle")
         self.point = self.end_in_body + 0.010 * self.handle_axis
@@ -863,7 +1109,11 @@ class RackScraper(TableWiper):
             )
 
     def pads_hold_grip(self) -> bool:
-        """Require bilateral handle contact, not an accidental blade pinch."""
+        """Require bilateral handle contact until a verified grasp is welded."""
+        if self.attachment == "grasp_weld" and ScraperAttachment.grasped(
+            model=self.model, data=self.data
+        ):
+            return True
         shelf = self.shelf
         touched = [False] * len(shelf.pad_sides)
         for contact in shelf.data.contact[: shelf.data.ncon]:
@@ -897,7 +1147,7 @@ class RackScraper(TableWiper):
             other_reach = np.einsum(
                 "nij,nj->ni",
                 np.abs(np.asarray(data.geom_xmat)[ids].reshape(-1, 3, 3)),
-                geoms_half_extents(model=model, geoms=ids),
+                ModelConstants.half_extents(model=model, geoms=ids),
             )
             other_centers = np.asarray(data.geom_xpos)[ids]
         for geom in (self.head_geom, self.handle_geom):
@@ -935,7 +1185,7 @@ class RackScraper(TableWiper):
                     other_rotation=other_rotation,
                     other_size=other_size,
                 )
-                if overlap <= 1e-9:
+                if overlap <= GRAZE:
                     continue
                 support_top = float(other_center[2] + np.abs(other_rotation[2]) @ other_size)
                 support = (
@@ -957,22 +1207,50 @@ class RackScraper(TableWiper):
                     return False
         return True
 
+    @contextmanager
+    def chassis_margin(self, *, clearance: float) -> Generator[None, None, None]:
+        """While open, MuJoCo reports the chassis in contact with anything nearer than
+        `clearance`, and `collision_cost` charges any contact with a fixture."""
+        if not clearance:
+            yield
+            return
+        model = self.shelf.model
+        chassis = model.body("robot_base_link").id
+        geoms = np.flatnonzero(model.geom_bodyid == chassis)
+        before = model.geom_margin[geoms].copy()
+        model.geom_margin[geoms] = clearance
+        try:
+            yield
+        finally:
+            model.geom_margin[geoms] = before
+
     def check_configuration(
-        self, *, base: np.ndarray, arm: np.ndarray, holding: bool, inflate: float = 0.0
+        self,
+        *,
+        base: np.ndarray,
+        arm: np.ndarray,
+        holding: bool,
+        inflate: float = 0.0,
+        chassis_clearance: float = 0.0,
     ) -> None:
-        """Reject robot collision and complete carried geometry in scratch kinematics."""
+        """Reject robot collision and complete carried geometry in scratch kinematics.
+
+        With `chassis_clearance` the chassis must also keep that far from the fixtures:
+        a planner's margin (`planning.BASE_CLEARANCE_M`), never the executor's check.
+        """
         shelf = self.shelf
         if shelf.ik_data is shelf.data:
             raise SkillFailed("Scraper clearance requires separate scratch data")
         if not np.isfinite(np.r_[base, arm]).all():
             raise SkillFailed("Scraper clearance requires finite joint targets")
         pose = shelf.site_at(base=base, arm=arm)
-        collision = shelf.collision_cost(d=shelf.ik_data, holding=holding)
+        with self.chassis_margin(clearance=chassis_clearance):
+            collision = shelf.collision_cost(d=shelf.ik_data, holding=holding)
         if not np.isfinite(collision) or collision > 0:
             pairs = []
             contacts = getattr(shelf.ik_data, "contact", ())
             for contact in contacts[: getattr(shelf.ik_data, "ncon", 0)]:
-                if contact.dist <= 0 and (
+                if contact.dist <= chassis_clearance and (
                     contact.geom1 in shelf.robot_geoms or contact.geom2 in shelf.robot_geoms
                 ):
                     names = [
@@ -989,15 +1267,32 @@ class RackScraper(TableWiper):
                 raise SkillFailed("Scraper blade or handle would collide with fixture geometry")
 
     def check_arm_segment(
-        self, *, start: np.ndarray, target: np.ndarray, base: np.ndarray, holding: bool
+        self,
+        *,
+        start: np.ndarray,
+        target: np.ndarray,
+        base: np.ndarray,
+        holding: bool,
+        axis_clipped: bool = True,
     ) -> None:
         """Check the wrapped, straight joint path `JointStep` drives the arm along.
 
-        The axis-clipped path is still checked although the servo no longer follows
-        it: a target only reachable past it is refused, and that refusal is what
-        sends a blade resting on the plate rim to retreat before it lifts. Dropping
-        the pass made that lift plannable from the stretched rear stance, where it
-        then failed on hand tracking (6.0 mm).
+        The axis-clipped path is still checked for a move being planned although the
+        servo no longer follows it: a target only reachable past it is refused, and
+        that refusal is what sends a blade resting on the plate rim to retreat before
+        it lifts. Dropping the pass made that lift plannable from the stretched rear
+        stance, where it then failed on hand tracking (6.0 mm).
+
+        A transit re-checking a segment of a route it has already planned passes
+        ``axis_clipped=False``: the arm starts up to 0.02 rad off the planned waypoint,
+        and from there the path it will not take can graze what the planned one
+        cleared (a Sweep refused 30 steps in, one blade corner 0.07 mm into the rack).
+
+        So does the levelling move that ends a stroke: the blade is still at its
+        working height over the rack, and in the arm posture a short previous stroke
+        hands on, the path it will not take dipped one blade end 3.13 mm under the
+        rack top, 0.13 mm past the support allowance (29/125 short Sweeps after a
+        short Sweep refused at "sweep_level", none of them touching the rack).
         """
         delta = (target - start + np.pi) % (2 * np.pi) - np.pi
         count = max(1, int(np.ceil(np.max(np.abs(delta)) / 0.025)))
@@ -1006,6 +1301,8 @@ class RackScraper(TableWiper):
                 self.check_configuration(base=base, arm=start + fraction * delta, holding=holding)
             except SkillFailed as exc:
                 raise SkillFailed(f"straight joint segment fraction {fraction:.3f}: {exc}") from exc
+        if not axis_clipped:
+            return
         for distance in np.arange(0, np.max(np.abs(delta)), 0.025):
             try:
                 self.check_configuration(
@@ -1026,13 +1323,18 @@ class RackScraper(TableWiper):
         holding: bool,
         seed: np.ndarray | None = None,
         tolerance: float = 0.008,
+        axis_clipped: bool = True,
     ) -> np.ndarray:
         arm = super().ik(
             position=position, rotation=rotation, holding=holding, seed=seed, tolerance=tolerance
         )
         start = self.shelf.data.qpos[self.shelf.qa].copy() if seed is None else seed
         self.check_arm_segment(
-            start=start, target=arm, base=self.shelf.base_target, holding=holding
+            start=start,
+            target=arm,
+            base=self.shelf.base_target,
+            holding=holding,
+            axis_clipped=axis_clipped,
         )
         return arm
 
@@ -1086,6 +1388,7 @@ class RackScraper(TableWiper):
                     target=waypoint,
                     base=shelf.base_target,
                     holding=holding,
+                    axis_clipped=False,
                 )
                 for _ in range(80):
                     error = planner.delta(start=shelf.data.qpos[shelf.qa], target=waypoint)
@@ -1102,6 +1405,7 @@ class RackScraper(TableWiper):
                 target=target,
                 base=shelf.base_target,
                 holding=holding,
+                axis_clipped=False,
             )
             self.settle_hand(
                 arm=target, position=position, rotation=rotation, label=label, limit=300
@@ -1129,13 +1433,26 @@ class RackScraper(TableWiper):
                 target,
             ],
         ]
+        # Until the base moves, nothing a check reads changes, so a base configuration
+        # that passed once (a leg's repeated ends; the chosen route's first leg, checked
+        # again on leaving) is not checked again. A failure is always rechecked.
+        passed: set[bytes] = set()
+
+        def check(*, base: np.ndarray) -> None:
+            key = np.asarray(base, dtype=float).tobytes()
+            if key in passed:
+                return
+            self.check_configuration(base=base, arm=arm, holding=holding)
+            if not getattr(self, "_measuring_departure", False):
+                passed.add(key)
+
         route = None
         failure = "no candidate route"
         for candidate in candidates:
             try:
                 for begin, end in zip([start, *candidate[:-1]], candidate, strict=True):
                     for base in segment_samples(start=begin, target=end):
-                        self.check_configuration(base=base, arm=arm, holding=holding)
+                        check(base=base)
             except SkillFailed as exc:
                 failure = str(exc)
                 continue
@@ -1146,7 +1463,8 @@ class RackScraper(TableWiper):
         for waypoint in route:
             current = shelf.data.qpos[shelf.ba].copy()
             for base in segment_samples(start=current, target=waypoint):
-                self.check_configuration(base=base, arm=arm, holding=holding)
+                check(base=base)
+            passed.clear()
             shelf.base_target = waypoint.copy()
             distance = np.max(np.abs(waypoint - current))
             # SweepServo ramps a held scraper's heading across each control period,

@@ -1,10 +1,13 @@
-"""Rack-serving integration with the existing control-step practice runner."""
+"""Serving's hooks for the control-step practice runner: the toy's problem, provider,
+human reset and one-attempt evaluation over the 3D scene."""
 
 import argparse
 import functools
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+
+import numpy as np
 
 from hitl_pmp.cli_protocols import SimulatedStepProtocolHooks
 from hitl_pmp.core.method.skill_provider import DomainContext
@@ -20,16 +23,17 @@ from .environment import RackServingEnvironment
 from .objects import RackServing3DObjects as Objects
 from .problem import RackServingProblem
 from .recording import RackServingReplayRenderer
-from .semantics import HUMAN_BATCH_RETURN, HUMAN_TOOL_RECOVERY
 from .skill_provider import RackServingSkillProvider
+from .toy_environment import TOY_SKILL_NAMES, RackServingToyEnvironment
+from .toy_interface import GATHER, HUMAN_RESET, SWEEP3, SWEEP5, ServingToyTransitions
 
 
 class RackServingStepProtocol(SimulatedStepProtocolHooks):
     """A spawn-importable adapter; all dynamics remain in the rack environment."""
 
     @staticmethod
-    def env(*, problem: Problem) -> RackServingEnvironment:
-        assert isinstance(problem.env, RackServingEnvironment)
+    def env(*, problem: Problem) -> RackServingToyEnvironment:
+        assert isinstance(problem.env, RackServingToyEnvironment)
         return problem.env
 
     @staticmethod
@@ -114,10 +118,7 @@ class RackServingStepProtocol(SimulatedStepProtocolHooks):
 
     @staticmethod
     def human_skill_names() -> dict[str, str]:
-        return {
-            HUMAN_BATCH_RETURN: HUMAN_BATCH_RETURN,
-            HUMAN_TOOL_RECOVERY: HUMAN_TOOL_RECOVERY,
-        }
+        return {HUMAN_RESET: HUMAN_RESET}
 
     @staticmethod
     def task_seed(*, task: Task) -> int:
@@ -125,10 +126,26 @@ class RackServingStepProtocol(SimulatedStepProtocolHooks):
 
     @staticmethod
     def goal_check(*, problem: Problem, task: Task) -> Callable[[], bool]:
-        """Use the same live rack verdict as skill-step evaluation, not KINDER's shelf goal."""
+        """`Served`, the toy's goal: already held, or measured as the running sweep3 or
+        sweep5 lands its count. The step protocol then stops the skill, and its
+        transition is taken from the scene as it stands (`take_action`)."""
         del task
-        backend = RackServingStepProtocol.env(problem=problem).backend()
-        return lambda: bool(backend.task_succeeded())
+        env = RackServingStepProtocol.env(problem=problem)
+
+        def served() -> bool:
+            if "Served" in env.toy_flags():
+                return True
+            skill = env.running_toy_skill()
+            if skill not in (SWEEP3, SWEEP5):
+                return False
+            return ServingToyTransitions.succeeded(skill=skill, measured=env.measure())
+
+        return served
+
+    @staticmethod
+    def evaluation_solved_after_action(*, problem: Problem, action: Action) -> bool | None:
+        del action
+        return "Served" in RackServingStepProtocol.env(problem=problem).toy_flags()
 
     @staticmethod
     def interrupted(*, problem: Problem, action: Action) -> None:
@@ -142,11 +159,30 @@ class RackServingStepProtocol(SimulatedStepProtocolHooks):
         )
 
     @staticmethod
+    def evaluation_terminal_reason(*, problem: Problem, action: Action) -> str | None:
+        del problem
+        return RackServingStepProtocol.one_shot_failure_reason(action=action)
+
+    @staticmethod
+    def one_shot_failure_reason(*, action: Action) -> str | None:
+        """A route skill's attempt is the task's one attempt, as in the toy."""
+        values = np.asarray(action, dtype=float)
+        if values.shape != (5,) or not np.isfinite(values[0]):
+            return None
+        skill = TOY_SKILL_NAMES.get(int(values[0]))
+        return "route_failed" if skill in (SWEEP3, GATHER, SWEEP5) else None
+
+    @staticmethod
     def last_skill_error(*, problem: Problem) -> str | None:
         return RackServingStepProtocol.env(problem=problem).last_skill_error()
 
     @staticmethod
     def last_skill_trace(*, problem: Problem) -> dict[str, Any] | None:
-        """No rack-specific trace builder exists; shelf skill IDs are not interchangeable."""
-        del problem
-        return None
+        """The toy state after the skill and the measured scene its outcome was read
+        from, so every robot event says what the physics decided."""
+        env = RackServingStepProtocol.env(problem=problem)
+        measured = env.toy_measurement()
+        return {
+            "toy_state": sorted(env.toy_flags()),
+            "measured": None if measured is None else measured.model_dump(),
+        }
