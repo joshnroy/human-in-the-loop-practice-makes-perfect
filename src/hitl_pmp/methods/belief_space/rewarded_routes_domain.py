@@ -81,6 +81,8 @@ class RewardedRoutesPracticeDomain(PracticeDomain):
             # practiced (sweep5 only after gather succeeds), so only there must the
             # forecast see each try's learning at once, as the environment does.
             competence_advances_every_try=bool(prerequisites),
+            # Deploying a chain runs every skill on it: one action per skill.
+            deployment_horizon=1 + max((len(before) for _, before in prerequisites), default=0),
             belief_sources=tuple(
                 (name, PracticeExampleSource.OUTCOME)
                 for name in (*(name for name, _ in routes), *chained, *humans)
