@@ -8,6 +8,7 @@ from .environment import (
     ROBOT_RESET,
     ROUTE_A,
     ROUTE_B,
+    ROUTE_B2,
     TwoRoutesEnvironment,
 )
 from .predicates import TwoRoutesPredicates
@@ -96,4 +97,41 @@ class TwoRoutesSkills:
         """The human's reset after a Route B attempt: offered in practice only."""
         return TwoRoutesSkills.build(
             name=HUMAN_RESET_B, pre=("AfterB",), add=("Ready",), delete=("AfterB", "Done", "ViaB")
+        )
+
+    @staticmethod
+    @lru_cache(maxsize=1)
+    def chained() -> tuple[Skill, ...]:
+        """`chained_route_b`: Route B's first step reaches `MidB` (and the `After` a
+        failure there ends in); Route B2 finishes from `MidB`. Each end is its own state."""
+        everything = ("After", "AfterA", "AfterB", "AfterB2", "MidB", "Done", "ViaA", "ViaB")
+        return (
+            TwoRoutesSkills.build(
+                name=ROUTE_A,
+                pre=("Ready",),
+                add=("Done", "ViaA", "After", "AfterA"),
+                delete=("Ready",),
+            ),
+            TwoRoutesSkills.build(
+                name=ROUTE_B, pre=("Ready",), add=("MidB", "After", "AfterB"), delete=("Ready",)
+            ),
+            TwoRoutesSkills.build(
+                name=ROBOT_RESET, pre=("After",), add=("Ready",), delete=everything
+            ),
+            TwoRoutesSkills.build(
+                name=ROUTE_B2,
+                pre=("MidB",),
+                add=("Done", "ViaB", "AfterB2"),
+                delete=("MidB", "AfterB"),
+            ),
+        )
+
+    @staticmethod
+    @lru_cache(maxsize=1)
+    def chained_human_reset() -> Skill:
+        return TwoRoutesSkills.build(
+            name=HUMAN_RESET_B,
+            pre=("After",),
+            add=("Ready",),
+            delete=("After", "AfterA", "AfterB", "AfterB2", "MidB", "Done", "ViaA", "ViaB"),
         )

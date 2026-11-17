@@ -5,7 +5,7 @@ from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Skill
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 
-from .environment import ROBOT_RESET, ROUTE_A, ROUTE_B, TwoRoutesEnvironment
+from .environment import ROBOT_RESET, ROUTE_A, ROUTE_B, ROUTE_B2, TwoRoutesEnvironment
 from .predicates import TwoRoutesPredicates
 from .skills import TwoRoutesSkills
 
@@ -17,17 +17,22 @@ class TwoRoutesSkillProvider(SkillProvider):
     offer_human_reset: bool = True
     both_resets: bool = False
     robot_reset: bool = True
+    chained_route_b: bool = False
 
     def skills(self) -> tuple[Skill, ...]:
         if not self.both_resets:
             return TwoRoutesSkills.all()
         return tuple(
             skill
-            for skill in TwoRoutesSkills.both_resets()
+            for skill in (
+                TwoRoutesSkills.chained() if self.chained_route_b else TwoRoutesSkills.both_resets()
+            )
             if self.robot_reset or skill.name != ROBOT_RESET
         )
 
     def human_skill(self) -> Skill:
+        if self.chained_route_b:
+            return TwoRoutesSkills.chained_human_reset()
         return (
             TwoRoutesSkills.human_reset_from_after()
             if self.both_resets
@@ -58,6 +63,12 @@ class TwoRoutesSkillProvider(SkillProvider):
         return self.env.action_for(skill=ground_skill.skill.name)
 
     def failure_kept_predicates(self) -> dict[str, frozenset[str]]:
+        if self.chained_route_b:
+            return {
+                ROUTE_A: frozenset({"After", "AfterA"}),
+                ROUTE_B: frozenset({"After", "AfterB"}),
+                ROUTE_B2: frozenset({"AfterB2"}),
+            }
         return {
             ROUTE_A: frozenset({"After", "AfterA"}),
             ROUTE_B: frozenset({"After", "AfterB"}),

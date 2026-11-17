@@ -10,7 +10,7 @@ class TwoRoutesPredicates:
     """One unary predicate per state flag: `ViaA`/`ViaB` say which route finished, and
     `AfterA`/`AfterB` whose reset the robot is waiting for."""
 
-    NAMES = ("Ready", "Done", "ViaA", "ViaB", "AfterA", "AfterB", "After")
+    NAMES = ("Ready", "Done", "ViaA", "ViaB", "AfterA", "AfterB", "After", "MidB", "AfterB2")
 
     @staticmethod
     def holds(*, state: State, objects: tuple[Object, ...], feature_name: str) -> bool:

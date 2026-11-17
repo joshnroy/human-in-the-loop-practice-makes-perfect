@@ -14,6 +14,7 @@ from hitl_pmp.methods.belief_space.tossing3d_constants import FUNCTIONAL_PREDICA
 from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
     condition_skill_belief,
     mean_competence,
+    refit_skill_belief,
     skill_belief_model,
 )
 from hitl_pmp.methods.belief_space.types.belief_state import (
@@ -287,7 +288,16 @@ def transition_outcomes(
             state=state,
             true_atoms=environment_state.true_atoms,
             ground_skill=action,
-            probability=mean_competence(belief=state.skill_beliefs[belief_name]),
+            probability=mean_competence(
+                belief=(
+                    refit_skill_belief(
+                        belief=state.skill_beliefs[belief_name],
+                        training_examples=state.pending_examples.get(belief_name, 0),
+                    )
+                    if domain.competence_advances_every_try
+                    else state.skill_beliefs[belief_name]
+                )
+            ),
             cost=cost,
             effects=effects,
             failure_effect_counts=failure_effect_counts,
