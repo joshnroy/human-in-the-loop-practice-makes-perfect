@@ -780,6 +780,14 @@ class Tossing3DPomdpCli(EesCli):
             "run), instead of its steps times the current robot step price.",
         )
         parser.add_argument(
+            "--pomdp-known-skill-cost",
+            action="append",
+            default=[],
+            metavar="NAME=COST",
+            help="Tell ours a skill's cost per execution (a human skill's too) instead of "
+            "learning it. Repeatable.",
+        )
+        parser.add_argument(
             "--pomdp-skill-step-costs",
             type=Path,
             default=None,
@@ -939,6 +947,10 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_linear_cost_lambda=args.pomdp_linear_cost_lambda,
                 pomdp_skill_step_costs=skill_step_costs,
                 pomdp_learn_skill_costs=args.pomdp_learn_skill_costs,
+                pomdp_known_skill_costs=tuple(
+                    (name, float(cost))
+                    for name, cost in (item.split("=", 1) for item in args.pomdp_known_skill_cost)
+                ),
                 **(
                     {}
                     if args.skill_cost_prior_steps is None
