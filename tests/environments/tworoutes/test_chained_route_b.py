@@ -148,6 +148,20 @@ def test_the_chain_walk_starts_where_a_robot_reset_leaves_off(*, chained: bool):
     assert RewardedRoutesPracticeDomain.chains(provider=provider, routes=routes) == expected
 
 
+def test_ours_learns_both_resets_like_every_other_skill():
+    provider = TwoRoutesSkillProvider(
+        env=TwoRoutesEnvironment(both_resets=True, chained_route_b=True),
+        both_resets=True,
+        chained_route_b=True,
+    )
+    domain = RewardedRoutesPracticeDomain.from_provider(provider=provider)
+    learned = dict(domain.belief_sources)
+    assert {"RobotReset", HUMAN_RESET_B} <= set(learned)
+    assert domain.deterministic_skills == frozenset()
+    # A failed reset is an outcome the model can explain, as any skill's is.
+    assert {"RobotReset", HUMAN_RESET_B} <= domain.failure_effect_skills
+
+
 def test_a_one_skill_route_has_no_prerequisites():
     plain = TwoRoutesSkillProvider(env=TwoRoutesEnvironment(both_resets=True), both_resets=True)
     assert RewardedRoutesPracticeDomain.from_provider(provider=plain).route_prerequisites == ()
