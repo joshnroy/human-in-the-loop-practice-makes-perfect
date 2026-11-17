@@ -87,7 +87,9 @@ def test_ours_finds_the_eighteen_try_plan_whenever_eighteen_tries_are_left(
     decision = _first_decision(tmp_path=tmp_path, tries=tries)
     assert decision["action"]["skill"]["name"] == "RouteB"
     assert _summary(decision=decision)["selected_path_episodes"] == 18
-    assert decision["value"] == pytest.approx(8.1)
+    # Net of the 1.7 in resets the plan's failed tries now need (a failed route try ends in
+    # After, as the environment's does): 8.1 before that was modelled.
+    assert decision["value"] == pytest.approx(6.4)
 
 
 def _model_and_belief(*, tmp_path: Path):  # noqa: ANN202
