@@ -886,6 +886,17 @@ class Tossing3DPomdpMethod(EesMethod):
                     model=model,
                     trace=trace,
                     num_samples=self.pomdp_num_samples,
+                    **(
+                        {}
+                        if self._remaining_practice_episodes is None
+                        or not isinstance(planner, ExpectimaxPlanner)
+                        else {
+                            "remaining_episodes": self._remaining_practice_episodes,
+                            "action_episodes": lambda action: self.action_episodes(
+                                ground_skill=action
+                            ),
+                        }
+                    ),
                 )
         finally:
             trace.close()
