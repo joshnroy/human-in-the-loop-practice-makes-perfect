@@ -1,29 +1,50 @@
-"""Isolated rack-to-serving CLI with training/deployment environments by construction."""
+"""Compose `--env racktoserving3d`: the 3D Serving scene behind exactly the chained toy's
+interface (`toy_interface.py`), with training/deployment environments by construction.
+
+Every physical `RackServingConfig` field is a flag. The fields that only shaped the
+retired planner interface (`PLANNER_FIELDS`) are not: the scene's internal driver
+(`RackServingEnvironment.take_action`) still reads them, at their defaults."""
 
 import argparse
 from collections.abc import Callable
-from contextlib import ExitStack
-from typing import Literal, get_args, get_origin
+from typing import ClassVar, Literal, get_args, get_origin
 
 from hitl_pmp.core.method.method import Method
 from hitl_pmp.core.method.skill_provider import DomainContext
 from hitl_pmp.environments.sweepoffshelf3d.cli import SweepOffShelf3DCli
 from hitl_pmp.humans.oracle import UnconditionalHumanOracle
-from hitl_pmp.method_runner import MethodRunner
 
 from .config import RackServingConfig
-from .environment import RackServingEnvironment
 from .problem import RackServingProblem
 from .skill_provider import RackServingOracle, RackServingSkillProvider
-from .tasks import RackServingTasks
+from .tasks import RackServingToyTasks
+from .toy_environment import RackServingToyEnvironment
 
 
 class RackServingCli:
+    PLANNER_FIELDS: ClassVar[frozenset[str]] = frozenset({
+        "two_route_rewards",
+        "bulk_transfer_only",
+        "sweep_skill",
+        "split_gather_and_sweep",
+        "served_three_reward",
+        "served_five_reward",
+        "sampler_features",
+        "robot_batch_return",
+    })
+
+    @staticmethod
+    def flagged_fields() -> list[str]:
+        return [
+            name
+            for name in RackServingConfig.model_fields
+            if name != "mode" and name not in RackServingCli.PLANNER_FIELDS
+        ]
+
     @staticmethod
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:
-        for name, field in RackServingConfig.model_fields.items():
-            if name == "mode":
-                continue
+        for name in RackServingCli.flagged_fields():
+            field = RackServingConfig.model_fields[name]
             flag = "--" + name.replace("_", "-")
             choices = get_args(field.annotation) if get_origin(field.annotation) is Literal else ()
             if name == "custom_layout":
@@ -40,6 +61,21 @@ class RackServingCli:
                 parser.add_argument(flag, nargs=3, type=float, default=field.default)
             else:
                 parser.add_argument(flag, type=float, default=field.default, help=field.description)
+        # The toy's full rack: robot_reset puts each dumpling back on its slot, so the
+        # start has slots.
+        parser.set_defaults(start_layout="middle_three")
+        fields = RackServingToyEnvironment.model_fields
+        for flag, name, text in (
+            (
+                "--robot-reset-price",
+                "robot_reset_price",
+                "What one robot_reset costs, under a cost file that uses "
+                "hitl_pmp.environments.tworoutes.costs:robot_step",
+            ),
+            ("--sweep3-reward", "sweep3_reward", "What serving three by sweep3 is worth"),
+            ("--sweep5-reward", "sweep5_reward", "What serving five by sweep5 is worth"),
+        ):
+            parser.add_argument(flag, type=float, default=fields[name].default, help=text)
         parser.add_argument("--scene-bg", action=argparse.BooleanOptionalAction, default=False)
         parser.add_argument("--canonical-seed", type=int, default=0)
         parser.add_argument("--skill-step-limit", type=int, default=12000)
@@ -57,28 +93,39 @@ class RackServingCli:
         parser.set_defaults(defer_rendering=True)
 
     @staticmethod
-    def build_problem(
+    def config(
         *, args: argparse.Namespace, mode: Literal["training", "deployment"]
-    ) -> RackServingProblem:
-        values = {
-            name: mode if name == "mode" else getattr(args, name)
-            for name in RackServingConfig.model_fields
-        }
+    ) -> RackServingConfig:
+        """The flags' values, `mode`, and the robot's batch return switched on: its
+        validation is robot_reset's (a start layout with slots, welded food)."""
+        values = {name: getattr(args, name) for name in RackServingCli.flagged_fields()}
         flat = values["custom_layout"]
         if len(flat) == 15:
             values["custom_layout"] = tuple(tuple(flat[i : i + 3]) for i in range(0, 15, 3))
-        config = RackServingConfig.model_validate(values)
+        return RackServingConfig.model_validate({
+            **values,
+            "mode": mode,
+            "robot_batch_return": True,
+        })
+
+    @staticmethod
+    def build_problem(
+        *, args: argparse.Namespace, mode: Literal["training", "deployment"]
+    ) -> RackServingProblem:
         practice, evaluation = SweepOffShelf3DCli.MOTION_SCOPES[
             getattr(args, "record_motion", "off")
         ]
-        env = RackServingEnvironment(
-            config=config,
+        env = RackServingToyEnvironment(
+            config=RackServingCli.config(args=args, mode=mode),
             canonical_seed=args.canonical_seed,
             scene_bg=args.scene_bg,
             skill_step_limit=args.skill_step_limit,
             motion_recording=practice if mode == "training" else evaluation,
+            robot_reset_price=args.robot_reset_price,
+            sweep3_reward=args.sweep3_reward,
+            sweep5_reward=args.sweep5_reward,
         )
-        tasks = RackServingTasks(
+        tasks = RackServingToyTasks(
             env=env, seed=args.seed, test_env_seed_offset=args.test_env_seed_offset
         )
         return RackServingProblem(
@@ -88,11 +135,14 @@ class RackServingCli:
         )
 
     @staticmethod
-    def practice_context(*, args: argparse.Namespace, env: RackServingEnvironment) -> DomainContext:
+    def practice_context(
+        *, args: argparse.Namespace, env: RackServingToyEnvironment
+    ) -> DomainContext:
         return DomainContext(
             env=env,
             skill_provider=RackServingSkillProvider(env=env, offer_human_reset=args.human_reset),
             oracle=RackServingOracle(env=env),
+            test_task_goals=(RackServingToyTasks(env=env).goal(),),
         )
 
     @staticmethod
@@ -103,25 +153,7 @@ class RackServingCli:
         num_cycles: int,
         max_steps_per_interaction: int,
     ) -> None:
-        if getattr(args, "record_motion", "off") != "off":
-            raise ValueError(
-                "--record-motion needs the step protocol (--practice-step-budget): only it "
-                "writes a run recording"
-            )
-        with ExitStack() as resources:
-            practice = RackServingCli.build_problem(args=args, mode="training")
-            resources.callback(practice.env.close)
-            evaluation = RackServingCli.build_problem(args=args, mode="deployment")
-            resources.callback(evaluation.env.close)
-            context = RackServingCli.practice_context(args=args, env=practice.env)
-            MethodRunner.run(
-                args=args,
-                method=method_factory(context),
-                problem=practice,
-                evaluation_problem=evaluation,
-                num_cycles=num_cycles,
-                max_steps_per_interaction=max_steps_per_interaction,
-                renderer=None,
-                render_fps=1,
-                num_render_checkpoints=getattr(args, "num_render_checkpoints", 1),
-            )
+        """Never reached: Serving runs only under the step protocol, as the toy does
+        (`TwoRoutesCli.run_method`)."""
+        del args, method_factory, num_cycles, max_steps_per_interaction
+        raise ValueError("--env racktoserving3d runs only under --practice-step-budget")

@@ -11,10 +11,7 @@ import numpy as np
 import pytest
 from pydantic import ValidationError
 
-from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
-from hitl_pmp.environments.racktoserving3d.objects import RackServing3DObjects as Objects
-from hitl_pmp.environments.racktoserving3d.skill_provider import RackServingActions
 from hitl_pmp.environments.racktoserving3d.skills import SKILL_IDS
 from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import SkillFailed
 
@@ -34,33 +31,24 @@ GATHER_AND_SWEEP = (0.07, 0.03, 0.10)
 MIDDLE = ("cube_1", "cube_2", "cube_3")
 
 
-def _provider(*, config):
-    from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
-    from hitl_pmp.environments.racktoserving3d.skill_provider import RackServingSkillProvider
+class _Driver:
+    """The scene's internal driver (`RackServingEnvironment.take_action`), which the
+    toy interface's robot_reset calls into; the old planner skills are not offered."""
 
-    return RackServingSkillProvider(env=RackServingEnvironment(config=config))
+    def __init__(self, *, config: RackServingConfig) -> None:
+        from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
+
+        self.env = RackServingEnvironment(config=config)
+
+
+def _provider(*, config):
+    return _Driver(config=config)
 
 
 def _act(*, provider, name, params=()):
-    """Run the provider's skill `name` on its only grounding; return the skill error."""
-    skill = next(skill for skill in provider.skills() if skill.name == name)
-    objects = {
-        "PickScraper": (Objects.robot, Objects.scraper),
-        "ReturnScraper": (Objects.robot, Objects.scraper),
-        "Sweep": (Objects.robot, Objects.scraper, Objects.rack, Objects.tray, *Objects.food),
-        "GatherAndSweep": (
-            Objects.robot,
-            Objects.scraper,
-            Objects.rack,
-            Objects.tray,
-            *Objects.food,
-        ),
-        "RobotBatchReturn": (Objects.robot, Objects.rack, Objects.tray, *Objects.food),
-    }[name]
-    ground = GroundSkill(skill=skill, objects=objects)
-    provider.env.take_action(
-        action=RackServingActions.encode(ground_skill=ground, params=np.array(params))
-    )
+    """Run the controller `name` through the driver's action layout; return the error."""
+    continuous = {0: (0.0, 0.0, 0.0), 1: (0.0, 0.0, *params), 3: tuple(params)}[len(params)]
+    provider.env.take_action(action=np.array([SKILL_IDS[name], 0, *continuous], dtype=float))
     return provider.env.last_skill_error()
 
 
@@ -103,28 +91,6 @@ def test_the_robot_batch_return_is_off_by_default_and_needs_slots_and_welded_foo
         RackServingConfig(robot_batch_return=True)
     with pytest.raises(ValidationError, match="robot_batch_return"):
         RackServingConfig(**SETUP_A, robot_batch_return=True, food_handling="physical")
-
-
-def test_the_provider_offers_the_robot_batch_return_only_under_the_flag_and_in_training():
-    plain = _provider(config=RackServingConfig(**SETUP_A))
-    offered = _provider(config=WITH_ROBOT_RETURN)
-    deployed = _provider(config=WITH_ROBOT_RETURN.model_copy(update={"mode": "deployment"}))
-    names = [skill.name for skill in plain.skills()]
-    assert "RobotBatchReturn" not in names
-    assert [skill.name for skill in offered.skills()] == [*names, "RobotBatchReturn"]
-    assert deployed.skills() == plain.skills()
-    # Still the robot's own action, never one of the person's.
-    assert "RobotBatchReturn" not in {
-        ground.skill.name for ground in offered.human_cube_bin_reset_skills()
-    }
-    assert SKILL_IDS["RobotBatchReturn"] == 7
-    ground = GroundSkill(
-        skill=offered.skills()[-1],
-        objects=(Objects.robot, Objects.rack, Objects.tray, *Objects.food),
-    )
-    action = RackServingActions.encode(ground_skill=ground, params=np.zeros(0))
-    assert action.tolist() == [7.0, 0.0, 0.0, 0.0, 0.0]
-    assert offered.sample_params(ground_skill=ground, rng=np.random.default_rng(0)).size == 0
 
 
 @kinder

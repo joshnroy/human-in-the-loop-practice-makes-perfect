@@ -5,16 +5,12 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.racktoserving3d.backend import RackServingBackend
 from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
-from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
 from hitl_pmp.environments.racktoserving3d.objects import RackServing3DObjects as Objects
 from hitl_pmp.environments.racktoserving3d.predicates import RackServing3DPredicates
 from hitl_pmp.environments.racktoserving3d.semantics import RackServingLedger, SupportRegion
-from hitl_pmp.environments.racktoserving3d.skills import RackServing3DSkills as Skills
-from hitl_pmp.environments.racktoserving3d.step_protocol import RackServingStepProtocol
 from hitl_pmp.environments.sweepoffshelf3d.backend import SweepOffShelf3DBackend
 from hitl_pmp.step_protocol import EvaluationClock
 
@@ -147,38 +143,6 @@ def test_settled_delivery_succeeds_at_once_with_no_readiness_gate(*, scoring_sce
     assert RackServing3DPredicates.goal_atoms() <= _ground_atoms(atoms=atoms)
 
 
-@pytest.mark.parametrize("skill", ["sweep", "place"])
-def test_unsettled_delivery_does_not_satisfy_practice_effects(*, scoring_scene, skill):
-    scene = scoring_scene
-    name = Objects.food[0].name
-    if skill == "sweep":
-        scene.held.add(Objects.scraper.name)
-        # A sweep needs every food on the rack; it then promises every food served.
-        for food in Objects.food:
-            scene.supports[food.name] = {"rack_0"}
-        ground = GroundSkill(
-            skill=Skills.GATHER_AND_SWEEP,
-            objects=(Objects.robot, Objects.scraper, Objects.rack, Objects.tray, *Objects.food),
-        )
-    else:
-        scene.held.add(name)
-        ground = GroundSkill(
-            skill=Skills.PLACE_FOOD_ON_TRAY, objects=(Objects.robot, Objects.food[0], Objects.tray)
-        )
-    before = _ground_atoms(atoms=scene.backend.abstract_atoms())
-    assert ground.preconditions <= before
-    promised = ground.expected_add_effects(before_atoms=before)
-    scene.held.discard(name)
-    for food in Objects.food:
-        scene.supports[food.name] = {"box_0"}
-    scene.data.qvel[scene.addresses[0] + 3] = 0.6
-    assert not promised <= _ground_atoms(atoms=scene.backend.abstract_atoms())
-    assert not scene.backend.task_succeeded()
-    scene.data.qvel[:] = 0
-    assert promised <= _ground_atoms(atoms=scene.backend.abstract_atoms())
-    assert scene.backend.task_succeeded()
-
-
 def test_new_observation_does_not_latch_transient_delivery(*, scoring_scene):
     scene = scoring_scene
     name = Objects.food[0].name
@@ -240,10 +204,6 @@ def test_overhanging_tray_food_remains_available_for_autonomous_pick(*, scoring_
     atoms = backend.abstract_atoms()
     assert ("OnTray", (name, Objects.tray.name)) not in atoms
     assert ("FoodAvailable", (name,)) in atoms
-    ground = GroundSkill(
-        skill=Skills.PICK_FOOD, objects=(Objects.robot, Objects.food[0], Objects.rack, Objects.tray)
-    )
-    assert ground.preconditions <= _ground_atoms(atoms=atoms)
 
 
 def test_supported_but_unsettled_food_is_pickable_without_delivery_credit(*, scoring_scene):
@@ -257,12 +217,7 @@ def test_supported_but_unsettled_food_is_pickable_without_delivery_credit(*, sco
 
 def test_step_evaluation_does_not_latch_rolling_or_unsupported_contact(*, scoring_scene):
     scene = scoring_scene
-    env = RackServingEnvironment(config=RackServingConfig(food_handling="physical"))
-    env._backend = scene.backend
-    clock = EvaluationClock(
-        budget=10,
-        check_goal=RackServingStepProtocol.goal_check(problem=SimpleNamespace(env=env), task=None),
-    )
+    clock = EvaluationClock(budget=10, check_goal=scene.backend.task_succeeded)
     name = Objects.food[0].name
     scene.data.qvel[scene.addresses[0] + 3] = 0.6
     clock.after()

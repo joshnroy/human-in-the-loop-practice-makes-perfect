@@ -12,16 +12,8 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from hitl_pmp.core.method.types import LiftedAtom
 from hitl_pmp.environments.pouring3d.kitchen.types import PickRefusal, Pose
-from hitl_pmp.environments.racktoserving3d.objects import RackServing3DObjects as Objects
 from hitl_pmp.environments.racktoserving3d.pick_plannable import RackPickPlannable
-from hitl_pmp.environments.racktoserving3d.predicates import (
-    PICK_PLANNABLE,
-    RackServing3DPredicates,
-)
-from hitl_pmp.environments.racktoserving3d.skills import RackServing3DSkills
-from hitl_pmp.planning.grounding import SkillGrounder
 from tests.environments.racktoserving3d.test_planned_food import restored
 
 GAP = Path(__file__).parent / "fixtures" / "food_in_rack_plate_gap.json"
@@ -44,39 +36,10 @@ def test_a_planning_refusal_makes_pick_food_inapplicable_until_the_food_moves(*,
         atoms = env.get_current_state().abstract_atoms
         assert ATOM not in atoms
         assert ("PickPlannable", ("robot", "cube_0")) in atoms
-        # What any planner over these operators can choose now: never PickFood(cube_3);
-        # the human batch return still.
-        state = env.get_current_state()
-        true_atoms = SkillGrounder.abstract_state(
-            state=state, objects=Objects.all_objects(), predicates=RackServing3DPredicates.all()
-        )
-        options = SkillGrounder.applicable_ground_skills(
-            skills=(*RackServing3DSkills.robot_skills(), RackServing3DSkills.HUMAN_BATCH_RETURN),
-            objects=Objects.all_objects(),
-            true_atoms=true_atoms,
-        )
-        picks = {g.objects[1].name for g in options if g.skill.name == "PickFood"}
-        assert "cube_3" not in picks
-        assert any(g.skill.name == "human_batch_return" for g in options)
         env.reset_movables(destination="human_batch_return")
         assert ATOM in env.get_current_state().abstract_atoms
     finally:
         env.close()
-
-
-def test_pick_food_requires_the_atom_and_the_human_reset_does_not():
-    plannable = LiftedAtom(
-        predicate=PICK_PLANNABLE, variables=RackServing3DSkills.PICK_FOOD.parameters[:2]
-    )
-    assert plannable in RackServing3DSkills.PICK_FOOD.preconditions
-    assert not any(
-        atom.predicate == PICK_PLANNABLE
-        for atom in RackServing3DSkills.HUMAN_BATCH_RETURN.preconditions
-    )
-    assert any(
-        atom.predicate == PICK_PLANNABLE
-        for atom in RackServing3DSkills.HUMAN_BATCH_RETURN.add_effects
-    )
 
 
 def _pose(*, x: float) -> Pose:
