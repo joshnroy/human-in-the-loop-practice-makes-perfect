@@ -15,6 +15,7 @@ from hitl_pmp.environments.pouring3d.potsticker_controller import PotstickerCont
 from hitl_pmp.environments.pouring3d.potsticker_native import PotstickerPourEnv, PotstickerScene
 
 from .config import KitchenGeometry
+from .grasp_weld import GraspWeld
 from .settling import PayloadRestWindow
 from .types import ClosedLoopPourParameters
 
@@ -46,37 +47,20 @@ class KitchenScene(PotstickerScene):
     # 2026-11-05). Grasp quality is not what this experiment measures, so a pick can
     # fail only by refusing to plan or by not reaching the piece, never by slipping.
     def grasp_weld(self, *, name: str) -> int:
-        import mujoco
-
         model, _ = self._model_and_data()
-        return int(mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_EQUALITY, f"grasp_weld_{name}"))
+        return GraspWeld.weld(model=model, name=name)
 
     def attach_payload(self, *, name: str) -> None:
-        import mujoco
-
         model, data = self._model_and_data()
-        hand, piece = model.body(f"{self.robot_name}_bracelet_link").id, model.body(name).id
-        hand_rotation = data.xmat[hand].reshape(3, 3)
-        weld = self.grasp_weld(name=name)
-        model.eq_data[weld, 3:6] = hand_rotation.T @ (data.xpos[piece] - data.xpos[hand])
-        relative = np.zeros(4)
-        hand_inverse = np.zeros(4)
-        mujoco.mju_negQuat(hand_inverse, data.xquat[hand])
-        mujoco.mju_mulQuat(relative, hand_inverse, data.xquat[piece])
-        model.eq_data[weld, 6:10] = relative
-        data.eq_active[weld] = 1
+        GraspWeld.attach(model=model, data=data, hand=f"{self.robot_name}_bracelet_link", name=name)
 
     def attached_payload(self) -> str | None:
-        _, data = self._model_and_data()
-        return next(
-            (name for name in self.cube_names if data.eq_active[self.grasp_weld(name=name)]),
-            None,
-        )
+        model, data = self._model_and_data()
+        return GraspWeld.attached(model=model, data=data, names=tuple(self.cube_names))
 
     def release_payloads(self) -> None:
-        _, data = self._model_and_data()
-        for name in self.cube_names:
-            data.eq_active[self.grasp_weld(name=name)] = 0
+        model, data = self._model_and_data()
+        GraspWeld.release(model=model, data=data, names=tuple(self.cube_names))
 
     def respawn_payload_in_pitcher(self) -> None:
         self.release_payloads()
@@ -142,18 +126,9 @@ class KitchenScene(PotstickerScene):
         if size is None:
             size = ET.SubElement(root, "size")
         size.set("nuserdata", "1")
-        equality = root.find("equality")
-        if equality is None:
-            equality = ET.SubElement(root, "equality")
-        for name in self.cube_names:
-            ET.SubElement(
-                equality,
-                "weld",
-                name=f"grasp_weld_{name}",
-                body1=f"{self.robot_name}_bracelet_link",
-                body2=name,
-                active="false",
-            )
+        GraspWeld.add_to_scene(
+            root=root, hand=f"{self.robot_name}_bracelet_link", names=tuple(self.cube_names)
+        )
         pan = self.get_object("tray")
         body = root.find(".//body[@name='tray']")
         assert body is not None

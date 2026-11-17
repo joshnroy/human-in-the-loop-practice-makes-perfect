@@ -38,7 +38,7 @@ def test_cli_defaults_match_config_with_step_protocol_registered():
     for field in RackServingConfig.model_fields:
         if field != "mode":
             assert getattr(args, field) == getattr(defaults, field)
-    assert args.surface_kind == "wire"
+    assert args.surface_kind == "wire_solid"
     assert not hasattr(args, "cooling_seconds")
     assert args.human_interruption_cost == 5
     assert args.skill_step_limit == 12000
@@ -206,3 +206,75 @@ def test_cli_selects_the_serving_target(*, target):
 def test_cli_rejects_unknown_serving_target():
     with pytest.raises(SystemExit):
         _parse(argv=("--serving-target", "bowl"))
+
+
+def test_setup_a_flags_reach_both_modes_configs():
+    argv = (
+        "--start-layout", "middle_three", "--side-offset", "0.13", "--plate-tuck", "0.035",
+        "--bulk-transfer-only", "1", "--two-route-rewards", "1",
+    )  # fmt: skip
+    for mode in ("training", "deployment"):
+        config = RackServingCli.build_problem(args=_parse(argv=argv), mode=mode).env.config
+        assert (config.start_layout, config.side_offset, config.plate_tuck) == (
+            "middle_three",
+            0.13,
+            0.035,
+        )
+        # The plate's outer near edge sits 35 mm under the rack's front edge.
+        assert config.tray_back_x == pytest.approx(config.rack_front_x + 0.035)
+    plain = RackServingCli.build_problem(args=_parse(), mode="training").env.config
+    assert (plain.plate_tuck, plain.start_layout) == (0.0, "scattered")
+
+
+def test_the_robot_batch_return_flag_is_off_by_default_and_recorded_with_the_run():
+    from hitl_pmp.step_protocol import StepProtocolResume
+
+    plain = _parse()
+    assert plain.robot_batch_return is False
+    argv = (
+        "--start-layout", "middle_three", "--bulk-transfer-only", "1",
+        "--two-route-rewards", "1", "--robot-batch-return", "1",
+    )  # fmt: skip
+    args = _parse(argv=argv)
+    for mode in ("training", "deployment"):
+        config = RackServingCli.build_problem(args=args, mode=mode).env.config
+        assert config.robot_batch_return is True
+    # The config snapshot is the parsed namespace, so the flag is in it; a run recorded
+    # before the flag existed resumes as one that never offered the skill.
+    recorded = {key: str(value) for key, value in vars(plain).items()}
+    older = {
+        key: value for key, value in recorded.items() if not key.startswith("robot_batch_return")
+    }
+    assert len(recorded) - len(older) == 2
+    assert recorded["robot_batch_return"] == "False"
+    assert StepProtocolResume.comparable(arguments=older) == StepProtocolResume.comparable(
+        arguments=recorded
+    )
+    assert StepProtocolResume.comparable(arguments=older) != StepProtocolResume.comparable(
+        arguments={key: str(value) for key, value in vars(args).items()}
+    )
+
+
+def test_cli_carries_the_opt_in_plate_tuck_sweep_speed_and_custom_layout(*, monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        "hitl_pmp.environments.racktoserving3d.cli.RackServingEnvironment",
+        lambda **kwargs: seen.append(kwargs["config"]) or Mock(),
+    )
+    monkeypatch.setattr(
+        "hitl_pmp.environments.racktoserving3d.cli.RackServingTasks", lambda **kwargs: Mock()
+    )
+    monkeypatch.setattr(
+        "hitl_pmp.environments.racktoserving3d.cli.RackServingProblem", lambda **kwargs: Mock()
+    )
+    offsets = [str(v) for v in (-0.08, 0, 0, -0.03, 0, 0, 0, 0, 0, 0.03, 0, 0, 0.08, 0.02, 0.1)]
+    args = _parse(
+        argv=["--plate-tuck", "0.035", "--final-sweep-speed", "0.1", "--start-layout", "custom"]
+        + ["--custom-layout", *offsets]
+    )
+    RackServingCli.build_problem(args=args, mode="training")
+    (config,) = seen
+    assert config.plate_tuck == 0.035
+    assert config.final_sweep_speed == 0.1
+    assert config.custom_layout[4] == (0.08, 0.02, 0.1)
+    assert len(config.custom_layout) == 5

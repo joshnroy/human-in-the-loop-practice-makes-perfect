@@ -1,4 +1,4 @@
-"""Native KINDER scene with measured supports, movable rack and explicit human costs."""
+"""Native KINDER scene with measured supports, a welded rack and explicit human costs."""
 
 import json
 import os
@@ -21,6 +21,7 @@ from .layout import RackLayout
 from .objects import RackServing3DObjects as Objects
 from .predicates import AbstractAtom, RackServing3DAtoms
 from .scene import build_scene
+from .scraper_attachment import ScraperAttachment
 from .semantics import (
     CircularSupport,
     FoodLocation,
@@ -33,9 +34,18 @@ from .semantics import (
     WellSupport,
     classify_food,
 )
+from .welded_food import WeldedFood
 
 FOOTPRINT_SAMPLES = 64
 MAX_RETURN_LAYOUTS = 300
+
+
+class NoJitter:
+    """In place of a generator, so a lined-up layout reads out its unjittered centres."""
+
+    def uniform(self, low: float, high: float, size: Any) -> np.ndarray:  # noqa: PLR0917 -- numpy's signature
+        del low, high
+        return np.zeros(size)
 
 
 class RackServingBackend(SweepOffShelf3DBackend):
@@ -47,6 +57,11 @@ class RackServingBackend(SweepOffShelf3DBackend):
     _control_steps: int = PrivateAttr(default=0)
     _tool_home: Callable[[], bool] | None = PrivateAttr(default=None)
     _rng: Any = PrivateAttr(default=None)
+    _start_kind: str = PrivateAttr(default="scattered")
+
+    def start_kind(self) -> str:
+        """This episode's start layout, after any `gathered_fraction` draw."""
+        return self._start_kind
 
     def env(self) -> Any:
         if self._env is None:
@@ -71,7 +86,8 @@ class RackServingBackend(SweepOffShelf3DBackend):
                 scene_render_camera="task_view",
                 config=TidyBot3DConfig(use_arm_velocities=False),
             )
-            original_step = self._env.step
+            lean = self.config.lean_control_step or self.config.physics_timestep is not None
+            original_step = self._lean_step if lean else self._env.step
 
             def observed(*args: Any, **kwargs: Any) -> Any:
                 self._notify_step(observer=self._before_step)
@@ -82,12 +98,37 @@ class RackServingBackend(SweepOffShelf3DBackend):
                 return result
 
             self._env.step = observed
+            if self.config.scraper_attachment != "physical":
+                ScraperAttachment.install(core=self.core())
+            if self.config.food_handling == "welded":
+                WeldedFood.install(core=self.core(), names=tuple(self.cube_names))
         return self._env
+
+    def _lean_step(self, action: Any) -> None:  # noqa: PLR0917 -- KINDER's env.step signature
+        """One control period as KINDER's `MujocoEnv.step` advances it, without the
+        observation, reward and object-centric state it builds after: the same control
+        update before each physics step, `model.opt.timestep` apart. One action row
+        only, which is all the skills here send."""
+        robot = self.core()._robot_env  # noqa: SLF001
+        action = np.asarray(action)
+        if action.ndim != 1:
+            raise ValueError("a lean control step takes one action row")
+        robot.timestep += 1
+        ctrl = robot._action_to_ctrl(action)  # noqa: SLF001
+        ticks = round(1.0 / float(robot.control_frequency) / float(self.model().opt.timestep))
+        for _ in range(ticks):
+            robot._update_ctrl(ctrl)  # noqa: SLF001
+            robot.sim.step()
 
     def reset(self, *, seed: int) -> None:
         super().reset(seed=seed)
+        if self.config.physics_timestep is not None:
+            # After KINDER's reset, which writes its own timestep into the model it builds.
+            self.model().opt.timestep = self.config.physics_timestep
         for geom in self._pads[0] | self._pads[1]:
             self.model().geom_condim[geom] = self.config.gripper_contact_dimension
+        if self.config.food_handling == "welded":
+            WeldedFood.separate_robot_and_food(model=self.model(), names=tuple(self.cube_names))
         self._rng = np.random.default_rng(seed)
         self.ledger = RackServingLedger(
             mode=self.config.mode,
@@ -102,8 +143,27 @@ class RackServingBackend(SweepOffShelf3DBackend):
         core.box_interior = self.box_interior
         core.cube_in_box = lambda name: self.settled_on_tray(name=name)
         self._tool_home = None
-        # Every episode starts from its own seed's draw of the shared rack layout.
-        self._commit(placements=self.food_placements(names=list(self.cube_names)))
+        # Every episode starts from its own seed's draw of the shared rack layout,
+        # unless an opt-in fixed layout is configured.
+        self._place_all_food()
+
+    def _place_all_food(self) -> None:
+        """All five on the rack: the configured layout, or the start mixture (the
+        "stack" pile with probability `gathered_fraction`, else scattered)."""
+        names = list(self.cube_names)
+        kind = self.config.start_layout
+        # No coin at fraction 0, so a scattered-only config draws exactly as before.
+        if (
+            kind == "scattered"
+            and self.config.gathered_fraction > 0
+            and self._rng.uniform() < self.config.gathered_fraction
+        ):
+            kind = "stack"
+        self._start_kind = kind
+        if kind == "scattered":
+            self._commit(placements=self.food_placements(names=names))
+        else:
+            self._commit(placements=self.food_placements(names=names, start_layout=kind))
 
     def sync_clock(self) -> None:
         elapsed = float(self.data().time) - self._time_origin
@@ -126,6 +186,15 @@ class RackServingBackend(SweepOffShelf3DBackend):
                 observer()
             except Exception as error:
                 raise ControlStepObserverFailed() from error
+
+    def held(self, *, name: str) -> bool:
+        """Welded food and scraper are held while their grasp weld is engaged;
+        physical handling requires both pads' contact."""
+        if self.config.scraper_attachment == "grasp_weld" and name == "wiper_0":
+            return ScraperAttachment.grasped(model=self.model(), data=self.data())
+        if self.config.food_handling == "welded" and name in self.cube_names:
+            return WeldedFood.attached(backend=self) == name
+        return super().held(name=name)
 
     def body_geoms(self, *, name: str) -> set[int]:
         model = self.model()
@@ -414,6 +483,10 @@ class RackServingBackend(SweepOffShelf3DBackend):
             ),
         )
 
+    def plate_count(self) -> int:
+        """How many dumplings are settled on the plate now."""
+        return sum(self.settled_on_tray(name=name) for name in self.cube_names)
+
     def food_available(self, *, name: str) -> bool:
         """Physical support permits a pick even when strict delivery containment fails."""
         supports = {"rack_0", "box_0", "cupboard_1", "world", "floor", "ground", *self.cube_names}
@@ -445,12 +518,35 @@ class RackServingBackend(SweepOffShelf3DBackend):
     def batch_return(self) -> None:
         self.sync_clock()
         self.ledger = self.ledger.charge_human(intervention="human_batch_return")
-        self._commit(placements=self.food_placements(names=list(self.cube_names)))
+        if self.config.food_handling == "welded":
+            WeldedFood.release(backend=self)
+        # The person returns food from the same start mixture an episode starts from.
+        self._place_all_food()
 
-    def food_placements(self, *, names: list[str]) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    def food_placements(
+        self, *, names: list[str], start_layout: str = "scattered"
+    ) -> dict[str, tuple[np.ndarray, np.ndarray]]:
         """Place `names` on the rack as one draw of the shared layout distribution,
         conditioned on every other dumpling's current centre; a layout that collides
-        with anything else in the scene is redrawn whole."""
+        with anything else in the scene is redrawn whole. A lined-up `start_layout`
+        draws all five from `RackLayout.lined_up` instead.
+
+        A lined-up pile has one place, against the rack's front edge on the plate's
+        centre line. When something the person does not move blocks every draw of it
+        (a scraper the robot still holds there, as on Della curtis-p025 seed 1), the
+        person scatters the five over the free rack instead, and `start_kind` says so."""
+        placed = self._draw_food_placements(names=names, start_layout=start_layout)
+        if placed is None and start_layout != "scattered":
+            self._start_kind = "scattered"
+            placed = self._draw_food_placements(names=names, start_layout="scattered")
+        if placed is None:
+            raise RuntimeError("no collision-free food return placement")
+        return placed
+
+    def _draw_food_placements(
+        self, *, names: list[str], start_layout: str
+    ) -> dict[str, tuple[np.ndarray, np.ndarray]] | None:
+        """`food_placements`' draws, or None when every one collides."""
         import mujoco
 
         model, scratch, addresses, _ = self._scratch(names=names)
@@ -459,7 +555,7 @@ class RackServingBackend(SweepOffShelf3DBackend):
         others = [self.food_centre(name=other) for other in self.cube_names if other not in names]
         height = rack.top_z + self.config.dumpling_height / 2 + 0.002
         for _ in range(MAX_RETURN_LAYOUTS):
-            layout = RackLayout.sample(rng=self._rng, rack=rack, count=len(names), others=others)
+            layout = self._layout(start_layout=start_layout, count=len(names), others=others)
             placed = {
                 name: (np.array([x, y, height]), RackLayout.quaternion(yaw=yaw))
                 for name, (x, y, yaw) in zip(names, layout, strict=True)
@@ -472,7 +568,88 @@ class RackServingBackend(SweepOffShelf3DBackend):
                 for name in names
             ):
                 return placed
-        raise RuntimeError("no collision-free food return placement")
+        return None
+
+    def _layout(
+        self,
+        *,
+        start_layout: str,
+        count: int,
+        others: list[tuple[float, float]],
+        rng: Any = None,
+    ) -> tuple[tuple[float, float, float], ...]:
+        """One draw of `start_layout`'s (x, y, yaw) centres, from this episode's
+        generator unless `rng` is given."""
+        rng = self._rng if rng is None else rng
+        rack, tray = self.support(name="rack_0"), self.support(name="box_0")
+        center_y = (tray.y_min + tray.y_max) / 2
+        if start_layout == "scattered":
+            return RackLayout.sample(rng=rng, rack=rack, count=count, others=others)
+        if start_layout == "middle_three":
+            return RackLayout.middle_three(
+                rng=rng,
+                rack=rack,
+                center_y=center_y,
+                pitch=self.config.spaced_pitch,
+                side_offset=self.config.side_offset,
+                long_axis=self.config.spaced_long_axis,
+            )
+        if start_layout == "custom":
+            return RackLayout.custom(
+                rng=rng,
+                rack=rack,
+                center_y=center_y,
+                offsets=self.config.custom_layout,
+                long_axis=self.config.spaced_long_axis,
+            )
+        if start_layout == "spaced":
+            return RackLayout.spaced(
+                rng=rng,
+                rack=rack,
+                center_y=center_y,
+                pitch=self.config.spaced_pitch,
+                long_axis=self.config.spaced_long_axis,
+            )
+        return RackLayout.lined_up(rng=rng, rack=rack, center_y=center_y, kind=start_layout)
+
+    def rack_slots(self, *, jitter: bool = True) -> dict[str, tuple[float, float, float]]:
+        """Each dumpling's (x, y, yaw) in one draw of the configured start layout: where
+        the robot's batch return puts it. The person's return is the same draw, placed
+        whole; nothing here checks the draw against the scene. Without `jitter`, the
+        centres every draw is jittered about, and no draw is consumed."""
+        layout = self._layout(
+            start_layout=self.config.start_layout,
+            count=len(self.cube_names),
+            others=[],
+            rng=None if jitter else NoJitter(),
+        )
+        return dict(zip(self.cube_names, layout, strict=True))
+
+    def slots_clear(self, *, slots: dict[str, tuple[float, float, float]]) -> bool:
+        """Whether the dumplings named in `slots`, each set down on its slot, would
+        touch no dumpling: neither one another nor any other where it lies now. The
+        person's return applies the same 2 mm to a whole layout."""
+        import mujoco
+
+        model, scratch, addresses, _ = self._scratch(names=list(slots))
+        height = self.support(name="rack_0").top_z + self.config.dumpling_height / 2 + 0.002
+        for name, (x, y, yaw) in slots.items():
+            scratch.qpos[addresses[name] : addresses[name] + 7] = np.r_[
+                x, y, height, RackLayout.quaternion(yaw=yaw)
+            ]
+        mujoco.mj_forward(model, scratch)
+        placed = {model.body(name).id for name in slots}
+        food = {model.body(name).id for name in self.cube_names}
+        for contact in scratch.contact[: scratch.ncon]:
+            pair = {int(model.geom_bodyid[geom]) for geom in (contact.geom1, contact.geom2)}
+            if len(pair) == 2 and pair <= food and pair & placed and contact.dist < 0.002:
+                return False
+        return True
+
+    def food_yaw(self, *, name: str) -> float:
+        """`name`'s rotation about world z, as `RackLayout.quaternion` writes it."""
+        rotation = self.data().xmat[self.model().body(name).id].reshape(3, 3)
+        return float(np.arctan2(rotation[1, 0] - rotation[0, 1], rotation[0, 0] + rotation[1, 1]))
 
     def rack_put_back_draws(self, *, name: str, count: int) -> list[tuple[float, float]]:
         """`count` independent draws of where the robot puts `name` back: the shared
@@ -498,10 +675,22 @@ class RackServingBackend(SweepOffShelf3DBackend):
             self._scene_file = None
 
     def motion_state(self) -> dict[str, list[float]]:
-        """The shelf's motion state plus the rack's free-joint pose: unlike the shelf's
-        cupboard, the rack is a movable body a sweep or a pick can push."""
+        """`features` plus every robot joint and, after each body's own features, its
+        pose (x, y, z, qw, qx, qy, qz): each dumpling's and the scraper's free joint, and
+        the rack's and plate's welded pose. Welded since 2026-11-06, so a recording keeps
+        the shape it had when both were free bodies a sweep could push."""
         model, data = self.model(), self.data()
-        out = super().motion_state()
-        address = model.jnt_qposadr[model.joint("rack_0_joint").id]
-        out["rack_0"] += [float(v) for v in data.qpos[address : address + 7]]
+        out = {name: [float(v) for v in values] for name, values in self.features().items()}
+        for name in (*self.cube_names, self.wiper_name):
+            address = model.jnt_qposadr[model.joint(f"{name}_joint").id]
+            out[name] += [float(v) for v in data.qpos[address : address + 7]]
+        for name in ("box_0", "rack_0"):
+            position, quaternion = self.core().get_object(name).get_pose()
+            out[name] += [float(v) for v in (*position, *quaternion)]
+        out["robot_joints"] = [
+            float(data.qpos[model.jnt_qposadr[model.joint(joint).id]])
+            for joint in self.ROBOT_JOINTS
+        ]
+        if self.config.scraper_attachment != "physical":
+            out["scraper_attachment_state"] = ScraperAttachment.state(model=model, data=data)
         return out

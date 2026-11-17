@@ -1,9 +1,11 @@
 """Task-local native MuJoCo geometry; no KINDER defaults or classes are patched.
 
-Wire mode has round crossing wires and open gaps. Concept mode has a flat
-rectangular-web perforated platform. Neither has a hidden supporting plate or
-raised front lip. Both have four feet, one free joint, and frictional support.
-Hardware properties are assumptions documented in :mod:`.config`.
+The default wire_solid mode keeps the round crossing wires as visual geometry
+and uses one invisible solid support slab. Historical wire mode collides with the
+wires and leaves open gaps. Concept mode is a rectangular-web perforated platform.
+All three retain four feet, frictional support and no raised front lip. The rack and every
+serving object are welded to the counter (`CounterWeld`). Hardware properties are
+assumptions documented in :mod:`.config`.
 """
 
 import math
@@ -48,6 +50,50 @@ def _grid_centers(*, span: float, edge_width: float, spacing: float) -> list[flo
         -span / 2 + edge_width / 2 + index * (span - edge_width) / intervals
         for index in range(intervals + 1)
     ]
+
+
+class CounterWeld:
+    """A body welded to the counter: a MuJoCo mocap body, as KINDER's fixed `Bin` is.
+
+    It has no degrees of freedom, so no contact can move it, yet its pose is written
+    by placement (reset) and read like any object's. A placement also becomes the
+    model's own body pose, so scratch kinematics built from a fresh `MjData` (which
+    copy only `qpos`) see it where it is (Josh, 2026-11-06: weld the rack and plate).
+    """
+
+    # Deliberately not KINDER's `fixed` flag: KINDER rests a fixed ground body on
+    # z = 0, but these sit on the counter at the region's explicit height.
+    fixed = False
+    name: str
+    env: Any
+
+    def weld(self, *, body: ET.Element) -> ET.Element:
+        for joint in body.findall("freejoint"):
+            body.remove(joint)
+        body.set("mocap", "true")
+        return body
+
+    def _ids(self) -> tuple[Any, Any, int, int]:
+        model, data = self.env.sim.model.mj_model, self.env.sim.data.mj_data
+        body = int(model.body(self.name).id)
+        return model, data, body, int(model.body_mocapid[body])
+
+    def _read_pose(self) -> tuple[Any, Any]:
+        _, data, _, mocap = self._ids()
+        return data.mocap_pos[mocap].copy(), data.mocap_quat[mocap].copy()
+
+    def _write_pose(self, position: Any, quaternion: Any) -> None:  # noqa: PLR0917 -- KINDER override
+        model, data, body, mocap = self._ids()
+        data.mocap_pos[mocap] = model.body_pos[body] = position
+        data.mocap_quat[mocap] = model.body_quat[body] = quaternion
+
+    def _read_velocity(self) -> tuple[Any, Any]:
+        import numpy as np
+
+        return np.zeros(3, dtype=np.float32), np.zeros(3, dtype=np.float32)
+
+    def _write_velocity(self, linear: Any, angular: Any) -> None:  # noqa: PLR0917 -- KINDER override
+        """A welded body has no velocity; a state carrying one still places it."""
 
 
 def install_geometry() -> None:
@@ -159,15 +205,15 @@ def install_geometry() -> None:
 
     if RACK_TYPE not in REGISTERED_OBJECTS:
 
-        class CoolingRack(Cuboid):
-            """Bottom-origin movable rack with native wire or perforation colliders."""
+        class CoolingRack(CounterWeld, Cuboid):
+            """Bottom-origin rack with visual wires and selectable support geometry."""
 
             def _create_xml_element(self) -> ET.Element:
                 config = RackServingConfig.model_validate(self.options["rack_serving_config"])
                 body = ET.Element("body", name=self.name)
-                ET.SubElement(body, "freejoint", name=self.joint_name)
+                self.weld(body=body)
                 radius = config.rack_wire_radius
-                wire = config.surface_kind == "wire"
+                wire = config.surface_kind != "concept"
                 thickness = 2 * radius if wire else config.concept_thickness
                 web_width = 2 * radius if wire else config.concept_web_width
                 pitch = config.rack_wire_spacing if wire else config.concept_pitch
@@ -240,6 +286,27 @@ def install_geometry() -> None:
                     geom.set("friction", _values(values=config.rack_friction))
                     geom.set("condim", str(config.support_contact_dimension))
                     geom.set("rgba", "0.65 0.68 0.71 1")
+                if config.surface_kind == "wire_solid":
+                    for geom in geoms:
+                        if "_wire_" in geom.get("name", ""):
+                            geom.set("contype", "0")
+                            geom.set("conaffinity", "0")
+                    # Keep the original visible geometry's mass and inertia. Only
+                    # contact changes: the slab's top is exactly the wire-top plane.
+                    ET.SubElement(
+                        body,
+                        "geom",
+                        name=f"{self.name}_support",
+                        type="box",
+                        size=_values(values=(config.rack_depth / 2, config.rack_width / 2, radius)),
+                        pos=_values(values=(0, 0, surface_z)),
+                        mass="0",
+                        contype="1",
+                        conaffinity="1",
+                        friction=_values(values=config.rack_friction),
+                        condim=str(config.support_contact_dimension),
+                        rgba="0 0 0 0",
+                    )
                 return body
 
             @staticmethod
@@ -252,14 +319,13 @@ def install_geometry() -> None:
 
     if TRAY_TYPE not in REGISTERED_OBJECTS:
 
-        class SlateTray(Cuboid):
-            """Flat bottom-origin slate slab, with a free joint and no walls."""
+        class SlateTray(CounterWeld, Cuboid):
+            """Flat bottom-origin slate slab, welded to the counter, with no walls."""
 
             def _create_xml_element(self) -> ET.Element:
                 self.length, self.width, self.height = (2 * extent for extent in self.size)
                 self.wall_thickness = 0.0
-                self.fixed = False
-                body = super()._create_xml_element()
+                body = self.weld(body=super()._create_xml_element())
                 geom = body.find("geom")
                 assert geom is not None
                 geom.set("name", f"{self.name}_slate")
@@ -278,14 +344,13 @@ def install_geometry() -> None:
 
     if PLATE_TYPE not in REGISTERED_OBJECTS:
 
-        class RoundPlate(Cuboid):
-            """Flat bottom-origin circular plate: one cylinder, free joint, no rim."""
+        class RoundPlate(CounterWeld, Cuboid):
+            """Flat bottom-origin circular plate: one cylinder, welded, no rim."""
 
             def _create_xml_element(self) -> ET.Element:
                 self.length, self.width, self.height = (2 * extent for extent in self.size)
                 self.wall_thickness = 0.0
-                self.fixed = False
-                body = super()._create_xml_element()
+                body = self.weld(body=super()._create_xml_element())
                 geom = body.find("geom")
                 assert geom is not None
                 geom.set("name", f"{self.name}_plate")
@@ -306,7 +371,7 @@ def install_geometry() -> None:
 
     if PLATTER_TYPE not in REGISTERED_OBJECTS:
 
-        class LippedPlatter(Cuboid):
+        class LippedPlatter(CounterWeld, Cuboid):
             """Bottom-origin rectangular platter: one floor slab and a closed four-wall lip.
 
             The walls sit on the floor's outer perimeter, so the outer footprint is
@@ -321,9 +386,8 @@ def install_geometry() -> None:
                 wall = self.options["lip_wall"]
                 self.length, self.width, self.height = 2 * half_x, 2 * half_y, base
                 self.wall_thickness = 0.0
-                self.fixed = False
                 body = ET.Element("body", name=self.name)
-                ET.SubElement(body, "freejoint", name=self.joint_name)
+                self.weld(body=body)
                 lip_z = base + lip / 2
                 parts = (
                     ("platter_floor", (0, 0, base / 2), (half_x, half_y, base / 2)),
@@ -364,7 +428,7 @@ def install_geometry() -> None:
 
     if CORELLE_TYPE not in REGISTERED_OBJECTS:
 
-        class CorellePlate(Cuboid):
+        class CorellePlate(CounterWeld, Cuboid):
             """Bottom-origin model of a Corelle 10-1/4 in dinner plate, from convex pieces.
 
             MuJoCo collides only convex geoms, so the concave dish is a flat well
@@ -386,9 +450,8 @@ def install_geometry() -> None:
                 self.length = self.width = 2 * outer
                 self.height = options["corelle_height"]
                 self.wall_thickness = 0.0
-                self.fixed = False
                 body = ET.Element("body", name=self.name)
-                ET.SubElement(body, "freejoint", name=self.joint_name)
+                self.weld(body=body)
                 parts: list[tuple[str, str, tuple[float, ...], tuple[float, ...], float]] = [
                     ("well", "cylinder", (0, 0, foot_height + glass / 2), (well, glass / 2), 0.0)
                 ]
@@ -461,7 +524,13 @@ def install_geometry() -> None:
             ) -> list[float]:
                 outer = object_config["corelle_diameter"] / 2
                 height = object_config["corelle_height"]
-                return _bottom_bounds(position=pos, options={"size": [outer, outer, height / 2]})
+                bounds = _bottom_bounds(position=pos, options={"size": [outer, outer, height / 2]})
+                # KINDER places by axis-aligned boxes and would refuse a rim under the
+                # rack's deck: a tucked plate reports only the part in front of the rack.
+                tuck = float(object_config.get("plate_tuck", 0.0))
+                if tuck > 0:
+                    bounds[3] -= tuck + 0.001
+                return bounds
 
         register_object(name=CORELLE_TYPE)(CorellePlate)
 
@@ -478,10 +547,11 @@ def install_geometry() -> None:
                     friction=_values(values=self.options["friction"]),
                     condim=int(self.options["contact_dimension"]),
                     index=int(self.name.rsplit("_", 1)[1]),
+                    collision=self.options.get("collision", "full"),
                 )
 
             def get_assets(self) -> list[ET.Element]:
-                return RackPotsticker.assets()
+                return RackPotsticker.assets(collision=self.options.get("collision", "full"))
 
         register_object(name=DUMPLING_TYPE)(RigidPotsticker)
 
