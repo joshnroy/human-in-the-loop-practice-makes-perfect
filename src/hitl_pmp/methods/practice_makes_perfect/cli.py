@@ -537,6 +537,10 @@ class Tossing3DPomdpCli(EesCli):
         "TwoRoutesCli": lambda provider: RewardedRoutesPracticeDomain.from_provider(
             provider=provider
         ),
+        # Serving behind the toy's interface: the toy's own domain, read the same way.
+        "RackServingToyCli": lambda provider: RewardedRoutesPracticeDomain.from_provider(
+            provider=provider
+        ),
     }
 
     @staticmethod
@@ -868,7 +872,8 @@ class Tossing3DPomdpCli(EesCli):
         if domain is None:
             raise ValueError(
                 "--method pomdp supports tossing3d, sweepoffshelf3d, pouring3d, "
-                "pouring3d_kitchen, kitchen_recycling3d, racktoserving3d and tworoutes"
+                "pouring3d_kitchen, kitchen_recycling3d, racktoserving3d, racktoserving3d_toy and "
+                "tworoutes"
             )
         competence_prior = EesCli.competence_prior(args=args)
         if args.pomdp_solver == "expectimax" and args.pomdp_search_depth is None:
