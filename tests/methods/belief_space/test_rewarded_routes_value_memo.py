@@ -1,8 +1,10 @@
-"""`RewardedRoutesPracticeDomain.expected_policy_value` is a fixed-seed draw, so a belief
-the search has already valued is answered from a memo: the same float, without drawing
-again, and never for a belief whose draw could differ."""
+"""`RewardedRoutesPracticeDomain.expected_policy_value` is what the deployed robot earns:
+it runs the route its belief rates best, so the value is that route's expected reward
+(the product of its skills' mean competences, times its reward). It must not credit an
+uncertain route with the upside of knowing the true competences (Josh, 2026-11-16: an
+uninformed prior made the uncertain chained route look better than it was). A belief
+the search has already valued is answered from a memo."""
 
-import numpy as np
 import pytest
 
 from hitl_pmp.methods.belief_space.rewarded_routes_domain import RewardedRoutesPracticeDomain
@@ -29,124 +31,48 @@ def belief(*rows: tuple[float, float, float]) -> WeightedHypothesisBelief:
     )
 
 
-def fresh(*, domain: RewardedRoutesPracticeDomain, beliefs: dict) -> float:
-    """The value as computed before the memo: one fixed-seed draw per call."""
-    return float(
-        domain.sample_policy_values(
-            beliefs=beliefs, rng=np.random.default_rng(0), count=4096
-        ).mean()
-    )
-
-
 @pytest.fixture(autouse=True)
 def empty_memo() -> None:
     RewardedRoutesPracticeDomain.clear_value_memo()
 
 
-class TestValueMemo:
+class TestDeploymentValue:
     @staticmethod
-    def test_a_repeated_belief_is_valued_without_drawing_again(
-        *, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_the_value_is_the_best_route_in_expectation_not_per_draw() -> None:
+        # Route B is a coin flip between hopeless and perfect: worth 10 * 0.5 = 5 in
+        # expectation. Route A is a sure 0.8: worth 4. Per draw, the better route would
+        # average 0.5 * 10 + 0.5 * 4 = 7, which no deployed robot can earn.
+        beliefs = {
+            "RouteA": belief((0.8, 0.0, 1.0)),
+            "RouteB": belief((0.0, 0.0, 0.5), (1.0, 0.0, 0.5)),
+        }
+        assert DOMAIN.expected_policy_value(beliefs=beliefs) == pytest.approx(5.0)
+
+    @staticmethod
+    def test_a_chain_is_worth_the_product_of_its_skills_means() -> None:
+        domain = DOMAIN.model_copy(update={"route_prerequisites": (("RouteB", ("Gather",)),)})
+        beliefs = {
+            "RouteA": belief((0.1, 0.0, 1.0)),
+            "RouteB": belief((0.2, 0.0, 0.5), (0.6, 0.0, 0.5)),
+            "Gather": belief((0.5, 0.0, 1.0)),
+        }
+        assert domain.expected_policy_value(beliefs=beliefs) == pytest.approx(10 * 0.4 * 0.5)
+
+    @staticmethod
+    def test_a_repeated_belief_is_valued_from_the_memo(*, monkeypatch: pytest.MonkeyPatch) -> None:
         beliefs = {"RouteA": belief((0.5, 0.25, 1.0)), "RouteB": belief((0.1, 0.05, 1.0))}
-        draws = []
-        original = RewardedRoutesPracticeDomain.sample_policy_values
+        calls = []
+        original = RewardedRoutesPracticeDomain.route_expected_values
 
         def counted(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
-            draws.append(1)
+            calls.append(1)
             return original(*args, **kwargs)
 
-        monkeypatch.setattr(RewardedRoutesPracticeDomain, "sample_policy_values", counted)
+        monkeypatch.setattr(RewardedRoutesPracticeDomain, "route_expected_values", counted)
         first = DOMAIN.expected_policy_value(beliefs=beliefs)
-        equal = {name: b.refit(training_examples=0) for name, b in beliefs.items()}
         rebuilt = {
             name: WeightedHypothesisBelief.model_validate(b.model_dump())
             for name, b in beliefs.items()
         }
-        assert DOMAIN.expected_policy_value(beliefs=equal) == first
         assert DOMAIN.expected_policy_value(beliefs=rebuilt) == first
-        assert len(draws) == 1
-
-    @staticmethod
-    def test_every_value_is_the_fresh_draws_float() -> None:
-        meta = np.random.default_rng(7)
-        cases = []
-        for size in (1, 1, 2, 5, 441):
-            for _ in range(4):
-                beliefs = {}
-                for name in ("RouteA", "RouteB"):
-                    weights = meta.random(size) + 1e-3
-                    beliefs[name] = belief(
-                        *zip(
-                            meta.random(size).tolist(),
-                            (meta.random(size) * 0.2).tolist(),
-                            (weights / weights.sum()).tolist(),
-                            strict=True,
-                        )
-                    )
-                cases.append(beliefs)
-        # Value each twice, interleaved, so hits and misses are both checked.
-        for beliefs in cases + cases:
-            assert DOMAIN.expected_policy_value(beliefs=beliefs) == fresh(
-                domain=DOMAIN, beliefs=beliefs
-            )
-
-    @staticmethod
-    def test_beliefs_that_draw_differently_never_share_an_entry() -> None:
-        base = {
-            "RouteA": belief((0.5, 0.25, 0.5), (0.2, 0.1, 0.5)),
-            "RouteB": belief((0.1, 0.0, 1.0)),
-        }
-        variants = [
-            base,
-            # Same hypotheses, other weights: other rows picked.
-            base | {"RouteA": belief((0.5, 0.25, 0.25), (0.2, 0.1, 0.75))},
-            # Same weights, other order: the rows each uniform picks swap.
-            base | {"RouteA": belief((0.2, 0.1, 0.5), (0.5, 0.25, 0.5))},
-            # Another competence.
-            base | {"RouteB": belief((0.3, 0.0, 1.0))},
-            # The routes' rewards swapped.
-            {"RouteA": base["RouteB"], "RouteB": base["RouteA"]},
-            # A competence of -0.0 rather than 0.0.
-            base | {"RouteB": belief((-0.0, 0.0, 1.0))},
-            base | {"RouteB": belief((0.0, 0.0, 1.0))},
-        ]
-        for beliefs in variants:
-            assert DOMAIN.expected_policy_value(beliefs=beliefs) == fresh(
-                domain=DOMAIN, beliefs=beliefs
-            )
-        other = DOMAIN.model_copy(update={"route_rewards": (("RouteA", 10.0), ("RouteB", 5.0))})
-        assert other.expected_policy_value(beliefs=base) == fresh(domain=other, beliefs=base)
-
-    @staticmethod
-    def test_the_memo_is_bounded() -> None:
-        for i in range(RewardedRoutesPracticeDomain.VALUE_MEMO_SIZE + 50):
-            DOMAIN.expected_policy_value(
-                beliefs={
-                    "RouteA": belief((i / 1e5, 0.0, 1.0)),
-                    "RouteB": belief((0.1, 0.0, 1.0)),
-                }
-            )
-        assert RewardedRoutesPracticeDomain.value_memo_size() <= (
-            RewardedRoutesPracticeDomain.VALUE_MEMO_SIZE
-        )
-
-
-class TestValueMemoKey:
-    """A key held a copy of every route's weights and competences -- ~61 kB for a
-    prior grid -- so a full memo of 4,096 held ~240 MiB. A digest of the same bytes is
-    as exact a key and fixed-size."""
-
-    @staticmethod
-    def test_the_key_is_a_fixed_size_digest_whatever_the_beliefs_size() -> None:
-        sizes = set()
-        for rows in (1, 441, 4000):
-            weight = 1.0 / rows
-            beliefs = {
-                name: belief(*((i / rows, 0.0, weight) for i in range(rows)))
-                for name in ("RouteA", "RouteB")
-            }
-            key = DOMAIN.value_memo_key(beliefs=beliefs)
-            assert isinstance(key, bytes)
-            sizes.add(len(key))
-        assert sizes == {32}
+        assert len(calls) == 1

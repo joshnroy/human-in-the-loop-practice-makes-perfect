@@ -207,13 +207,23 @@ class RewardedRoutesPracticeDomain(PracticeDomain):
     def sample_policy_values(
         self, *, beliefs: Mapping[str, SkillBelief], rng: np.random.Generator, count: int
     ) -> NDArray[np.float64]:
-        return np.max(
-            [
-                reward * beliefs[name].sample(rng=rng, count=count)[:, 0]
-                for name, reward in self.route_rewards
-            ],
-            axis=0,
-        )
+        """The deployed robot runs the route its belief rates best, so the value is that
+        route's expected reward -- the same for every draw. Taking the best route per
+        draw instead would deploy as if the true competences were known, crediting an
+        uncertain route with upside the robot cannot act on."""
+        del rng
+        return np.full(count, self.expected_policy_value(beliefs=beliefs))
+
+    def route_expected_values(self, *, beliefs: Mapping[str, SkillBelief]) -> list[float]:
+        """Each route's expected reward: its skills' beliefs are independent, so the
+        chance every one succeeds is the product of their mean competences."""
+        return [
+            reward
+            * float(
+                np.prod([beliefs[skill].mean_competence() for skill in self.route_chain(name=name)])
+            )
+            for name, reward in self.route_rewards
+        ]
 
     def expected_policy_value(self, *, beliefs: Mapping[str, SkillBelief]) -> float:
         key = self.value_memo_key(beliefs=beliefs)
@@ -221,13 +231,7 @@ class RewardedRoutesPracticeDomain(PracticeDomain):
         if key is not None and (cached := memo.get(key)) is not None:
             memo.move_to_end(key)
             return cached
-        value = float(
-            self.sample_policy_values(
-                beliefs=beliefs,
-                rng=np.random.default_rng(ROUTES_EXPECTATION_SEED),
-                count=ROUTES_EXPECTATION_SAMPLES,
-            ).mean()
-        )
+        value = max(self.route_expected_values(beliefs=beliefs))
         if key is not None:
             memo[key] = value
             while len(memo) > RewardedRoutesPracticeDomain.VALUE_MEMO_SIZE:
