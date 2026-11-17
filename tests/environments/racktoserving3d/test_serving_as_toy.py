@@ -1,8 +1,10 @@
-"""`--env racktoserving3d_toy`: the 3D Serving scene behind exactly the chained toy's
+"""`--env racktoserving3d`: the 3D Serving scene behind exactly the chained toy's
 symbolic interface (`tworoutes --both-resets --chained-route-b --robot-reset`). Only
 whether a skill succeeded comes from physics; states, effects, costs and the learners'
 reading of them are the toy's."""
 
+import argparse
+import importlib.util
 from types import SimpleNamespace
 
 import pytest
@@ -10,11 +12,9 @@ import pytest
 from hitl_pmp.cli import ENVIRONMENTS, STEP_PROTOCOL_ENVIRONMENTS
 from hitl_pmp.core.method.types import Skill
 from hitl_pmp.environments.racktoserving3d.cli import RackServingCli
-from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
 from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
 from hitl_pmp.environments.racktoserving3d.skill_provider import RackServingSkillProvider
 from hitl_pmp.environments.racktoserving3d.step_protocol import RackServingStepProtocol
-from hitl_pmp.environments.racktoserving3d.toy_cli import RackServingToyCli
 from hitl_pmp.environments.racktoserving3d.toy_environment import RackServingToyEnvironment
 from hitl_pmp.environments.racktoserving3d.toy_interface import (
     GATHER,
@@ -24,8 +24,6 @@ from hitl_pmp.environments.racktoserving3d.toy_interface import (
     SWEEP5,
     ServingToyTransitions,
 )
-from hitl_pmp.environments.racktoserving3d.toy_skill_provider import RackServingToySkillProvider
-from hitl_pmp.environments.racktoserving3d.toy_step_protocol import RackServingToyStepProtocol
 from hitl_pmp.environments.tworoutes.costs import TwoRoutesCosts
 from hitl_pmp.environments.tworoutes.environment import (
     HUMAN_RESET_B,
@@ -38,7 +36,6 @@ from hitl_pmp.environments.tworoutes.environment import (
     ROBOT_RESET as TOY_ROBOT_RESET,
 )
 from hitl_pmp.environments.tworoutes.skill_provider import TwoRoutesSkillProvider
-from hitl_pmp.methods.belief_space.rack_serving_domain import RACK_SERVING_DOMAIN
 from hitl_pmp.methods.belief_space.rewarded_routes_domain import RewardedRoutesPracticeDomain
 from hitl_pmp.methods.practice_makes_perfect.cli import Tossing3DPomdpCli
 
@@ -81,8 +78,8 @@ def _toy_provider() -> TwoRoutesSkillProvider:
     return TwoRoutesSkillProvider(env=env, both_resets=True, robot_reset=True, chained_route_b=True)
 
 
-def _provider(*, offer_human_reset: bool = True) -> RackServingToySkillProvider:
-    return RackServingToySkillProvider(
+def _provider(*, offer_human_reset: bool = True) -> RackServingSkillProvider:
+    return RackServingSkillProvider(
         env=RackServingToyEnvironment(), offer_human_reset=offer_human_reset
     )
 
@@ -241,34 +238,39 @@ def test_only_the_robot_reset_is_priced_once_per_execution(*, skill):
     assert charged == ([0.15, 0, 0, 0, 0] if skill == ROBOT_RESET else [0] * 5)
 
 
-def test_the_toy_variant_is_its_own_environment_and_domain():
-    assert ENVIRONMENTS["racktoserving3d_toy"] is RackServingToyCli
-    assert STEP_PROTOCOL_ENVIRONMENTS["racktoserving3d_toy"] is RackServingToyStepProtocol
-    build = Tossing3DPomdpCli.DOMAINS["RackServingToyCli"]
+def test_racktoserving3d_is_the_toy_matching_environment():
+    assert ENVIRONMENTS["racktoserving3d"] is RackServingCli
+    assert STEP_PROTOCOL_ENVIRONMENTS["racktoserving3d"] is RackServingStepProtocol
+    assert "racktoserving3d_toy" not in ENVIRONMENTS
+    assert "racktoserving3d_toy" not in STEP_PROTOCOL_ENVIRONMENTS
+    build = Tossing3DPomdpCli.DOMAINS["RackServingCli"]
     assert callable(build)
-    domain = build(_provider())
-    assert isinstance(domain, RewardedRoutesPracticeDomain)
-    assert RackServingToyStepProtocol.human_skill_names() == {HUMAN_RESET: HUMAN_RESET}
+    assert isinstance(build(_provider()), RewardedRoutesPracticeDomain)
+    assert RackServingStepProtocol.human_skill_names() == {HUMAN_RESET: HUMAN_RESET}
     assert _provider(offer_human_reset=False).human_cube_bin_reset_skills() == ()
 
 
-def test_with_the_variant_off_racktoserving3d_is_unchanged():
-    assert ENVIRONMENTS["racktoserving3d"] is RackServingCli
-    assert STEP_PROTOCOL_ENVIRONMENTS["racktoserving3d"] is RackServingStepProtocol
-    assert Tossing3DPomdpCli.DOMAINS["RackServingCli"] is RACK_SERVING_DOMAIN
-    assert RackServingStepProtocol.human_skill_names() == {
-        "human_batch_return": "human_batch_return",
-        "human_tool_recovery": "human_tool_recovery",
-    }
-    provider = RackServingSkillProvider(env=RackServingEnvironment(config=RackServingConfig()))
-    assert [s.name for s in provider.skills()] == [
-        "PickScraper",
-        "GatherAndSweep",
-        "ReturnScraper",
-        "PickFood",
-        "PlaceFoodOnTray",
-        "ReturnFoodToRack",
-        "Sweep",
-    ]
-    assert not issubclass(RackServingEnvironment, RackServingToyEnvironment)
-    assert "robot_reset_price" not in RackServingConfig.model_fields
+def test_the_old_serving_interface_is_retired():
+    assert importlib.util.find_spec("hitl_pmp.methods.belief_space.rack_serving_domain") is None
+    for module in ("toy_cli", "toy_skill_provider", "toy_step_protocol"):
+        assert importlib.util.find_spec(f"hitl_pmp.environments.racktoserving3d.{module}") is None
+    names = {s.name for s in _provider().skills()} | {_provider().human_skill().name}
+    assert names == {SWEEP3, GATHER, SWEEP5, ROBOT_RESET, HUMAN_RESET}
+    parser = argparse.ArgumentParser()
+    RackServingCli.add_arguments(parser=parser)
+    flags = {action.dest for action in parser._actions}
+    assert not flags & RackServingCli.PLANNER_FIELDS
+    assert {"robot_reset_price", "sweep3_reward", "sweep5_reward"} <= flags
+
+
+def test_the_cli_builds_the_toy_environment_on_a_slotted_start():
+    parser = argparse.ArgumentParser()
+    RackServingCli.add_arguments(parser=parser)
+    args = parser.parse_args([])
+    args.seed = 0
+    problem = RackServingCli.build_problem(args=args, mode="training")
+    assert isinstance(problem.env, RackServingToyEnvironment)
+    assert problem.env.config.start_layout == "middle_three"
+    assert problem.env.config.robot_batch_return
+    assert isinstance(RackServingSkillProvider(env=problem.env).skills()[0], Skill)
+    assert issubclass(RackServingToyEnvironment, RackServingEnvironment)

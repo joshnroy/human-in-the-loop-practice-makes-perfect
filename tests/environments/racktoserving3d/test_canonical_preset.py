@@ -1,10 +1,11 @@
-"""The rack's canonical preset mirrors tossing3d-canonical and prices the rack's humans."""
+"""Serving's canonical preset is the toy-interface planner arm, priced as the toy is."""
 
 from pathlib import Path
 
 from hitl_pmp.cli import Cli
-from hitl_pmp.core.practice_costs import PracticeCosts
-from hitl_pmp.environments.racktoserving3d.skills import RackServing3DSkills as Skills
+from hitl_pmp.core.practice_costs import PracticeAccounting, PracticeCosts
+from hitl_pmp.environments.racktoserving3d.step_protocol import RackServingStepProtocol
+from hitl_pmp.environments.racktoserving3d.toy_environment import RackServingToyEnvironment
 from hitl_pmp.presets.preset import CliPreset
 
 ARGV = [
@@ -19,29 +20,37 @@ ARGV = [
 ]
 
 
-def test_the_rack_preset_parses_and_shares_tossing3d_canonicals_values():
+def test_the_rack_preset_parses_as_the_first_decision_checks_ours_arm():
     args = vars(Cli.parse_args(argv=ARGV))
     assert args["preset"] == "racktoserving3d-canonical"
     assert args["max_steps_per_interaction"] == 20
-    tossing = CliPreset.load(name="tossing3d-canonical").shared
     rack = CliPreset.load(name="racktoserving3d-canonical").shared
-    assert {k: v for k, v in rack.items() if k != "practice_cost_config"} == {
-        k: v for k, v in tossing.items() if k != "practice_cost_config"
-    }
+    assert rack["pomdp_solver"] == "determinized_astar"
+    assert rack["pomdp_determinized_variant"] == "curtis"
+    assert rack["pomdp_max_search_iterations"] == 1000
+    assert rack["pomdp_observation_probability_weight"] == 0.3
+    assert rack["pomdp_plan_beyond_session"] and rack["pomdp_learn_skill_costs"]
     for key, value in rack.items():
         if key != "practice_cost_config":
             assert args[key] == value or str(args[key]) == str(value), key
 
 
-def test_the_rack_cost_file_prices_every_rack_human_skill_like_tossing3d():
+def test_the_rack_cost_file_prices_only_the_two_resets_as_the_toy_does():
     args = Cli.parse_args(argv=ARGV)
     path = Path(args.practice_cost_config)
     assert path.is_absolute() and path.is_file()
     assert path.name == "racktoserving3d_tick_priced_costs.json"
     costs = PracticeCosts.load(path=path)
-    assert set(costs.human_skills) == {skill.name for skill in Skills.human_skills()}
-    for charge in costs.human_skills.values():
-        assert (charge.cost.value, charge.duration.value) == (5, 1)
-    assert costs.robot_step.value == 0.01 and costs.robot_step.function is None
-    assert costs.human_weight == 1
-    assert costs.objective_lambda == args.pomdp_linear_cost_lambda == 3e-4
+    assert set(costs.human_skills) == set(RackServingStepProtocol.human_skill_names())
+    assert (
+        costs.human_skills["human_reset"].cost.value,
+        costs.human_skills["human_reset"].duration.value,
+    ) == (0.3, 1)
+    assert costs.robot_step.value == 0.0
+    assert costs.robot_step.function == "hitl_pmp.environments.tworoutes.costs:robot_step"
+    assert (costs.human_weight, costs.objective_lambda) == (1, 1.0)
+    accounting = PracticeAccounting(costs=costs)
+    for resetting, price in ((True, 0.15), (False, 0.0)):
+        observation = {"resetting": resetting, "robot_reset_price": 0.15}
+        assert accounting.robot_charge(observation=observation).cost == price
+    assert RackServingToyEnvironment.model_fields["robot_reset_price"].default == 0.15
