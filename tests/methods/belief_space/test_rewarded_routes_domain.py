@@ -26,10 +26,11 @@ def _theta(*, a: float, b: float):
 def test_the_domain_is_read_off_the_providers_rewards_and_skills():
     domain = _domain(route_b_reward=5.0)
     assert dict(domain.route_rewards) == {"RouteA": 1.0, "RouteB": 5.0}
+    # Every skill is learned, the resets included: nothing is assumed to work.
     assert dict(domain.belief_sources) == dict.fromkeys(
-        ("RouteA", "RouteB", "human_reset_b"), PracticeExampleSource.OUTCOME
+        ("RouteA", "RouteB", "human_reset_b", "ResetA"), PracticeExampleSource.OUTCOME
     )
-    assert domain.deterministic_skills == frozenset({"ResetA"})
+    assert domain.deterministic_skills == frozenset()
     assert domain.human_skill_names == frozenset({"human_reset_b"})
     assert domain.deployment_horizon == 1
     assert (domain.initial_competence_alpha, domain.initial_competence_beta) == (1.0, 3.0)

@@ -29,7 +29,10 @@ def _method(*, decision_log: Path) -> Tossing3DPomdpMethod:
         pomdp_determinized_variant="curtis",
         pomdp_observation_probability_weight=0.01,
         pomdp_inference_engine="grid",
-        pomdp_domain=RewardedRoutesPracticeDomain.from_provider(provider=provider),
+        # About prices, not resets: Route A's reset is told it always works, as it does.
+        pomdp_domain=RewardedRoutesPracticeDomain.from_provider(provider=provider).model_copy(
+            update={"known_competence_curves": (("ResetA", 1.0, 0.0),)}
+        ),
         pomdp_skill_step_costs=PRICES,
         decision_log=decision_log,
     )
