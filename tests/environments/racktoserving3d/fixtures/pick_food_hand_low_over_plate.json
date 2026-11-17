@@ -1,0 +1,212 @@
+{
+ "source": "curtis1-eval0004/tasks/03 recording row 7146 (step 6887)",
+ "label": "PickFood(robot, cube_4, rack_0, box_0)",
+ "outcome": "No collision-free food grasp: No planned reach to the food pre-grasp (No collision-free arm path to the carry pose: 1, stance blocked: 1278, No collision-free base path to the food pre-grasp: 211, Food waypoint IK is too close to a joint limit: 6, hover: 298, straight joint segment fraction 0.145: S",
+ "steps": 0,
+ "config": {
+  "surface_kind": "wire",
+  "mode": "deployment",
+  "sweep_skill": true,
+  "start_layout": "scattered",
+  "cluster_center_y_sigma": null,
+  "gathered_fraction": 0.25,
+  "counter_height": 0.9,
+  "rack_height": 0.025,
+  "rack_mass": 0.5,
+  "tray_thickness": 0.012,
+  "gap": 0.01,
+  "human_interruption_cost": 5.0,
+  "rack_width": 0.375,
+  "rack_depth": 0.255,
+  "rack_center_x": 1.5,
+  "rack_center_y": 0.0,
+  "rack_wire_radius": 0.0015,
+  "rack_wire_spacing": 0.015,
+  "rack_leg_width": 0.012,
+  "rack_friction": [
+   0.6,
+   0.005,
+   0.003
+  ],
+  "support_contact_dimension": 6,
+  "concept_web_width": 0.008,
+  "concept_pitch": 0.025,
+  "concept_thickness": 0.003,
+  "serving_target": "corelle_plate",
+  "plate_radius": 0.13,
+  "tray_width": 0.375,
+  "tray_depth": 0.3,
+  "tray_mass": 1.0,
+  "platter_width": 0.45,
+  "platter_depth": 0.3,
+  "platter_base_thickness": 0.006,
+  "platter_lip_height": 0.012,
+  "platter_lip_wall": 0.008,
+  "platter_mass": 1.5,
+  "corelle_diameter": 0.26034999999999997,
+  "corelle_height": 0.019049999999999997,
+  "corelle_well_radius": 0.095,
+  "corelle_glass_thickness": 0.003,
+  "corelle_foot_height": 0.004,
+  "corelle_foot_radius": 0.08,
+  "corelle_foot_width": 0.006,
+  "corelle_mass": 0.4,
+  "corelle_rim_segments": 48,
+  "tray_friction": [
+   0.6,
+   0.005,
+   0.003
+  ],
+  "counter_x_min": 0.98,
+  "counter_x_max": 1.7,
+  "counter_width": 1.0,
+  "tool_rest_y": -0.34,
+  "counter_thickness": 0.04,
+  "counter_leg_width": 0.05,
+  "counter_friction": [
+   0.7,
+   0.005,
+   0.0001
+  ],
+  "dumpling_mass": 0.02,
+  "dumpling_friction": [
+   0.45,
+   0.005,
+   0.003
+  ],
+  "dumpling_contact_dimension": 6,
+  "dumpling_collision": "hull",
+  "food_grip_command": 1.0,
+  "food_grip_force": 20.0,
+  "gripper_contact_dimension": 4,
+  "scraper_width": 0.25,
+  "scraper_blade_height": 0.12,
+  "scraper_blade_thickness": 0.001,
+  "scraper_handle_width": 0.018,
+  "scraper_handle_height": 0.02,
+  "scraper_mass": 0.275,
+  "scraper_tilt_degrees": 45.0,
+  "scraper_friction": [
+   0.4,
+   0.005,
+   0.0001
+  ],
+  "scraper_blade_friction": [
+   0.25,
+   0.005,
+   0.0001
+  ]
+ },
+ "robot_joints": {
+  "robot_joint_x": 0.7082192032099205,
+  "robot_joint_y": 0.053674502046035,
+  "robot_joint_th": -0.2797615703445684,
+  "robot_joint_1": -2.465850225405153,
+  "robot_joint_2": 0.32942438660844914,
+  "robot_joint_3": 5.58967474301075,
+  "robot_joint_4": -1.5739167713423374,
+  "robot_joint_5": -0.1790205014850616,
+  "robot_joint_6": -1.0340034767182225,
+  "robot_joint_7": 1.521140050151805,
+  "robot_right_driver_joint": 0.002851656209267258,
+  "robot_right_coupler_joint": 0.00014616464177522414,
+  "robot_right_spring_link_joint": 0.0032670085540942276,
+  "robot_right_follower_joint": -0.003566254238920957,
+  "robot_left_driver_joint": 0.002851236802531837,
+  "robot_left_coupler_joint": 0.00015342208248911207,
+  "robot_left_spring_link_joint": 0.003281367143569517,
+  "robot_left_follower_joint": -0.003690463330446486
+ },
+ "grip": 0.0,
+ "free_bodies": {
+  "cube_0": [
+   1.1884689066036929,
+   -0.01826947864327967,
+   0.9202807661841299,
+   0.6570583714764919,
+   0.018872613335889892,
+   0.016433001694471278,
+   -0.7534242346738284
+  ],
+  "cube_1": [
+   1.2126904619191172,
+   0.037397122998176595,
+   0.9202808604104429,
+   0.6513077661712499,
+   -0.019142104932802426,
+   0.01643916440284395,
+   0.758394044951234
+  ],
+  "cube_2": [
+   1.2492939768832185,
+   -0.04039862541270718,
+   0.9201438179069564,
+   0.610838107494023,
+   0.14130501646775867,
+   0.10781727918936737,
+   -0.7715472332024588
+  ],
+  "cube_3": [
+   1.2700186767362454,
+   0.01908891773424824,
+   0.9203065957165271,
+   0.8014911626584965,
+   -0.00729661954225956,
+   0.009791836936594783,
+   0.5978819243404103
+  ],
+  "cube_4": [
+   1.5399419664401812,
+   -0.1278491606887471,
+   0.9381944055885126,
+   0.9532292310855695,
+   -0.0077486767965957454,
+   0.02449316786502614,
+   0.3011545711754231
+  ],
+  "wiper_0": [
+   1.0609985302472598,
+   -0.34,
+   0.9004991296841552,
+   0.499979067193721,
+   -0.5000209319299508,
+   -0.5000209319299509,
+   0.4999790671937211
+  ],
+  "rack_0": [
+   1.500061345081508,
+   4.131078632872745e-05,
+   0.8999432186883708,
+   0.9999999997075497,
+   4.22449704338888e-06,
+   2.930173607190088e-06,
+   2.3631975074218455e-05
+  ],
+  "box_0": [
+   1.2323249563332732,
+   -8.186802336253181e-09,
+   0.8999999588858979,
+   0.9999999999999998,
+   9.113287448284834e-09,
+   -2.2170137521894958e-10,
+   -1.5924020712892734e-08
+  ]
+ },
+ "previous": [
+  {
+   "label": "PlaceFoodOnTray(robot, cube_2, box_0)",
+   "steps": 773,
+   "outcome": ""
+  },
+  {
+   "label": "PickFood(robot, cube_3, rack_0, box_0)",
+   "steps": 781,
+   "outcome": ""
+  },
+  {
+   "label": "PlaceFoodOnTray(robot, cube_3, box_0)",
+   "steps": 517,
+   "outcome": "food_retreat: Cartesian fraction 0.029: straight joint segment fraction 0.000: Food motion would collide with ungrasped food"
+  }
+ ]
+}

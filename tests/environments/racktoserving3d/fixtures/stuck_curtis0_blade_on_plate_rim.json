@@ -1,0 +1,219 @@
+{
+ "source": "Della rack-full-c6ed1a6-determinized-curtis-20261105 seed 0 recording row 17134 (step 17013): first of 76 consecutive zero-step calls",
+ "label": "GatherAndSweep(robot, wiper_0, rack_0, box_0, cube_0, cube_1, cube_2, cube_3, cube_4), params=[0.05, 0.03, 0.1]",
+ "action": [
+  1.0,
+  0.0,
+  0.05390138822446226,
+  0.034378602500964084,
+  0.10454009583688345
+ ],
+ "outcome": "squeeze_plus_y_raise: Cartesian fraction 0.250: axis-clipped joint segment at 0.075 rad: Scraper blade or handle would collide with fixture geometry",
+ "steps": 0,
+ "config": {
+  "surface_kind": "wire",
+  "mode": "training",
+  "sweep_skill": true,
+  "start_layout": "scattered",
+  "cluster_center_y_sigma": null,
+  "gathered_fraction": 0.25,
+  "counter_height": 0.9,
+  "rack_height": 0.025,
+  "rack_mass": 0.5,
+  "tray_thickness": 0.012,
+  "gap": 0.01,
+  "human_interruption_cost": 5.0,
+  "rack_width": 0.375,
+  "rack_depth": 0.255,
+  "rack_center_x": 1.5,
+  "rack_center_y": 0.0,
+  "rack_wire_radius": 0.0015,
+  "rack_wire_spacing": 0.015,
+  "rack_leg_width": 0.012,
+  "rack_friction": [
+   0.6,
+   0.005,
+   0.003
+  ],
+  "support_contact_dimension": 6,
+  "concept_web_width": 0.008,
+  "concept_pitch": 0.025,
+  "concept_thickness": 0.003,
+  "serving_target": "corelle_plate",
+  "plate_radius": 0.13,
+  "tray_width": 0.375,
+  "tray_depth": 0.3,
+  "tray_mass": 1.0,
+  "platter_width": 0.45,
+  "platter_depth": 0.3,
+  "platter_base_thickness": 0.006,
+  "platter_lip_height": 0.012,
+  "platter_lip_wall": 0.008,
+  "platter_mass": 1.5,
+  "corelle_diameter": 0.26034999999999997,
+  "corelle_height": 0.019049999999999997,
+  "corelle_well_radius": 0.095,
+  "corelle_glass_thickness": 0.003,
+  "corelle_foot_height": 0.004,
+  "corelle_foot_radius": 0.08,
+  "corelle_foot_width": 0.006,
+  "corelle_mass": 0.4,
+  "corelle_rim_segments": 48,
+  "tray_friction": [
+   0.6,
+   0.005,
+   0.003
+  ],
+  "counter_x_min": 0.98,
+  "counter_x_max": 1.7,
+  "counter_width": 1.0,
+  "tool_rest_y": -0.34,
+  "counter_thickness": 0.04,
+  "counter_leg_width": 0.05,
+  "counter_friction": [
+   0.7,
+   0.005,
+   0.0001
+  ],
+  "dumpling_mass": 0.02,
+  "dumpling_friction": [
+   0.45,
+   0.005,
+   0.003
+  ],
+  "dumpling_contact_dimension": 6,
+  "dumpling_collision": "hull",
+  "food_grip_command": 1.0,
+  "food_grip_force": 20.0,
+  "gripper_contact_dimension": 4,
+  "scraper_width": 0.25,
+  "scraper_blade_height": 0.12,
+  "scraper_blade_thickness": 0.001,
+  "scraper_handle_width": 0.018,
+  "scraper_handle_height": 0.02,
+  "scraper_mass": 0.275,
+  "scraper_tilt_degrees": 45.0,
+  "scraper_friction": [
+   0.4,
+   0.005,
+   0.0001
+  ],
+  "scraper_blade_friction": [
+   0.25,
+   0.005,
+   0.0001
+  ]
+ },
+ "robot_joints": {
+  "robot_joint_x": 2.0499997187875785,
+  "robot_joint_y": -0.18613433755581704,
+  "robot_joint_th": 2.841592898789912,
+  "robot_joint_1": -3.121987619475881,
+  "robot_joint_2": -0.5056376581042421,
+  "robot_joint_3": 2.7932288194850785,
+  "robot_joint_4": 0.2421715138865209,
+  "robot_joint_5": 3.2654616307011053,
+  "robot_joint_6": -1.6448227606214452,
+  "robot_joint_7": 0.13904730285623926,
+  "robot_right_driver_joint": 0.6482427867960066,
+  "robot_right_coupler_joint": 0.0006428559459756794,
+  "robot_right_spring_link_joint": 0.6429704919727618,
+  "robot_right_follower_joint": -0.6429451110899311,
+  "robot_left_driver_joint": 0.6482810047798891,
+  "robot_left_coupler_joint": 0.0006062275921450567,
+  "robot_left_spring_link_joint": 0.6431001982317632,
+  "robot_left_follower_joint": -0.6418402797449937
+ },
+ "grip": 1.0,
+ "free_bodies": {
+  "cube_0": [
+   1.337374109754563,
+   -0.07502924195097181,
+   0.9106771823553366,
+   -0.6227411767838574,
+   0.2593021907401124,
+   -0.7015149715861788,
+   -0.22985331247488539
+  ],
+  "cube_1": [
+   1.5041348284289309,
+   0.10346734551286857,
+   0.9346461062836736,
+   0.36779643964535513,
+   -0.5444164399049037,
+   -0.6350017739592569,
+   -0.4063363951383954
+  ],
+  "cube_2": [
+   1.3685542947477214,
+   -0.028907587864059715,
+   0.9108247832944064,
+   -0.6818399255593632,
+   0.1025657059831175,
+   -0.7177038522721828,
+   -0.09734357864315386
+  ],
+  "cube_3": [
+   1.3431163692810966,
+   0.08175954086525787,
+   0.9109991301922211,
+   -0.7143854979011539,
+   0.009837926305412227,
+   -0.6996111091557473,
+   -0.010043482483400002
+  ],
+  "cube_4": [
+   1.3551985909056299,
+   0.03034987817624309,
+   0.9131666647202574,
+   -0.9969019299276775,
+   0.0019607526148380534,
+   -0.07510819443227029,
+   -0.023269221834423977
+  ],
+  "wiper_0": [
+   1.2116245069393883,
+   -0.038690418888166794,
+   0.9452275698126381,
+   0.6542872023441589,
+   0.2612634260650656,
+   0.2631826808062414,
+   0.6590785655542416
+  ],
+  "rack_0": [
+   1.4999781652810968,
+   -1.8461003711898876e-05,
+   0.8999432186193356,
+   0.999999999569518,
+   -3.384132029259902e-06,
+   3.1499093959734215e-07,
+   -2.9144669225076896e-05
+  ],
+  "box_0": [
+   1.1130895377970196,
+   -0.03613434193785887,
+   0.8999999667027507,
+   0.9542412628841523,
+   3.073320182220643e-16,
+   1.2223321064102012e-16,
+   0.29903781066824425
+  ]
+ },
+ "previous": [
+  {
+   "label": "Sweep(robot, wiper_0, rack_0, box_0, cube_0, cube_1, cube_2, cube_3, cube_4), params=[0.05]",
+   "steps": 3,
+   "outcome": "sweep_raise: Cartesian fraction 0.400: axis-clipped joint segment at 0.075 rad: Scraper blade or handle would collide with fixture geometry"
+  },
+  {
+   "label": "GatherAndSweep(robot, wiper_0, rack_0, box_0, cube_0, cube_1, cube_2, cube_3, cube_4), params=[0.11, 0.05, 0.1]",
+   "steps": 3,
+   "outcome": "squeeze_plus_y_raise: Cartesian fraction 0.400: axis-clipped joint segment at 0.075 rad: Scraper blade or handle would collide with fixture geometry"
+  },
+  {
+   "label": "Sweep(robot, wiper_0, rack_0, box_0, cube_0, cube_1, cube_2, cube_3, cube_4), params=[0.11]",
+   "steps": 3,
+   "outcome": "Scraper blade or handle would collide with fixture geometry"
+  }
+ ]
+}
