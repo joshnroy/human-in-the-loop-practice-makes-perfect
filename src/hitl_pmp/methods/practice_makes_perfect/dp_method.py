@@ -81,6 +81,7 @@ class DpMethod(EesMethod):
     _dp_costs: dict[GroundSkill, list[float]] = PrivateAttr(default_factory=dict)
     _dp_pending_costs: dict[GroundSkill, float] = PrivateAttr(default_factory=dict)
     _dp_active_target: GroundSkill | None = PrivateAttr(default=None)
+    _dp_setup_dispatch: bool = PrivateAttr(default=False)
     _dp_unassigned_cost: float = PrivateAttr(default=0.0)
     _dp_forced_reset_pending: bool = PrivateAttr(default=False)
     _dp_allocation: dict[GroundSkill, int] = PrivateAttr(default_factory=dict)
@@ -240,6 +241,30 @@ class DpMethod(EesMethod):
             ground: max(0, count - self._dp_executed_since_solve.get(ground, 0))
             for ground, count in self._dp_allocation.items()
         }
+
+    def record_action_cost(self, *, ground_skill: GroundSkill) -> None:
+        """A run of anything but the current practice target is setup on the way to it:
+        it neither trains that skill nor updates DP's model of it (the paper's learner
+        optimizes only the skill being practiced)."""
+        super().record_action_cost(ground_skill=ground_skill)
+        target = self._dp_active_target
+        self._dp_setup_dispatch = (
+            target is not None
+            and ground_skill != target
+            and ground_skill not in self.skill_provider.human_cube_bin_reset_skills()
+        )
+        self.skill_provider.set_execution_trains(trains=not self._dp_setup_dispatch)
+
+    def observe_outcome(
+        self, *, ground_skill: GroundSkill, success: bool, was_random_exploration: bool = False
+    ) -> None:
+        if self._dp_setup_dispatch:
+            return
+        super().observe_outcome(
+            ground_skill=ground_skill,
+            success=success,
+            was_random_exploration=was_random_exploration,
+        )
 
     def begin_practice_attempt(self, *, ground_skill: GroundSkill) -> None:
         self._dp_active_target = ground_skill
