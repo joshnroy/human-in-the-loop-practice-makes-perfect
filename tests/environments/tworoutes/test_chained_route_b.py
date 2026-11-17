@@ -254,3 +254,29 @@ def test_reward_greedy_deploys_the_whole_chain_when_it_is_worth_most(*, gather, 
         labels.append(action.label.split("(")[0])
         env.take_action(action=action.action)
     assert labels == deployed
+
+
+def test_only_the_robot_reset_is_priced():
+    from hitl_pmp.core.practice_costs import (
+        ChargeFunction,
+        HumanCharge,
+        PracticeAccounting,
+        PracticeCosts,
+    )
+
+    env = TwoRoutesEnvironment(
+        both_resets=True, chained_route_b=True, robot_reset_price=0.15, route_b_start=1.0
+    )
+    env.hard_reset()
+    accounting = PracticeAccounting(
+        costs=PracticeCosts(
+            robot_step=ChargeFunction(function="hitl_pmp.environments.tworoutes.costs:robot_step"),
+            human_skills={HUMAN_RESET_B: HumanCharge(cost=ChargeFunction(value=0.3))},
+        )
+    )
+    accounting.set_observation_provider(provider=env.cost_observation)
+    prices = []
+    for skill in (ROUTE_B, ROUTE_B2, "RobotReset"):
+        prices.append(accounting.robot_charge().cost)
+        env.take_action(action=env.action_for(skill=skill))
+    assert prices == [0.0, 0.0, 0.15]
