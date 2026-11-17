@@ -124,10 +124,12 @@ class ServingToyEpisode:
                 else provider.sample_params(ground_skill=ground, rng=rng)
             )
             began, first = time.monotonic(), backend.control_steps()
-            charged = []
-            backend.set_step_observers(
-                before=lambda: charged.append(env.cost_observation()["resetting"]), after=None
-            )
+            charged: list[bool] = []
+
+            def price(*, charged: list[bool] = charged) -> None:
+                charged.append(env.cost_observation()["resetting"])
+
+            backend.set_step_observers(before=price, after=None)
             try:
                 if name == HUMAN_RESET:
                     env.reset_movables(destination=HUMAN_RESET)
