@@ -1,9 +1,8 @@
 {
-  "robot_step": {"value": 0.01},
+  "robot_step": {"value": 0.0, "function": "hitl_pmp.environments.tworoutes.costs:robot_step"},
   "human_skills": {
-    "human_batch_return": {"cost": {"value": 5}, "duration": {"value": 1}},
-    "human_tool_recovery": {"cost": {"value": 5}, "duration": {"value": 1}}
+    "human_reset": {"cost": {"value": 0.3}, "duration": {"value": 1}}
   },
   "human_weight": 1,
-  "objective_lambda": 0.0003
+  "objective_lambda": 1.0
 }

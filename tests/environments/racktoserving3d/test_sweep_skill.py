@@ -1,9 +1,5 @@
-"""Standalone Sweep(d), on by default, and the lined-up start layouts.
-
-Sweep came from the Sweep vs GatherAndSweep tradeoff probe (2026-11-05) and became
-a default robot skill with the gathered-fraction start (Josh, 2026-11-05); the
-lined-up layouts stay opt-in.
-"""
+"""The sweep controller, Sweep(d), under the scene's internal driver, and the lined-up
+start layouts. sweep3 and sweep5 call it (`RackServingToyEnvironment`)."""
 
 import importlib.util
 import math
@@ -11,42 +7,32 @@ import math
 import numpy as np
 import pytest
 
-from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
 from hitl_pmp.environments.racktoserving3d.layout import RackLayout
 from hitl_pmp.environments.racktoserving3d.objects import RackServing3DObjects as Objects
 from hitl_pmp.environments.racktoserving3d.semantics import SupportRegion
 from hitl_pmp.environments.racktoserving3d.skill_provider import RackServingActions
-from hitl_pmp.environments.racktoserving3d.skills import SKILL_IDS, SWEEP_BOUNDS
-from hitl_pmp.environments.racktoserving3d.skills import RackServing3DSkills as Skills
+from hitl_pmp.environments.racktoserving3d.skills import (
+    GATHER_AND_SWEEP_BOUNDS,
+    SKILL_IDS,
+    SWEEP_BOUNDS,
+)
+from hitl_pmp.environments.racktoserving3d.toy_interface import SWEEP3, SWEEP5, TOY_SKILL_IDS
 
 RACK = SupportRegion(x_min=1.3725, x_max=1.6275, y_min=-0.1875, y_max=0.1875, top_z=0.925)
 SWEEP_OBJECTS = (Objects.robot, Objects.scraper, Objects.rack, Objects.tray, *Objects.food)
 
 
-def test_sweep_is_a_robot_skill_by_default_and_can_be_disabled():
-    assert RackServingConfig().sweep_skill is True
-    assert Skills.robot_skills()[-1] == Skills.SWEEP
-    assert Skills.SWEEP not in Skills.robot_skills(include_sweep=False)
+def test_sweep_takes_gather_and_sweeps_d_bounds():
+    assert SWEEP_BOUNDS == (GATHER_AND_SWEEP_BOUNDS[2],) == ((0.0, 0.12),)
 
 
-def test_sweep_has_gather_and_sweeps_d_bounds_and_effect_shape():
-    assert SWEEP_BOUNDS == (Skills.GATHER_AND_SWEEP_BOUNDS[2],) == ((0.0, 0.12),)
-    sweep, gather = Skills.SWEEP, Skills.GATHER_AND_SWEEP
-    assert sweep.param_dim == 1
-    assert sweep.parameters == gather.parameters
-    assert sweep.preconditions == gather.preconditions
-    assert sweep.add_effects == gather.add_effects
-    assert sweep.delete_effects == gather.delete_effects
-    assert sweep.conditional_add_effects == gather.conditional_add_effects
-
-
-def test_sweep_encodes_d_in_the_sweep_depth_slot():
-    ground = GroundSkill(skill=Skills.SWEEP, objects=SWEEP_OBJECTS)
-    action = RackServingActions.encode(ground_skill=ground, params=np.array([0.08]))
-    np.testing.assert_allclose(action, [SKILL_IDS["Sweep"], 0, 0, 0, 0.08])
+@pytest.mark.parametrize("name", [SWEEP3, SWEEP5])
+def test_both_sweeps_encode_d_in_the_sweep_depth_slot(*, name):
+    action = RackServingActions.encode(name=name, params=np.array([0.08]), bounds=SWEEP_BOUNDS)
+    np.testing.assert_allclose(action, [TOY_SKILL_IDS[name], 0, 0, 0, 0.08])
     with pytest.raises(ValueError, match="bounds"):
-        RackServingActions.encode(ground_skill=ground, params=np.array([0.13]))
+        RackServingActions.encode(name=name, params=np.array([0.13]), bounds=SWEEP_BOUNDS)
 
 
 def test_the_scattered_layout_stays_the_default():

@@ -1,4 +1,4 @@
-"""Run `--env racktoserving3d_toy`'s skills once per episode seed, as the toy's
+"""Run `--env racktoserving3d`'s skills once per episode seed, as the toy's
 interface offers them, and report what physics decided for each.
 
 An episode starts from the full rack and is one route, then the robot's reset:
@@ -9,7 +9,7 @@ each draws uniformly from the provider's own bounds, as an untrained sampler doe
 `--render-seeds` films those episodes in full motion in the lab2 room, one video per
 skill, one frame per `motion_stride()` control steps at `MOTION_FPS`::
 
-    scripts/with_env.sh python scripts/measure_serving_toy.py \\
+    scripts/with_env.sh python scripts/measure_serving.py \\
         --route five --params nominal --seeds 0 1 2 --render-seeds 0 --output-dir <dir>
 """
 
@@ -21,9 +21,12 @@ from pathlib import Path
 import numpy as np
 
 from hitl_pmp.core.renderer.renderer import VideoStream
+from hitl_pmp.environments.racktoserving3d.cli import RackServingCli
 from hitl_pmp.environments.racktoserving3d.recording import RackServingReplayRenderer
-from hitl_pmp.environments.racktoserving3d.skill_provider import RackServingOracle
-from hitl_pmp.environments.racktoserving3d.toy_cli import RackServingToyCli
+from hitl_pmp.environments.racktoserving3d.skill_provider import (
+    RackServingOracle,
+    RackServingSkillProvider,
+)
 from hitl_pmp.environments.racktoserving3d.toy_environment import RackServingToyEnvironment
 from hitl_pmp.environments.racktoserving3d.toy_interface import (
     GATHER,
@@ -32,7 +35,6 @@ from hitl_pmp.environments.racktoserving3d.toy_interface import (
     SWEEP3,
     SWEEP5,
 )
-from hitl_pmp.environments.racktoserving3d.toy_skill_provider import RackServingToySkillProvider
 
 # The physical flags of the 2026-11-14 Serving launch rows (`serving-3d-20261114`).
 LAUNCH_SCENE = [
@@ -60,8 +62,6 @@ LAUNCH_SCENE = [
     "1",
     "--gather-delta-high",
     "0.2",
-    "--robot-batch-return",
-    "1",
 ]
 ROUTES = {
     "three": (SWEEP3, ROBOT_RESET),
@@ -73,20 +73,20 @@ ROUTES = {
 class ServingToyEpisode:
     @staticmethod
     def nominal(*, name: str) -> np.ndarray:
-        s, delta, d = RackServingOracle.NOMINAL_GATHER_AND_SWEEP
-        return {GATHER: np.array([s, delta]), SWEEP3: np.array([d]), SWEEP5: np.array([d])}.get(
+        d = np.array([RackServingOracle.NOMINAL_D])
+        return {GATHER: np.array(RackServingOracle.NOMINAL_GATHER), SWEEP3: d, SWEEP5: d}.get(
             name, np.zeros(0)
         )
 
     @staticmethod
     def run(*, route: str, params: str, seed: int, videos: Path | None) -> dict[str, object]:
         parser = argparse.ArgumentParser()
-        RackServingToyCli.add_arguments(parser=parser)
+        RackServingCli.add_arguments(parser=parser)
         args = parser.parse_args(LAUNCH_SCENE)
         args.seed = seed
-        env = RackServingToyCli.build_problem(args=args, mode="training").env
+        env = RackServingCli.build_problem(args=args, mode="training").env
         assert isinstance(env, RackServingToyEnvironment)
-        provider = RackServingToySkillProvider(env=env)
+        provider = RackServingSkillProvider(env=env)
         env.reset_to_seed(seed=seed)
         backend = env.backend()
         rng = np.random.default_rng(seed)
