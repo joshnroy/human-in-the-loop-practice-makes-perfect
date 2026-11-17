@@ -164,6 +164,49 @@ class _DeploymentEpisode:
         self.required: frozenset[GroundAtom] = frozenset()
         self.forbidden: frozenset[GroundAtom] = frozenset()
 
+    def best_route(
+        self,
+        *,
+        atoms: frozenset[GroundAtom],
+        rewards: dict[str, float],
+        depth: int,
+        visited: frozenset[frozenset[GroundAtom]],
+    ) -> tuple[float, tuple[GroundSkill, ...]] | None:
+        """The (value, skills) of the best route from `atoms` to the goal in at most
+        `depth` skills; ties go to the route whose skill names sort first."""
+        if depth <= 0:
+            return None
+        found: list[tuple[float, tuple[GroundSkill, ...]]] = []
+        for ground in SkillGrounder.applicable_ground_skills(
+            skills=self.method.skills(), objects=self.method.objects(), true_atoms=atoms
+        ):
+            if not ground.preconditions <= atoms:
+                continue
+            after = DpTaskModel.successor(atoms=atoms, ground=ground)
+            if after in visited:
+                continue
+            competence = self.spec.recent_competence(method=self.method, ground=ground)
+            if self.task.goal.atoms <= after:
+                found.append((
+                    DpTaskModel.goal_reward(atoms=after, goal_rewards=rewards) * competence,
+                    (ground,),
+                ))
+                continue
+            rest = self.best_route(
+                atoms=after, rewards=rewards, depth=depth - 1, visited=visited | {after}
+            )
+            if rest is not None:
+                found.append((competence * rest[0], (ground, *rest[1])))
+        if not found:
+            return None
+        return min(
+            found,
+            key=lambda route: (
+                -route[0],
+                tuple((g.skill.name, tuple(o.name for o in g.objects)) for g in route[1]),
+            ),
+        )
+
     def stop(self, *, reason: str) -> LabeledAction:
         self.finished = True
         return LabeledAction(action=self.method.env.noop_action(), label=f"no-op ({reason})")
@@ -212,32 +255,17 @@ class _DeploymentEpisode:
         elif self.spec.kind == "reward_greedy":
             if self.remaining <= 0:
                 return self.stop(reason="deployment horizon")
-            # One attempt of the skill that reaches the goal with the largest reward
-            # times competence (`RewardedRoutesPracticeDomain`'s deployed policy).
+            # The route to the goal with the largest reward times the chance every skill
+            # on it succeeds (`RewardedRoutesPracticeDomain`'s deployed policy): one
+            # skill for a plain route, the whole chain for one whose skills must
+            # succeed in a row. Each step runs the best route's next skill.
             rewards = self.method.skill_provider.goal_rewards()
-            routes = [
-                (
-                    DpTaskModel.goal_reward(atoms=after, goal_rewards=rewards)
-                    * self.spec.recent_competence(method=self.method, ground=g),
-                    g,
-                )
-                for g in SkillGrounder.applicable_ground_skills(
-                    skills=self.method.skills(), objects=self.method.objects(), true_atoms=atoms
-                )
-                if g.preconditions <= atoms
-                and self.task.goal.atoms <= (after := DpTaskModel.successor(atoms=atoms, ground=g))
-            ]
-            if not routes:
-                return self.stop(reason="no route reaches the goal")
-            # Ties go to the first skill by name, so the choice never depends on order.
-            _, ground = min(
-                routes,
-                key=lambda route: (
-                    -route[0],
-                    route[1].skill.name,
-                    tuple(o.name for o in route[1].objects),
-                ),
+            best = self.best_route(
+                atoms=atoms, rewards=rewards, depth=self.remaining, visited=frozenset({atoms})
             )
+            if best is None:
+                return self.stop(reason="no route reaches the goal")
+            ground = best[1][0]
             self.remaining -= 1
             self.finished = self.remaining <= 0
         else:
