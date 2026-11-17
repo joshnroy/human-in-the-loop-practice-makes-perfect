@@ -62,6 +62,9 @@ class TwoRoutesSkillProvider(SkillProvider):
         del params, state
         return self.env.action_for(skill=ground_skill.skill.name)
 
+    def set_execution_trains(self, *, trains: bool) -> None:
+        self.env.execution_trains = trains
+
     def failure_kept_predicates(self) -> dict[str, frozenset[str]]:
         if self.chained_route_b:
             return {

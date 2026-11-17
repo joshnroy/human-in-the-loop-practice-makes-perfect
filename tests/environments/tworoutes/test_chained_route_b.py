@@ -152,6 +152,15 @@ def test_a_one_skill_route_has_no_prerequisites():
     assert RewardedRoutesPracticeDomain.from_provider(provider=plain).route_prerequisites == ()
 
 
+def test_a_setup_run_does_not_train_the_skill_it_runs():
+    env = _env(b=1.0, b2=1.0)
+    env.execution_trains = False
+    env.take_action(action=env.action_for(skill=ROUTE_B))
+    assert env.attempts[ROUTE_B] == 0 and env.execution_trains
+    env.take_action(action=env.action_for(skill=ROUTE_B2))
+    assert env.attempts == {ROUTE_A: 0, ROUTE_B: 0, ROUTE_B2: 1}
+
+
 def test_on_a_chain_an_outcome_is_weighed_at_the_competence_already_bought():
     from hitl_pmp.methods.belief_space.tossing3d_observation_model import skill_belief_model
     from hitl_pmp.methods.belief_space.types.weighted_hypothesis_belief import (
