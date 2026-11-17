@@ -4,6 +4,7 @@ state of its own that needs the human's reset."""
 
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
 from hitl_pmp.environments.tworoutes.environment import (
@@ -195,3 +196,61 @@ def test_on_a_chain_an_outcome_is_weighed_at_the_competence_already_bought():
     # A success after one try is only possible for the learner (0.5 vs 0.0).
     assert after.skill_beliefs[ROUTE_B].probabilities[0] == pytest.approx(1.0)
     assert after.pending_examples[ROUTE_B] == 1
+
+
+def test_the_evaluation_sees_the_chained_skills():
+    from hitl_pmp.environments.tworoutes.problem import TwoRoutesProblem
+    from hitl_pmp.environments.tworoutes.step_protocol import TwoRoutesStepProtocol
+    from hitl_pmp.environments.tworoutes.tasks import TwoRoutesTasks
+    from hitl_pmp.humans.oracle import UnconditionalHumanOracle
+
+    env = TwoRoutesEnvironment(both_resets=True, robot_reset=False, chained_route_b=True)
+    problem = TwoRoutesProblem(
+        env=env, tasks=TwoRoutesTasks(env=env), human=UnconditionalHumanOracle
+    )
+    provider = TwoRoutesStepProtocol.evaluation_skill_provider(problem=problem)
+    assert {s.name for s in provider.skills()} == {ROUTE_A, ROUTE_B, ROUTE_B2}
+
+
+@pytest.mark.parametrize(("gather", "deployed"), [(0.9, [ROUTE_B, ROUTE_B2]), (0.2, [ROUTE_A])])
+def test_reward_greedy_deploys_the_whole_chain_when_it_is_worth_most(*, gather, deployed):
+    from hitl_pmp.environments.tworoutes.tasks import TwoRoutesTasks
+    from hitl_pmp.methods.deployment import DeploymentPolicy, SnapshotDeployment
+
+    env = TwoRoutesEnvironment(
+        both_resets=True,
+        robot_reset=False,
+        chained_route_b=True,
+        route_a_reward=3,
+        route_b_reward=4,
+        route_a_start=0.5,
+        route_b_start=1.0,
+        route_b2_start=1.0,
+        route_a_rate=0.0,
+        route_b_rate=0.0,
+        route_b2_rate=0.0,
+        competence_cap=1.0,
+    )
+    env.hard_reset()
+    provider = TwoRoutesSkillProvider(
+        env=env, offer_human_reset=False, both_resets=True, robot_reset=False, chained_route_b=True
+    )
+    # Chain worth 4 * gather * 0.9 against sweep3's 3 * 0.5.
+    method = SnapshotDeployment(
+        env=env,
+        skill_provider=provider,
+        deployment_policy=DeploymentPolicy(
+            kind="reward_greedy",
+            horizon=2,
+            known_curves={ROUTE_A: (0.5, 0.0), ROUTE_B: (gather, 0.0), ROUTE_B2: (0.9, 0.0)},
+        ),
+    )
+    policy = method.get_task_policy(task=TwoRoutesTasks(env=env).sample_test_task())
+    labels = []
+    for _ in range(3):
+        action = policy(env.get_current_state())
+        if np.array_equal(action.action, env.noop_action()):
+            break
+        labels.append(action.label.split("(")[0])
+        env.take_action(action=action.action)
+    assert labels == deployed
