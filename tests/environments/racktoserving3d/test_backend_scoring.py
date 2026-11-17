@@ -8,6 +8,7 @@ import pytest
 from hitl_pmp.core.method.types import GroundSkill
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.racktoserving3d.backend import RackServingBackend
+from hitl_pmp.environments.racktoserving3d.config import RackServingConfig
 from hitl_pmp.environments.racktoserving3d.environment import RackServingEnvironment
 from hitl_pmp.environments.racktoserving3d.objects import RackServing3DObjects as Objects
 from hitl_pmp.environments.racktoserving3d.predicates import RackServing3DPredicates
@@ -49,7 +50,10 @@ def scoring_scene(*, monkeypatch):
     # A reset also lays the food out (`test_layout.py`); these tests score a fixed scene.
     monkeypatch.setattr(RackServingBackend, "food_placements", lambda self, *, names: {})
     monkeypatch.setattr(RackServingBackend, "_commit", lambda self, *, placements: None)
-    backend = RackServingBackend(ledger=RackServingLedger(elapsed_seconds=300))
+    backend = RackServingBackend(
+        config=RackServingConfig(food_handling="physical"),
+        ledger=RackServingLedger(elapsed_seconds=300),
+    )
     backend._tool_home = lambda: True
     return SimpleNamespace(
         backend=backend, data=data, supports=supports, held=held, addresses=addresses
@@ -149,7 +153,9 @@ def test_unsettled_delivery_does_not_satisfy_practice_effects(*, scoring_scene, 
     name = Objects.food[0].name
     if skill == "sweep":
         scene.held.add(Objects.scraper.name)
-        scene.supports[name] = {"rack_0"}
+        # A sweep needs every food on the rack; it then promises every food served.
+        for food in Objects.food:
+            scene.supports[food.name] = {"rack_0"}
         ground = GroundSkill(
             skill=Skills.GATHER_AND_SWEEP,
             objects=(Objects.robot, Objects.scraper, Objects.rack, Objects.tray, *Objects.food),
@@ -163,7 +169,8 @@ def test_unsettled_delivery_does_not_satisfy_practice_effects(*, scoring_scene, 
     assert ground.preconditions <= before
     promised = ground.expected_add_effects(before_atoms=before)
     scene.held.discard(name)
-    scene.supports[name] = {"box_0"}
+    for food in Objects.food:
+        scene.supports[food.name] = {"box_0"}
     scene.data.qvel[scene.addresses[0] + 3] = 0.6
     assert not promised <= _ground_atoms(atoms=scene.backend.abstract_atoms())
     assert not scene.backend.task_succeeded()
@@ -250,7 +257,7 @@ def test_supported_but_unsettled_food_is_pickable_without_delivery_credit(*, sco
 
 def test_step_evaluation_does_not_latch_rolling_or_unsupported_contact(*, scoring_scene):
     scene = scoring_scene
-    env = RackServingEnvironment()
+    env = RackServingEnvironment(config=RackServingConfig(food_handling="physical"))
     env._backend = scene.backend
     clock = EvaluationClock(
         budget=10,

@@ -6,6 +6,8 @@ manufacturer specifications. All other hardware dimensions, masses and friction
 below are modeling assumptions requiring physical calibration.
 The food is Pouring3D's rigid frozen potsticker (`potsticker.py`), whose extents
 are read from its shape, not configured; it is not a deformable or thermal model.
+``wire_solid`` renders the wire rack with one invisible solid support slab;
+``wire`` retains the original wire contact geometry for historical replays.
 ``concept`` denotes an invented perforated platform, not the specified wire rack.
 """
 
@@ -13,12 +15,18 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from .potsticker import RackPotsticker
+from .potsticker import CollisionModel, RackPotsticker
+from .skills import GATHER_AND_SWEEP_BOUNDS
 
 Positive = Annotated[float, Field(gt=0)]
 Nonnegative = Annotated[float, Field(ge=0)]
 Friction = tuple[Nonnegative, Nonnegative, Nonnegative]
 INCH = 0.0254
+# The control period every skill counts in (10 Hz), and the physics timesteps a
+# `physics_timestep` may take: KINDER's own 0.5 ms, up to 5 ms.
+CONTROL_PERIOD = 0.1
+MIN_PHYSICS_TIMESTEP = 0.0005
+MAX_PHYSICS_TIMESTEP = 0.005
 
 
 class RackServingConfig(BaseModel):
@@ -31,19 +39,133 @@ class RackServingConfig(BaseModel):
     flat round plate, the original rectangular slate, or a wide platter with a
     low continuous lip, selected by ``serving_target``; its position is derived
     to preserve ``gap`` in front of the rack's exit edge, centred on the rack's
-    centre line. Neither the rack nor the serving object is fixed or assumed
-    ungraspable.
+    centre line. Both the rack and the serving object are welded to the counter
+    (Josh, 2026-11-06): no push, sweep or dropped food can move either.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid", allow_inf_nan=False)
 
-    surface_kind: Literal["wire", "concept"] = "wire"
+    surface_kind: Literal["wire_solid", "wire", "concept"] = "wire_solid"
+    # "welded" (default since 2026-11-06, Josh): PickFood, PlaceFoodOnTray and
+    # ReturnFoodToRack drive and reach for real, but ignore food in planning, never
+    # touch food physically, and take or set down the dumpling by a grasp weld and a
+    # snapped, upright pose (`WeldedFood`). "physical" is the force-closed grasp.
+    food_handling: Literal["physical", "welded"] = "welded"
+    # grasp_weld includes home_weld and rigid transport after a verified grasp.
+    # Keep the historical physical mode as the default for matched comparisons.
+    scraper_attachment: Literal["physical", "home_weld", "grasp_weld"] = "physical"
     mode: Literal["training", "deployment"] = "training"
+    # Sweep(d), GatherAndSweep's final stroke alone, as a seventh robot skill
+    # (default since 2026-11-05, Josh). start_layout chooses an opt-in fixed layout
+    # (`RackLayout.lined_up`) for episode starts.
+    sweep_skill: bool = True
+    # The benchmark's bulk-transfer protocol (Josh, 2026-11-11): PlaceFoodOnTray is not
+    # offered, in practice or evaluation, and a held-out task ends with its first Sweep
+    # or GatherAndSweep, whatever it delivered. With placement on offer every method
+    # solved 36/36 tasks before and after practice by carrying the leftovers, so what
+    # the sweeps had learned could not show.
+    bulk_transfer_only: bool = False
+    # The two-route reward structure (Josh, 2026-11-12), opt-in: Sweep succeeds when at
+    # least three dumplings are on the plate and that outcome is worth 3; GatherAndSweep
+    # succeeds when all five are and is worth 5 (`two_route_goal_rewards`). The rewards
+    # are given to the methods, never estimated. Needs `bulk_transfer_only`, whose one
+    # bulk attempt per task is what makes each bulk skill a route.
+    two_route_rewards: bool = False
+    # What ServedThree (Sweep's outcome) and ServedFive (GatherAndSweep's) are worth
+    # under `two_route_rewards`; anything but the 3 and 5 defaults needs it. The
+    # planners and the deployed policies all read them through the provider.
+    served_three_reward: Positive = 3.0
+    served_five_reward: Positive = 5.0
+    # GatherAndSweep split in two (Josh, 2026-11-17), opt-in under `two_route_rewards`:
+    # Gather(s, delta) is its squeeze and gathers, and Sweep5(d) its final sweep, which
+    # needs the measured Gathered and is the five route. Sweep stays the three route.
+    split_gather_and_sweep: bool = False
+    # RobotBatchReturn (Josh, 2026-11-13), opt-in: one robot skill that puts every
+    # dumpling back on its start slot, the robot counterpart of the person's batch
+    # return, offered in training only (`robot_batch_return.py`). It needs a start
+    # layout with slots (not "scattered", whose return has no place to restore) and
+    # welded food, the only handling its slot placement is written for.
+    robot_batch_return: bool = False
+    # How a dumpling the robot's batch return sets down gets its slot's yaw. "snap":
+    # the set-down writes it, as welded handling writes the spot (an abstraction, made
+    # in `WeldedFood.set_down` alone). "hand": the hand turns the dumpling it holds to
+    # that yaw and nothing is written; measured on setup A (2026-11-13), see the
+    # skill's module docstring. Read only when `robot_batch_return` is on.
+    robot_batch_return_yaw: Literal["snap", "hand"] = "snap"
+    # "spaced" (Josh, 2026-11-12): the two-route start, `RackLayout.spaced`.
+    # "middle_three" (Josh, 2026-11-12): three `spaced_pitch` apart in the middle and
+    # one `side_offset` out on each side, `RackLayout.middle_three`.
+    # "custom" (2026-11-12 measurement study): `RackLayout.custom`, one explicit
+    # offset per dumpling in `custom_layout`.
+    start_layout: Literal[
+        "scattered", "pile2col", "stack", "row", "spaced", "middle_three", "custom"
+    ] = "scattered"
+    # start_layout custom only: per dumpling, in slot order, (metres along the row from
+    # the plate's centre line, metres up the rack away from the plate from the rack's x
+    # centre line, radians of yaw added to `spaced_long_axis`).
+    custom_layout: tuple[tuple[float, float, float], ...] = ()
+    spaced_pitch: Positive = Field(
+        default=0.04, description="start_layout spaced and middle_three only"
+    )
+    side_offset: Positive = Field(default=0.13, description="start_layout middle_three only")
+    spaced_long_axis: Literal["x", "y"] = "x"
+    # scattered only: the probability an episode start or a human batch return places
+    # the aligned "stack" pile instead of a scattered layout (0.25 since 2026-11-05,
+    # Josh). At 0 no coin is drawn, so the scattered draws are exactly the old ones.
+    gathered_fraction: float = Field(default=0.25, ge=0.0, le=1.0)
     counter_height: Positive = 0.90
     rack_height: Positive = Field(default=0.025, description="UNVERIFIED height assumption")
     rack_mass: Positive = Field(default=0.5, description="UNVERIFIED mass assumption")
     tray_thickness: Positive = 0.012
     gap: Nonnegative = 0.010
+    # Opt-in (2026-11-12 measurement study), Corelle plate only: how far the plate's
+    # outer near edge sits under the rack's front edge, replacing `gap`. Past the rim's
+    # 35 mm width the rack's front edge overhangs the scored well. 0 is off.
+    plate_tuck: Nonnegative = 0.0
+    # Opt-in (2026-11-12 measurement study): speed (m/s) of Sweep's stroke and of
+    # GatherAndSweep's final stroke. None is the constant `SWEEP_SPEED_M_S`.
+    final_sweep_speed: Positive | None = None
+    # Simulator speed (2026-11-14 speed study), each opt-in and off by default.
+    # physics_timestep: MuJoCo's timestep (s), replacing KINDER's 0.0005; one 0.1 s
+    # control period is then 0.1 / timestep physics steps, so it must tile the period.
+    # Changes the physics: what a skill delivers must be re-measured under it.
+    physics_timestep: Positive | None = None
+    # lean_control_step: advance a control period without KINDER's per-step
+    # observation, reward and object-centric state, which nothing here reads. The
+    # physics is the native step's exactly (`test_fast_physics.py`).
+    lean_control_step: bool = False
+    # base_step_limit: the most the base's x, y (m) and heading (rad) targets move per
+    # control step, replacing the shelf skills' 0.015 (0.15 m/s and 0.15 rad/s).
+    base_step_limit: Positive | None = None
+    # planned_joint_step: the largest joint change (rad) commanded per control step
+    # along a planned arm path, replacing `tool.PLANNED_JOINT_STEP` (0.05, 29 deg/s).
+    # At most the servo's own 0.1 per-step clip (`JointStep.LIMIT`), which keeps the
+    # executed path on the checked segment.
+    planned_joint_step: Annotated[float, Field(gt=0, le=0.1)] | None = None
+    # settle_until_still: each stroke's 40-step wait for the food after its lift ends
+    # once every dumpling has been still (the plate's settled speeds) for
+    # `RackControllers.STILL_STEPS` steps in a row, rather than always taking all 40.
+    settle_until_still: bool = False
+    # What the learned sampler's classifier reads for Sweep and GatherAndSweep
+    # (Josh, 2026-11-13), `RackServingSkillProvider.hand_selected_feature_transform`.
+    # "parameters" (the default): a bias and the skill's parameters.
+    # "parameters_and_layout": the bias, each dumpling's (x, y) from the rack's centre in
+    # slot order, then the parameters; on recorded setup-A tries, where the layout is a
+    # +-5 mm jitter, it lowered the classifier's held-out accuracy.
+    # "full_state": the method's own row, every object's whole state, which is what
+    # every run before 2026-11-13 used. That row carries the robot's base and the
+    # scraper's pose: practice consults the sampler with the robot at the rack and an
+    # evaluation task consults it right after PickScraper, so a sampler fitted on it
+    # was scored on states it had not seen.
+    sampler_features: Literal["parameters", "parameters_and_layout", "full_state"] = "parameters"
+    # Opt-in (2026-11-14 learning-curve study): GatherAndSweep's delta upper bound (m),
+    # replacing the declared 0.075, for the sampler, the action encoding and the
+    # controller alike. Measured on the fast two-route setup, delta of 0.1 and above
+    # leaves a side dumpling off the plate, so a wider range lowers the skill's
+    # uniform-draw competence without changing what success means. At most 0.2: on
+    # middle_three a stop of 0.2 still executes and one of 0.3 lies behind the gather
+    # start and is refused. Sweep's bounds and GatherAndSweep's s and d are unchanged.
+    gather_delta_high: Annotated[float, Field(gt=0.005, le=0.2)] | None = None
     human_interruption_cost: Positive = 5
 
     rack_width: Positive = 0.375
@@ -116,6 +238,13 @@ class RackServingConfig(BaseModel):
     dumpling_mass: Positive = 0.020
     dumpling_friction: Friction = (0.45, 0.005, 0.003)
     dumpling_contact_dimension: Literal[3, 4, 6] = 6
+    dumpling_collision: CollisionModel = Field(
+        default="hull",
+        description=(
+            "Potsticker contact geometry; every option keeps the full textured mesh as "
+            "visual geometry and the full model's mass and inertia (see potsticker.py)"
+        ),
+    )
     # Closing position commanded on food; fully closed, so the force limit below,
     # not the position, decides where the fingers stop.
     food_grip_command: float = Field(default=1.0, gt=0, le=1)
@@ -135,8 +264,27 @@ class RackServingConfig(BaseModel):
     scraper_handle_height: Positive = 0.020
     scraper_mass: Positive = 0.275
     scraper_tilt_degrees: float = Field(default=45, ge=-45, le=45)
+    # Opt-in (2026-11-12 prototype): how far below its plan the final sweep's blade may
+    # be commanded while food under it holds it up (`BladeHeightFeedback`). 0 is off.
+    # The command mirrors the lift (plan minus lift), so it is below the plate
+    # clearance only while the blade itself is held more than that far above its plan.
+    blade_height_feedback_limit: float = Field(default=0.0, ge=0.0, le=0.02)
     scraper_friction: Friction = (0.4, 0.005, 0.0001)
     scraper_blade_friction: Friction = (0.25, 0.005, 0.0001)
+
+    def two_route_goal_rewards(self) -> dict[str, float]:
+        """What each two-route outcome is worth, by the predicate that holds in it;
+        empty without `two_route_rewards`."""
+        if not self.two_route_rewards:
+            return {}
+        return {"ServedThree": self.served_three_reward, "ServedFive": self.served_five_reward}
+
+    def gather_and_sweep_bounds(self) -> tuple[tuple[float, float], ...]:
+        """GatherAndSweep's (s, delta, d) bounds, `gather_delta_high` applied."""
+        squeeze, (delta_low, delta_high), depth = GATHER_AND_SWEEP_BOUNDS
+        if self.gather_delta_high is not None:
+            delta_high = self.gather_delta_high
+        return (squeeze, (delta_low, delta_high), depth)
 
     @property
     def dumpling_depth(self) -> float:
@@ -207,7 +355,7 @@ class RackServingConfig(BaseModel):
 
     @property
     def tray_center_x(self) -> float:
-        return self.rack_front_x - self.gap - self.serving_depth / 2
+        return self.tray_back_x - self.serving_depth / 2
 
     @property
     def tray_center_y(self) -> float:
@@ -219,6 +367,8 @@ class RackServingConfig(BaseModel):
 
     @property
     def tray_back_x(self) -> float:
+        if self.plate_tuck > 0:
+            return self.rack_front_x + self.plate_tuck
         return self.rack_front_x - self.gap
 
     @property
@@ -248,6 +398,30 @@ class RackServingConfig(BaseModel):
     @model_validator(mode="after")
     def validate_layout(self) -> "RackServingConfig":
         """Reject unsupported layouts rather than silently clipping hardware."""
+        if (self.start_layout == "custom") != (len(self.custom_layout) == 5):
+            raise ValueError("start_layout custom needs exactly five custom_layout offsets")
+        if self.two_route_rewards and not (self.bulk_transfer_only and self.sweep_skill):
+            raise ValueError("two_route_rewards needs bulk_transfer_only and sweep_skill")
+        if self.split_gather_and_sweep and not self.two_route_rewards:
+            raise ValueError("split_gather_and_sweep needs two_route_rewards")
+        if not self.two_route_rewards and (
+            self.served_three_reward != 3.0 or self.served_five_reward != 5.0
+        ):
+            raise ValueError("served_three_reward and served_five_reward need two_route_rewards")
+        if self.robot_batch_return and (
+            self.start_layout == "scattered" or self.food_handling != "welded"
+        ):
+            raise ValueError("robot_batch_return needs a slotted start_layout and welded food")
+        if self.physics_timestep is not None:
+            ticks = CONTROL_PERIOD / self.physics_timestep
+            if (
+                not MIN_PHYSICS_TIMESTEP - 1e-12 <= self.physics_timestep <= MAX_PHYSICS_TIMESTEP
+                or abs(ticks - round(ticks)) > 1e-6
+            ):
+                raise ValueError(
+                    f"physics_timestep must tile the {CONTROL_PERIOD} s control period, "
+                    f"within [{MIN_PHYSICS_TIMESTEP}, {MAX_PHYSICS_TIMESTEP}] s"
+                )
         if self.rack_height < self.serving_thickness:
             raise ValueError("Rack top must be at or above tray top")
         if self.serving_target == "lipped_platter":
@@ -267,6 +441,15 @@ class RackServingConfig(BaseModel):
                 raise ValueError("Plate must nest foot ring inside well inside rim")
             if self.corelle_foot_height + self.corelle_glass_thickness >= self.corelle_height:
                 raise ValueError("Plate well must sit below the rim top")
+        if self.plate_tuck > 0:
+            if self.serving_target != "corelle_plate" or self.surface_kind == "concept":
+                raise ValueError("plate_tuck needs the Corelle plate under a wire rack")
+            if self.corelle_rim_top_z >= self.rack_top_z - 2 * self.rack_wire_radius:
+                raise ValueError("Plate rim must fit under the rack's deck to be tucked")
+            foot_dx = self.rack_front_x - self.tray_center_x
+            foot_dy = self.rack_width / 2 - self.rack_leg_width
+            if foot_dx**2 + foot_dy**2 <= (self.corelle_diameter / 2) ** 2:
+                raise ValueError("A tucked plate must stay clear of the rack's front feet")
         if not self.counter_x_min <= self.tray_front_x < self.rack_back_x <= self.counter_x_max:
             raise ValueError("Rack and tray must fit on the counter in x")
         if (

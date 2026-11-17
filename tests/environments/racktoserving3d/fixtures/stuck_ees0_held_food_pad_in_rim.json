@@ -1,0 +1,252 @@
+{
+ "source": "Della rack-80k-55d61a4 EES seed 0 recording row 5764 (step 5734): after PickFood(cube_0) failed, food held, right pad in the plate rim",
+ "label": "ReturnFoodToRack(robot, cube_0, rack_0)",
+ "action": [
+  5.0,
+  0.0,
+  0.0,
+  0.0,
+  0.0
+ ],
+ "outcome": "Scraper motion would collide, cost 0.00240: [('box_0_rim_4', 'robot_right_pad1', -0.00021), ('box_0_rim_4', 'robot_right_pad1', -0.00019), ('robot_right_pad1', 'cube_0_part_0', -0.00047), ('robot_right_pad2', 'cube_0_part_0', -0.00068), ('robot_left_pad1', 'cube_0_part_0', -0.00091)]",
+ "steps": 0,
+ "config": {
+  "surface_kind": "wire",
+  "mode": "training",
+  "sweep_skill": true,
+  "start_layout": "scattered",
+  "gathered_fraction": 0.25,
+  "counter_height": 0.9,
+  "rack_height": 0.025,
+  "rack_mass": 0.5,
+  "tray_thickness": 0.012,
+  "gap": 0.01,
+  "human_interruption_cost": 5.0,
+  "rack_width": 0.375,
+  "rack_depth": 0.255,
+  "rack_center_x": 1.5,
+  "rack_center_y": 0.0,
+  "rack_wire_radius": 0.0015,
+  "rack_wire_spacing": 0.015,
+  "rack_leg_width": 0.012,
+  "rack_friction": [
+   0.6,
+   0.005,
+   0.003
+  ],
+  "support_contact_dimension": 6,
+  "concept_web_width": 0.008,
+  "concept_pitch": 0.025,
+  "concept_thickness": 0.003,
+  "serving_target": "corelle_plate",
+  "plate_radius": 0.13,
+  "tray_width": 0.375,
+  "tray_depth": 0.3,
+  "tray_mass": 1.0,
+  "platter_width": 0.45,
+  "platter_depth": 0.3,
+  "platter_base_thickness": 0.006,
+  "platter_lip_height": 0.012,
+  "platter_lip_wall": 0.008,
+  "platter_mass": 1.5,
+  "corelle_diameter": 0.26034999999999997,
+  "corelle_height": 0.019049999999999997,
+  "corelle_well_radius": 0.095,
+  "corelle_glass_thickness": 0.003,
+  "corelle_foot_height": 0.004,
+  "corelle_foot_radius": 0.08,
+  "corelle_foot_width": 0.006,
+  "corelle_mass": 0.4,
+  "corelle_rim_segments": 48,
+  "tray_friction": [
+   0.6,
+   0.005,
+   0.003
+  ],
+  "counter_x_min": 0.98,
+  "counter_x_max": 1.7,
+  "counter_width": 1.0,
+  "tool_rest_y": -0.34,
+  "counter_thickness": 0.04,
+  "counter_leg_width": 0.05,
+  "counter_friction": [
+   0.7,
+   0.005,
+   0.0001
+  ],
+  "dumpling_mass": 0.02,
+  "dumpling_friction": [
+   0.45,
+   0.005,
+   0.003
+  ],
+  "dumpling_contact_dimension": 6,
+  "dumpling_collision": "hull",
+  "food_grip_command": 1.0,
+  "food_grip_force": 20.0,
+  "gripper_contact_dimension": 4,
+  "scraper_width": 0.25,
+  "scraper_blade_height": 0.12,
+  "scraper_blade_thickness": 0.001,
+  "scraper_handle_width": 0.018,
+  "scraper_handle_height": 0.02,
+  "scraper_mass": 0.275,
+  "scraper_tilt_degrees": 45.0,
+  "scraper_friction": [
+   0.4,
+   0.005,
+   0.0001
+  ],
+  "scraper_blade_friction": [
+   0.25,
+   0.005,
+   0.0001
+  ],
+  "scene_bg": false,
+  "canonical_seed": 0,
+  "skill_step_limit": 12000,
+  "test_env_seed_offset": 10000,
+  "motion": {
+   "fps": 10,
+   "stride": 1,
+   "control_frequency": 10,
+   "robot_joints": [
+    "robot_joint_x",
+    "robot_joint_y",
+    "robot_joint_th",
+    "robot_joint_1",
+    "robot_joint_2",
+    "robot_joint_3",
+    "robot_joint_4",
+    "robot_joint_5",
+    "robot_joint_6",
+    "robot_joint_7",
+    "robot_right_driver_joint",
+    "robot_right_coupler_joint",
+    "robot_right_spring_link_joint",
+    "robot_right_follower_joint",
+    "robot_left_driver_joint",
+    "robot_left_coupler_joint",
+    "robot_left_spring_link_joint",
+    "robot_left_follower_joint"
+   ]
+  }
+ },
+ "robot_joints": {
+  "robot_joint_x": 0.7380103542397239,
+  "robot_joint_y": 0.28284854772896584,
+  "robot_joint_th": -0.7535219162686966,
+  "robot_joint_1": -0.5288324482128115,
+  "robot_joint_2": 0.11491868618964365,
+  "robot_joint_3": 2.8614232375025788,
+  "robot_joint_4": -1.292342007387324,
+  "robot_joint_5": 0.5918335032053872,
+  "robot_joint_6": -1.1660965191357016,
+  "robot_joint_7": 3.863071148163894,
+  "robot_right_driver_joint": 0.7312967092091189,
+  "robot_right_coupler_joint": -0.2726470325105376,
+  "robot_right_spring_link_joint": 0.5432393440916209,
+  "robot_right_follower_joint": -0.17929852558576764,
+  "robot_left_driver_joint": 0.7314259124589942,
+  "robot_left_coupler_joint": -0.4413238976501501,
+  "robot_left_spring_link_joint": 0.39545125517306007,
+  "robot_left_follower_joint": 0.1780640873234199
+ },
+ "grip": 1.0,
+ "free_bodies": {
+  "cube_0": [
+   1.3383586688681484,
+   0.07085822817539032,
+   0.9554208516113805,
+   -0.411456456022226,
+   0.25904402913943647,
+   -0.3506143749861327,
+   0.8004182255658093
+  ],
+  "cube_1": [
+   1.3293804195736285,
+   -0.020668883180657894,
+   0.91933684650367,
+   -0.3065195974039261,
+   0.14033936173277106,
+   0.9403706011897927,
+   0.045318124119618816
+  ],
+  "cube_2": [
+   1.3361447418762593,
+   -0.07368165383009616,
+   0.9308476558221682,
+   -0.7900642054019459,
+   0.37914140478980296,
+   -0.38320737724695575,
+   -0.2918945914882907
+  ],
+  "cube_3": [
+   1.2229239969312993,
+   -0.002627568209475959,
+   0.9177885891621227,
+   -0.6333455761562093,
+   0.12420570779281108,
+   -0.7623679821380945,
+   -0.04734324794239729
+  ],
+  "cube_4": [
+   1.2443224159936446,
+   0.009213068031309996,
+   0.9234833893155302,
+   0.531095298024848,
+   0.7071078930779098,
+   -0.2779604203808722,
+   0.3750656164786447
+  ],
+  "wiper_0": [
+   1.0609743929313766,
+   -0.340048084136059,
+   0.9004995659825825,
+   0.49994651202364965,
+   -0.49996746472552417,
+   -0.5000534840571103,
+   0.5000325313553734
+  ],
+  "rack_0": [
+   1.5,
+   0.0,
+   0.8999999761581421,
+   1.0,
+   0.0,
+   0.0,
+   0.0
+  ],
+  "box_0": [
+   1.2323249578475952,
+   0.0,
+   0.8999999761581421,
+   1.0,
+   0.0,
+   0.0,
+   0.0
+  ]
+ },
+ "previous": [
+  {
+   "label": "PickScraper(robot, wiper_0)",
+   "steps": 431,
+   "outcome": ""
+  },
+  {
+   "label": "GatherAndSweep(robot, wiper_0, rack_0, box_0, cube_0, cube_1, cube_2, cube_3, cube_4), params=[0.1, 0.03, 0.11]",
+   "steps": 3943,
+   "outcome": ""
+  },
+  {
+   "label": "ReturnScraper(robot, wiper_0)",
+   "steps": 903,
+   "outcome": ""
+  },
+  {
+   "label": "PickFood(robot, cube_0, rack_0, box_0)",
+   "steps": 457,
+   "outcome": "Scraper motion would collide, cost 0.00292: [('box_0_rim_4', 'robot_right_pad1', -0.00047), ('box_0_rim_4', 'robot_right_pad1', -0.00044), ('robot_right_pad1', 'cube_0_part_0', -0.00072), ('robot_right_pad2', 'cube_0_part_0', -0.00091), ('robot_left_pad1', 'cube_0_part_0', -0.00102)]"
+  }
+ ]
+}

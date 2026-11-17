@@ -16,6 +16,7 @@ from typing import ClassVar
 
 import numpy as np
 
+from .potsticker import RackPotsticker
 from .semantics import ServingRegion
 
 
@@ -25,6 +26,9 @@ class RackLayout:
     MIN_SEPARATION: ClassVar[float] = 0.061
     MAX_YAW: ClassVar[float] = math.pi / 4
     MAX_DRAWS: ClassVar[int] = 10_000
+    LINED_UP_FRONT_GAP: ClassVar[float] = 0.010
+    LINED_UP_JITTER: ClassVar[float] = 0.005
+    LINED_UP_YAW_JITTER: ClassVar[float] = 0.15
 
     @staticmethod
     def sample(
@@ -46,6 +50,132 @@ class RackLayout:
             if RackLayout._clear(points=points, others=fixed):
                 return tuple((x, y, yaw) for (x, y), yaw in zip(points, yaws.tolist(), strict=True))
         raise RuntimeError(f"no rack layout of {count} dumplings within {RackLayout.MAX_DRAWS}")
+
+    @staticmethod
+    def lined_up(
+        *, rng: np.random.Generator, rack: ServingRegion, center_y: float, kind: str
+    ) -> tuple[tuple[float, float, float], ...]:
+        """Five (x, y, yaw) centres packed against the rack's front edge on y = center_y.
+
+        Opt-in starts for the Sweep vs GatherAndSweep probe (2026-11-05), each a guess
+        at GatherAndSweep's post-gather state, not a measured one:
+        ``pile2col``: long axis along x, columns at center_y +- 15 mm (3 + 2), 60 mm
+        x pitch; ``stack``: long axis along y, one column, 32 mm x pitch; ``row``: long
+        axis along x, one row across y, 32 mm pitch. The nearest pieces' front ends
+        sit ``LINED_UP_FRONT_GAP`` behind the front edge. Each centre is jittered
+        +-``LINED_UP_JITTER`` and each yaw +-``LINED_UP_YAW_JITTER``; the caller
+        rejects colliding draws.
+        """
+        depth, width, _ = RackPotsticker.extents()
+        along_x = math.pi / 2
+        if kind == "pile2col":
+            first = rack.x_min + RackLayout.LINED_UP_FRONT_GAP + width / 2
+            nominal = [(first + 0.060 * i, center_y + 0.015, along_x) for i in range(3)]
+            nominal += [(first + 0.060 * i, center_y - 0.015, along_x) for i in range(2)]
+        elif kind == "stack":
+            first = rack.x_min + RackLayout.LINED_UP_FRONT_GAP + depth / 2
+            nominal = [(first + 0.032 * i, center_y, 0.0) for i in range(5)]
+        elif kind == "row":
+            x = rack.x_min + RackLayout.LINED_UP_FRONT_GAP + width / 2
+            nominal = [(x, center_y + 0.032 * (i - 2), along_x) for i in range(5)]
+        else:
+            raise ValueError(f"unknown lined-up layout {kind!r}")
+        jitter = rng.uniform(-1, 1, size=(5, 3)) * [
+            RackLayout.LINED_UP_JITTER,
+            RackLayout.LINED_UP_JITTER,
+            RackLayout.LINED_UP_YAW_JITTER,
+        ]
+        return tuple(
+            (x + dx, y + dy, yaw + dyaw)
+            for (x, y, yaw), (dx, dy, dyaw) in zip(nominal, jitter.tolist(), strict=True)
+        )
+
+    @staticmethod
+    def spaced(
+        *,
+        rng: np.random.Generator,
+        rack: ServingRegion,
+        center_y: float,
+        pitch: float,
+        long_axis: str,
+    ) -> tuple[tuple[float, float, float], ...]:
+        """Five (x, y, yaw) centres in one evenly spaced row across the rack.
+
+        The opt-in two-route start (Josh, 2026-11-12): a row on the rack's x centre
+        line, centred on y = center_y (the plate's centre line), `pitch` apart, each
+        piece's long axis along world `long_axis`; jittered as `lined_up` is. How
+        many a straight Sweep delivers from it is a measured fact, not a property of
+        this function.
+        """
+        x = (rack.x_min + rack.x_max) / 2
+        yaw = math.pi / 2 if long_axis == "x" else 0.0
+        jitter = rng.uniform(-1, 1, size=(5, 3)) * [
+            RackLayout.LINED_UP_JITTER,
+            RackLayout.LINED_UP_JITTER,
+            RackLayout.LINED_UP_YAW_JITTER,
+        ]
+        return tuple(
+            (x + dx, center_y + pitch * (index - 2) + dy, yaw + dyaw)
+            for index, (dx, dy, dyaw) in enumerate(jitter.tolist())
+        )
+
+    @staticmethod
+    def middle_three(
+        *,
+        rng: np.random.Generator,
+        rack: ServingRegion,
+        center_y: float,
+        pitch: float,
+        side_offset: float,
+        long_axis: str,
+    ) -> tuple[tuple[float, float, float], ...]:
+        """Three in the middle and one out on each side (Josh, 2026-11-12).
+
+        One row on the rack's x centre line: three `pitch` apart, centred on
+        y = center_y (the plate's centre line), and one more at `side_offset` on each
+        side of it; jittered as `lined_up` is, ordered by y. The middle three are the
+        ones a straight Sweep is meant to land; whether it does, and whether a
+        GatherAndSweep brings the outer two in, are measured facts.
+        """
+        x = (rack.x_min + rack.x_max) / 2
+        yaw = math.pi / 2 if long_axis == "x" else 0.0
+        offsets = (-side_offset, -pitch, 0.0, pitch, side_offset)
+        jitter = rng.uniform(-1, 1, size=(5, 3)) * [
+            RackLayout.LINED_UP_JITTER,
+            RackLayout.LINED_UP_JITTER,
+            RackLayout.LINED_UP_YAW_JITTER,
+        ]
+        return tuple(
+            (x + dx, center_y + offset + dy, yaw + dyaw)
+            for offset, (dx, dy, dyaw) in zip(offsets, jitter.tolist(), strict=True)
+        )
+
+    @staticmethod
+    def custom(
+        *,
+        rng: np.random.Generator,
+        rack: ServingRegion,
+        center_y: float,
+        offsets: Sequence[Sequence[float]],
+        long_axis: str,
+    ) -> tuple[tuple[float, float, float], ...]:
+        """Five (x, y, yaw) centres at explicit offsets (2026-11-12 measurement study).
+
+        Each offset is (along the row from y = center_y, up the rack away from the
+        plate from the rack's x centre line, yaw added to `long_axis`'s); jittered
+        as `lined_up` is, in the order given. The caller rejects colliding draws.
+        """
+        x = (rack.x_min + rack.x_max) / 2
+        yaw = math.pi / 2 if long_axis == "x" else 0.0
+        jitter = rng.uniform(-1, 1, size=(5, 3)) * [
+            RackLayout.LINED_UP_JITTER,
+            RackLayout.LINED_UP_JITTER,
+            RackLayout.LINED_UP_YAW_JITTER,
+        ]
+        return tuple(
+            (x + back + dx, center_y + along + dy, yaw + turn + dyaw)
+            for (along, back, turn), (dx, dy, dyaw) in zip(offsets, jitter.tolist(), strict=True)
+        )
 
     @staticmethod
     def _clear(*, points: list[tuple[float, float]], others: list[tuple[float, float]]) -> bool:
