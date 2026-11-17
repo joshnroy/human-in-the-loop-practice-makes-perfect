@@ -2,6 +2,7 @@
 
 import math
 import time
+from collections.abc import Callable
 
 import numpy as np
 
@@ -61,8 +62,16 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
         model: BeliefSpaceModel[EnvironmentStateT, BeliefStateT, ThetaT, ActionT],
         num_samples: int = NUM_SAMPLES,
         trace: SearchTrace | None = None,
+        remaining_episodes: float | None = None,
+        action_episodes: Callable[[ActionT], float] | None = None,
     ) -> tuple[float, ActionT | StopAction]:
-        """Return the exact finite-horizon value and first action."""
+        """Return the exact finite-horizon value and first action. With
+        ``remaining_episodes``, an action whose tries (``action_episodes``) would
+        overspend the practice-episode budget is not available, as in the determinized
+        search: the horizon alone cannot cap tries when episodes differ in length."""
+        if remaining_episodes is not None and action_episodes is None:
+            raise ValueError("remaining_episodes needs action_episodes, the tries per action")
+        self.action_episodes = action_episodes
         assert num_samples >= 1, "num_samples must be positive"
         assert horizon >= 0, f"horizon must be non-negative, got {horizon}"
         assert math.isfinite(summed_cost) and summed_cost >= 0, (
@@ -87,6 +96,7 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
             summed_cost=summed_cost,
             belief_state=belief_state,
             horizon=horizon,
+            episodes_left=remaining_episodes,
         )
         if trace is not None:
             trace.record(
@@ -123,14 +133,17 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
         summed_cost: float,
         belief_state: BeliefStateT,
         horizon: int,
+        episodes_left: float | None = None,
     ) -> tuple[float, ActionT | StopAction]:
         self.cache_requests += 1
-        key = self.model.search_cache_key(
+        key: object = self.model.search_cache_key(
             environment_state=environment_state,
             summed_cost=summed_cost,
             belief_state=belief_state,
             horizon=horizon,
         )
+        if episodes_left is not None:
+            key = (key, episodes_left)
         cached = self.memo.get(key)
         if cached is not None:
             self.cache_hits += 1
@@ -140,6 +153,7 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
             summed_cost=summed_cost,
             belief_state=belief_state,
             horizon=horizon,
+            episodes_left=episodes_left,
         )
         self.memo[key] = result
         return result
@@ -151,6 +165,7 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
         summed_cost: float,
         belief_state: BeliefStateT,
         horizon: int,
+        episodes_left: float | None = None,
     ) -> tuple[float, ActionT | StopAction]:
         node = self.next_node
         self.next_node += 1
@@ -220,6 +235,12 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
 
         self.expanded_nodes += 1
         for practice_action in self.model.get_valid_actions(environment_state=environment_state):
+            next_episodes_left = episodes_left
+            if episodes_left is not None:
+                assert self.action_episodes is not None
+                next_episodes_left = episodes_left - self.action_episodes(practice_action)
+                if next_episodes_left < 0:
+                    continue
             self.action_transitions_evaluated += 1
             value_of_state = 0.0
             total_probability = 0.0
@@ -252,6 +273,7 @@ class ExpectimaxPlanner(BeliefSpacePlanner[EnvironmentStateT, BeliefStateT, Thet
                     summed_cost=summed_cost + sampled_cost,
                     belief_state=next_belief_state,
                     horizon=horizon - 1,
+                    episodes_left=next_episodes_left,
                 )
                 assert math.isfinite(probability) and probability > 0.0, (
                     f"chance probability must be finite and positive, got {probability}"
