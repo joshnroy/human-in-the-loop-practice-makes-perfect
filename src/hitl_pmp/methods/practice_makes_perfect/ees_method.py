@@ -475,6 +475,11 @@ class EesMethod(Method):
         execute is not something EES estimates (Josh, 2026-11-08)."""
         return -math.log(max(self.human_skill_competence(ground_skill=ground_skill), 1e-12))
 
+    def learns_from_human_outcome(self, *, ground_skill: GroundSkill) -> bool:
+        """Whether a human skill's outcome updates its competence estimate: always, here."""
+        del ground_skill
+        return True
+
     def record_human_skill_dispatch(
         self, *, ground_skill: GroundSkill, before_atoms: frozenset[GroundAtom]
     ) -> None:
@@ -859,7 +864,8 @@ class EesMethod(Method):
             success=success,
             consultation=SamplerConsultation.NO_SAMPLER,
         )
-        self.human_competence_model(ground_skill=human).observe(success=success)
+        if self.learns_from_human_outcome(ground_skill=human):
+            self.human_competence_model(ground_skill=human).observe(success=success)
         self.observe_symbolic_transition(
             ground_skill=human,
             before_atoms=before,

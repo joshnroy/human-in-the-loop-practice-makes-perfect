@@ -33,6 +33,16 @@ class TwoRoutesCli:
                 "Cost of one robot-reset step under a cost file that uses "
                 "hitl_pmp.environments.tworoutes.costs:robot_step",
             ),
+            (
+                "--robot-reset-competence",
+                "robot_reset_competence",
+                "How often the robot's reset works",
+            ),
+            (
+                "--human-reset-competence",
+                "human_reset_competence",
+                "How often the human's reset works",
+            ),
             ("--competence-cap", "competence_cap", "The most either route's probability reaches"),
             ("--route-a-reward", "route_a_reward", "What finishing by Route A is worth"),
             ("--route-b-reward", "route_b_reward", "What finishing by Route B is worth"),
@@ -83,6 +93,8 @@ class TwoRoutesCli:
             route_b2_start=args.route_b2_start,
             route_b2_rate=args.route_b2_rate,
             robot_reset_price=args.robot_reset_price,
+            robot_reset_competence=args.robot_reset_competence,
+            human_reset_competence=args.human_reset_competence,
             route_a_reward=args.route_a_reward,
             route_b_reward=args.route_b_reward,
             seed=args.seed + (0 if practice else args.test_env_seed_offset),
