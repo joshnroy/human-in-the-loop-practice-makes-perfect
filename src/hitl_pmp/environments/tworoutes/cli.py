@@ -27,6 +27,12 @@ class TwoRoutesCli:
             ("--route-b-rate", "route_b_rate", "Route B's gain per practice attempt"),
             ("--route-b2-start", "route_b2_start", "Route B2's success probability untrained"),
             ("--route-b2-rate", "route_b2_rate", "Route B2's gain per practice attempt"),
+            (
+                "--robot-reset-price",
+                "robot_reset_price",
+                "Cost of one robot-reset step under a cost file that uses "
+                "hitl_pmp.environments.tworoutes.costs:robot_step",
+            ),
             ("--competence-cap", "competence_cap", "The most either route's probability reaches"),
             ("--route-a-reward", "route_a_reward", "What finishing by Route A is worth"),
             ("--route-b-reward", "route_b_reward", "What finishing by Route B is worth"),
@@ -76,6 +82,7 @@ class TwoRoutesCli:
             chained_route_b=args.chained_route_b,
             route_b2_start=args.route_b2_start,
             route_b2_rate=args.route_b2_rate,
+            robot_reset_price=args.robot_reset_price,
             route_a_reward=args.route_a_reward,
             route_b_reward=args.route_b_reward,
             seed=args.seed + (0 if practice else args.test_env_seed_offset),
