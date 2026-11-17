@@ -255,6 +255,12 @@ class DpMethod(EesMethod):
         )
         self.skill_provider.set_execution_trains(trains=not self._dp_setup_dispatch)
 
+    def learns_from_human_outcome(self, *, ground_skill: GroundSkill) -> bool:
+        """A human reset on the way to the practice target is setup too: like a robot
+        setup run, its outcome leaves DP's estimate of it where it was."""
+        target = self._dp_active_target
+        return target is None or ground_skill == target
+
     def observe_outcome(
         self, *, ground_skill: GroundSkill, success: bool, was_random_exploration: bool = False
     ) -> None:
