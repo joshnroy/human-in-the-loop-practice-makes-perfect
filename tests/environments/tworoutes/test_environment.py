@@ -46,6 +46,8 @@ def test_hard_reset_leaves_the_robot_ready_and_nothing_else() -> None:
         "after_a": False,
         "after_b": False,
         "after": False,
+        "mid_b": False,
+        "after_b2": False,
     }
 
 

@@ -102,9 +102,14 @@ class SkillBeliefModel:
         skill: Skill | None = None,
         example_source: PracticeExampleSource | None = None,
         belief_name: str | None = None,
+        advances_every_try: bool = False,
     ) -> None:
         self.skill = skill
         self.example_source = example_source
+        # `PracticeDomain.competence_advances_every_try`: before an outcome is weighed,
+        # the tries already made are applied, so each hypothesis is judged at the
+        # competence it has now, not the one it had when the cycle began.
+        self.advances_every_try = advances_every_try
         # The belief this skill updates, when it shares one under another name.
         self.belief_name = belief_name or (None if skill is None else skill.name)
 
@@ -131,6 +136,12 @@ class SkillBeliefModel:
             condition_competence = not was_random_exploration
         skill_beliefs = dict(state.skill_beliefs)
         belief = skill_beliefs[skill_name]
+        pending_examples = dict(state.pending_examples)
+        if self.advances_every_try and pending_examples.get(skill_name, 0):
+            belief = refit_skill_belief(
+                belief=belief, training_examples=pending_examples[skill_name]
+            )
+            pending_examples[skill_name] = 0
         if observed_cost is not None and isinstance(
             belief, (ParticleFilterBelief, BayesianSkillBelief)
         ):
@@ -142,7 +153,6 @@ class SkillBeliefModel:
         elif condition_competence:
             belief = condition_skill_belief(belief=belief, success=success)
         skill_beliefs[skill_name] = belief
-        pending_examples = dict(state.pending_examples)
         if self.example_source == PracticeExampleSource.OUTCOME:
             # The notebook's m: every attempt is a data point, success or failure.
             pending_examples[skill_name] = pending_examples.get(skill_name, 0) + 1
@@ -182,6 +192,7 @@ def skill_belief_model(
         skill=ground_skill.skill,
         example_source=domain.example_source(belief_name=belief_name),
         belief_name=belief_name,
+        advances_every_try=domain.competence_advances_every_try,
     )
 
 

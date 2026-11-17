@@ -13,7 +13,7 @@ def test_each_predicate_reads_its_own_state_flag() -> None:
     assert holding == {"Done", "ViaB", "AfterB"}
 
 
-def test_the_predicates_are_the_seven_flags_in_order() -> None:
+def test_the_predicates_are_the_nine_flags_in_order() -> None:
     assert [p.name for p in TwoRoutesPredicates.all()] == [
         "Ready",
         "Done",
@@ -22,5 +22,7 @@ def test_the_predicates_are_the_seven_flags_in_order() -> None:
         "AfterA",
         "AfterB",
         "After",
+        "MidB",
+        "AfterB2",
     ]
     assert TwoRoutesPredicates.get(name="Ready").types == (TwoRoutesEnvironment.robot_type,)
