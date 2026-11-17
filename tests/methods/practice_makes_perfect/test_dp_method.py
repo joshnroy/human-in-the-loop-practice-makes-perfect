@@ -639,17 +639,27 @@ def test_a_period_schedule_re_solves_for_the_episodes_that_are_left(*, monkeypat
 class TestSetupResetsTrainNothing:
     """The paper's learner updates only the skill being practiced (Josh, 2026-11-17):
     a human reset DP asks for on the way to its practice target is setup, so its outcome
-    leaves DP's estimate of that reset where it was, as a robot reset's already does."""
+    leaves DP's estimate of that reset where it was, as a robot reset's already does.
+    Built on the Two Routes toy, which needs no simulator."""
 
     @staticmethod
     def _observed_human_tries(*, target: bool) -> int:
-        method = _build()
-        method.env.hard_reset()
-        human = _human(method=method)
+        from hitl_pmp.environments.tworoutes.environment import TwoRoutesEnvironment
+        from hitl_pmp.environments.tworoutes.skill_provider import TwoRoutesSkillProvider
+
+        env = TwoRoutesEnvironment(both_resets=True)
+        method = DpMethod(
+            env=env,
+            skill_provider=TwoRoutesSkillProvider(env=env, both_resets=True),
+            dp_budget=10,
+            dp_solver="enumeration",
+        )
+        env.hard_reset()
+        human = method.skill_provider.human_cube_bin_reset_skills()[0]
         if target:
-            method.begin_practice_attempt(ground_skill=_ground(method=method, name="PickWiper"))
+            method.begin_practice_attempt(ground_skill=_ground(method=method, name="RouteA"))
         method.record_human_skill_dispatch(ground_skill=human, before_atoms=frozenset())
-        method.observe_help_granted(state=method.env.get_current_state())
+        method.observe_help_granted(state=env.get_current_state())
         model = method.human_competence_model(ground_skill=human)
         return sum(len(cycle) for cycle in model.cycle_observations)
 
