@@ -156,6 +156,11 @@ class Tossing3DPomdpMethod(EesMethod):
     # average and its prior (SkillStepCosts). Only the planner's price: the run is still
     # charged each execution's real steps.
     pomdp_skill_step_costs: dict[str, float] | None = None
+    # Price every robot skill like the human's: the mean cost its executions were
+    # actually charged, from the same prior until it has run -- for a domain whose
+    # robot charge depends on the state, where steps times one price would charge every
+    # skill alike (Two Routes' robot reset). Off: steps times the current step price.
+    pomdp_learn_skill_costs: bool = False
     goal_pursuit_horizon: int | None = 0
     # A `.jsonl.zst` path is written one zstd frame per record (see JsonlLog.append).
     decision_log: Path | None = None
@@ -169,6 +174,7 @@ class Tossing3DPomdpMethod(EesMethod):
     _practice_values: dict[str, float] = PrivateAttr(default_factory=dict)
     _belief_history: dict[str, list[BayesianSkillBelief]] = PrivateAttr(default_factory=dict)
     _execution_durations: dict[GroundSkill, list[int]] = PrivateAttr(default_factory=dict)
+    _robot_execution_costs: dict[GroundSkill, list[float]] = PrivateAttr(default_factory=dict)
     # Observed charged cost of each human reset, by (skill, destination): the key it is
     # dispatched and charged by. A human charge is not steps times a step price, so its
     # cost itself is the observation.
@@ -249,7 +255,13 @@ class Tossing3DPomdpMethod(EesMethod):
                 )
                 continue
             durations = self._execution_durations.get(ground, [])
-            if fixed is not None:
+            if self.pomdp_learn_skill_costs:
+                charged = self._robot_execution_costs.get(ground, [])
+                estimates[str(ground)] = sum(charged) / len(charged) if charged else prior
+                steps[str(ground)] = (
+                    sum(durations) / len(durations) if durations else self.skill_cost_prior_steps
+                )
+            elif fixed is not None:
                 duration = fixed.get(ground.skill.name, math.nan)
                 if math.isnan(duration):
                     missing.add(ground.skill.name)
@@ -280,6 +292,7 @@ class Tossing3DPomdpMethod(EesMethod):
         if complete and not self._pending_start_reset and ground is not None:
             if self._human_reset(ground=ground, resets=self._human_resets()) is None:
                 self._execution_durations.setdefault(ground, []).append(steps)
+                self._robot_execution_costs.setdefault(ground, []).append(cost)
             else:
                 self._human_execution_costs.setdefault(
                     self._human_reset_key(ground=ground), []
