@@ -166,6 +166,9 @@ class EesMethod(Method):
     # success on (Josh, 2026-11-18): before any success the sampler is uniform search,
     # whose failure rate says nothing about the skill the robot will deploy.
     competence_after_first_success: bool = False
+    # Refit a skill's sampler after each of its attempts, rather than only at the end
+    # of a session (Josh, 2026-11-18), so practice inside one long session improves.
+    refit_samplers_every_attempt: bool = False
     # CFG.active_sampler_learning_num_samples
     num_candidates: int = Field(default=100, gt=0)
     # Keep the original iid proposal distribution, conditioning only on the
@@ -1334,9 +1337,10 @@ class EesMethod(Method):
     def observe_sampler_outcome(
         self, *, skill_name: str, param_dim: int, sampler_input: list[float], success: bool
     ) -> None:
-        self.sampler(skill_name=skill_name, param_dim=param_dim).observe(
-            sampler_input=sampler_input, success=success
-        )
+        sampler = self.sampler(skill_name=skill_name, param_dim=param_dim)
+        sampler.observe(sampler_input=sampler_input, success=success)
+        if self.refit_samplers_every_attempt:
+            sampler.fit()
 
     # ---------------------------------------------------------------- lifecycle
 
