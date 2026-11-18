@@ -616,6 +616,9 @@ class Tossing3DPomdpMethod(EesMethod):
     def observe_outcome(
         self, *, ground_skill: GroundSkill, success: bool, was_random_exploration: bool = False
     ) -> None:
+        admitted = not self.excluded_before_first_success(
+            ground_skill=ground_skill, success=success
+        )
         super().observe_outcome(
             ground_skill=ground_skill,
             success=success,
@@ -634,6 +637,7 @@ class Tossing3DPomdpMethod(EesMethod):
             was_random_exploration=was_random_exploration,
             observed_cost=None,
             consultation=consultation,
+            admitted=admitted,
         )
         self.record_diagnostic(
             event="outcome",
@@ -645,7 +649,7 @@ class Tossing3DPomdpMethod(EesMethod):
             competence_conditioned=(
                 not was_random_exploration
                 if consultation is None
-                else self.pomdp_competence_evidence.admits(consultation=consultation)
+                else admitted and self.pomdp_competence_evidence.admits(consultation=consultation)
             ),
             belief=self._pomdp_state.model_dump(mode="json"),
             beliefs=self.belief_diagnostics(),

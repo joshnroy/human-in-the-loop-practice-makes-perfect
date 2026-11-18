@@ -265,6 +265,9 @@ class DpMethod(EesMethod):
         self, *, ground_skill: GroundSkill, success: bool, was_random_exploration: bool = False
     ) -> None:
         if self._dp_setup_dispatch:
+            # A setup run trains nothing, but a success still ends the skill's
+            # before-first-success period.
+            self.before_first_success(ground_skill=ground_skill, success=success)
             return
         super().observe_outcome(
             ground_skill=ground_skill,
