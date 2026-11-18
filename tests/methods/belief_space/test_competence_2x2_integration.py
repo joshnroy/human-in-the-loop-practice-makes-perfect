@@ -199,3 +199,18 @@ def test_cycle_logs_preserve_sf_history_and_zero_example_cycles_for_smoothing(
         assert cycles[-1]["filtered_competence"] == history[index].mean_competence()
         assert cycles[-1]["smoothed_competence"] == pytest.approx(history[index].mean_competence())
     assert method.env._backend is None  # noqa: SLF001
+
+
+def test_a_toss_failure_before_any_success_is_not_competence_evidence() -> None:
+    method = _build(model="global_curve", engine="grid")
+    method.competence_after_first_success = True
+    toss = _ground(method=method, name=TOSS_SKILL)
+    before = _belief(method=method, name=TOSS_SKILL)
+    method.observe_outcome(ground_skill=toss, success=False)
+    after = _belief(method=method, name=TOSS_SKILL)
+    assert after.cycle_successes == after.cycle_failures == 0
+    assert after.state_weights == before.state_weights
+    method.observe_outcome(ground_skill=toss, success=True)
+    method.observe_outcome(ground_skill=toss, success=False)
+    final = _belief(method=method, name=TOSS_SKILL)
+    assert (final.cycle_successes, final.cycle_failures) == (1, 1)
