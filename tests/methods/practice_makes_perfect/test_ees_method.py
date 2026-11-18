@@ -2163,3 +2163,19 @@ def test_without_the_flag_every_non_random_failure_is_competence_evidence() -> N
     model = method.competence_model(ground_skill=skill)
     method.observe_outcome(ground_skill=skill, success=False)
     assert model.num_observations == 1
+
+
+def test_refit_samplers_every_attempt_fits_the_sampler_as_each_outcome_arrives() -> None:
+    env = LightSwitchEnvironment(grid_size=4)
+    for refit in (False, True):
+        method = EesMethod(
+            env=env,
+            skill_provider=LightSwitchSkillProvider(env=env),
+            seed=0,
+            refit_samplers_every_attempt=refit,
+            sampler_max_train_iters=1,
+        )
+        method.observe_sampler_outcome(
+            skill_name="TurnOnLight", param_dim=1, sampler_input=[1.0, 0.5], success=True
+        )
+        assert method.sampler(skill_name="TurnOnLight", param_dim=1).is_fitted is refit
