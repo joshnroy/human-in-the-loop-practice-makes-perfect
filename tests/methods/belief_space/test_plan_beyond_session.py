@@ -1,5 +1,6 @@
-"""`--pomdp-plan-beyond-session`: ours' plan is bounded by the practice budget that is
-left and by the search's expansion cap, not by the actions left in the session (Josh,
+"""`--pomdp-plan-beyond-session`: ours' plan (determinized A*, or expectimax to its
+depth) is bounded by the practice budget that is left and by the search's expansion cap
+or depth, not by the actions left in the session (Josh,
 2026-11-13: "budget is more than practice session, right?")."""
 
 import json
@@ -22,15 +23,21 @@ from tests.methods.belief_space.test_practice_episode_budget import (
 )
 
 
-def _decide(*, tmp_path: Path, name: str, beyond: bool | None, **budget: int) -> dict:
+def _decide(
+    *, tmp_path: Path, name: str, beyond: bool | None, expectimax: bool = False, **budget: int
+) -> dict:
     log = tmp_path / f"{name}.jsonl"
     env = TwoRoutesEnvironment()
     provider = ParameterisedRoutes(env=env)
+    solver: dict = (
+        {"pomdp_solver": "expectimax", "pomdp_search_depth": 3}
+        if expectimax
+        else {"pomdp_solver": "determinized_astar", "pomdp_determinized_variant": "curtis"}
+    )
     method = Tossing3DPomdpMethod(
         env=env,
         skill_provider=provider,
-        pomdp_solver="determinized_astar",
-        pomdp_determinized_variant="curtis",
+        **solver,
         pomdp_observation_probability_weight=0.01,
         pomdp_inference_engine="grid",
         pomdp_domain=RewardedRoutesPracticeDomain.from_provider(provider=provider),
@@ -138,20 +145,56 @@ def test_the_flag_is_off_by_default_and_reaches_the_method() -> None:
     assert Cli.parse_args(argv=[*base, "--pomdp-plan-beyond-session"]).pomdp_plan_beyond_session
 
 
-def test_the_flag_is_refused_for_expectimax(*, tmp_path: Path) -> None:
-    import pytest
+def test_expectimax_off_looks_no_further_than_the_session(*, tmp_path: Path) -> None:
+    decision = _decide(
+        tmp_path=tmp_path, name="x-off", beyond=False, expectimax=True, **LAST_ACTION
+    )
+    assert _summary(decision=decision)["horizon"] == 1
 
+
+def test_expectimax_on_looks_its_full_depth_past_the_session(*, tmp_path: Path) -> None:
+    # Josh, 2026-11-18: expectimax plans across sessions like ours' A*, and still
+    # replans after every action.
+    decision = _decide(tmp_path=tmp_path, name="x-on", beyond=True, expectimax=True, **LAST_ACTION)
+    assert decision["plan_beyond_session"] is True
+    assert decision["remaining_practice_actions"] == 1
+    assert _summary(decision=decision)["horizon"] == 3
+
+
+def test_expectimax_on_is_still_cut_by_the_tries_that_are_left(*, tmp_path: Path) -> None:
+    on = _decide(
+        tmp_path=tmp_path,
+        name="x-tries",
+        beyond=True,
+        expectimax=True,
+        remaining_actions=1,
+        remaining_steps=1_000_000,
+        remaining_episodes=1,
+    )
+    unlimited = _decide(
+        tmp_path=tmp_path,
+        name="x-many",
+        beyond=True,
+        expectimax=True,
+        remaining_actions=1,
+        remaining_steps=1_000_000,
+        remaining_episodes=100,
+    )
+    assert _summary(decision=on)["horizon"] == 3
+    assert _summary(decision=on)["unique_nodes"] < _summary(decision=unlimited)["unique_nodes"]
+
+
+def test_the_flag_reaches_expectimax_through_the_cli(*, tmp_path: Path) -> None:
     from tests.environments.tworoutes.run_fixtures import TwoRoutesRun
 
-    with pytest.raises(ValueError, match="determinized_astar"):
-        TwoRoutesRun.run(
-            directory=tmp_path,
-            method="pomdp",
-            extra=(
-                "--pomdp-solver", "expectimax", "--pomdp-observation-probability-weight", "0.01",
-                "--pomdp-plan-beyond-session",
-            ),
-        )  # fmt: skip
+    TwoRoutesRun.run(
+        directory=tmp_path,
+        method="pomdp",
+        extra=(
+            "--pomdp-solver", "expectimax", "--pomdp-observation-probability-weight", "0.01",
+            "--pomdp-search-depth", "2", "--pomdp-plan-beyond-session",
+        ),
+    )  # fmt: skip
 
 
 def test_a_run_recorded_before_the_flag_existed_still_resumes() -> None:

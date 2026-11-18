@@ -781,11 +781,12 @@ class Tossing3DPomdpCli(EesCli):
             "--pomdp-plan-beyond-session",
             action=argparse.BooleanOptionalAction,
             default=False,
-            help="determinized_astar only: a plan may run past the end of the practice "
-            "session. It is bounded by the practice budget that is left (steps, and "
-            "tries under --practice-episode-budget) and by --pomdp-max-search-iterations "
-            "instead of by the session's remaining actions. The search models no "
-            "learning update at the session boundary: an approximation.",
+            help="A plan may run past the end of the practice session. It is bounded by "
+            "the practice budget that is left (steps, and tries under "
+            "--practice-episode-budget) and by --pomdp-max-search-iterations "
+            "(determinized_astar) or --pomdp-search-depth (expectimax) instead of by the "
+            "session's remaining actions. The search models no learning update at the "
+            "session boundary: an approximation.",
         )
         parser.add_argument(
             "--pomdp-learn-skill-costs",
@@ -840,11 +841,6 @@ class Tossing3DPomdpCli(EesCli):
                 "--pomdp-search-depth is an expectimax flag: --pomdp-solver "
                 "determinized_astar is bounded by --pomdp-max-search-iterations and the "
                 "session's remaining actions, never a search depth"
-            )
-        if args.pomdp_plan_beyond_session and args.pomdp_solver != "determinized_astar":
-            raise ValueError(
-                "--pomdp-plan-beyond-session is a determinized_astar flag: expectimax is "
-                "bounded by its search depth"
             )
         domain = Tossing3DPomdpCli.DOMAINS.get(env_cli.__name__)
         if env_cli.__name__ in {"FrozenPourCli", "KitchenCli"}:

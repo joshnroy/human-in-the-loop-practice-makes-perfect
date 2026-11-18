@@ -872,7 +872,7 @@ class Tossing3DPomdpMethod(EesMethod):
         horizon = None
         if not isinstance(planner, DeterminizedAStarPlanner):
             horizon = self.search_depth
-            if self._remaining_practice_actions is not None:
+            if self._remaining_practice_actions is not None and not self.pomdp_plan_beyond_session:
                 horizon = min(horizon, self._remaining_practice_actions)
         search_started_at = time.perf_counter()
         try:
