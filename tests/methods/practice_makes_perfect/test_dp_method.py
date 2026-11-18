@@ -430,6 +430,63 @@ def test_episode_budget_counts_targets_not_prefix_or_human_cost(*, monkeypatch):
     assert method.practice_complete()
 
 
+def test_execution_budget_counts_every_robot_try_setup_included(*, monkeypatch):
+    """Josh, 2026-11-18: the budget counts every robot skill execution, for DP as for
+    ours. A setup run on the way to the target still costs a unit (it trains nothing,
+    as before); a human reset, a skill outside the try skills, and an incomplete run
+    cost none."""
+    method, pick, back, cube = _two_skill_setup(monkeypatch=monkeypatch)
+    method.dp_budget_unit = "executions"
+    method.dp_budget = 3
+    method.practice_try_skills = frozenset({"PickWiper", "ReturnWiper"})
+    method.choose_practice_target()
+    method.begin_practice_attempt(ground_skill=back)
+    for ground in [_human(method=method), cube]:
+        method.record_action_cost(ground_skill=ground)
+        method.observe_execution_cost(cost=1, steps=1, complete=True)
+    method.record_action_cost(ground_skill=pick)
+    method.observe_execution_cost(cost=1, steps=1, complete=False)
+    assert method.dp_executions() == 0
+    method.record_action_cost(ground_skill=pick)
+    method.observe_execution_cost(cost=1, steps=1, complete=True)
+    assert method.dp_executions() == 1
+    assert method.dp_episodes() == 0
+    method.record_action_cost(ground_skill=back)
+    method.observe_execution_cost(cost=1, steps=1, complete=True)
+    assert (method.dp_executions(), method.dp_episodes()) == (2, 1)
+    assert method._remaining_budget() == 1  # noqa: SLF001
+    assert not method.practice_complete()
+    _execute(method=method, ground=pick)
+    assert method.practice_completion_reason() == "budget_spent"
+
+
+def test_an_execution_budget_still_prices_each_episode_at_one(*, monkeypatch):
+    """Faithful DP plans with no model of setup: Gurobi prices an episode at 1 unit."""
+    method, _pick, _back, _cube = _two_skill_setup(monkeypatch=monkeypatch, budget=4)
+    method.dp_budget_unit = "executions"
+    prices = []
+    original = DpAllocator.allocate
+
+    def recording(**kwargs):
+        prices.extend(kwargs["costs"].values())
+        return original(**kwargs)
+
+    monkeypatch.setattr(DpAllocator, "allocate", staticmethod(recording))
+    method.choose_practice_target()
+    assert prices and set(prices) == {1.0}
+
+
+def test_fractional_execution_budget_is_rejected():
+    method = _build()
+    with pytest.raises(ValidationError, match="integer"):
+        DpMethod(
+            env=method.env,
+            skill_provider=method.skill_provider,
+            dp_budget_unit="executions",
+            dp_budget=1.5,
+        )
+
+
 def test_fractional_episode_budget_is_rejected():
     method = _build()
     with pytest.raises(ValidationError, match="integer"):
