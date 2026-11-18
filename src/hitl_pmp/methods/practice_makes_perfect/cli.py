@@ -238,6 +238,12 @@ class EesCli:
             "its first practice success on; failures before it are uniform search.",
         )
         parser.add_argument(
+            "--refit-samplers-every-attempt",
+            action="store_true",
+            help="Refit a skill's learned sampler after each of its practice attempts, "
+            "not only at the end of a practice session.",
+        )
+        parser.add_argument(
             "--sampler-max-train-iters",
             type=int,
             default=EesMethod.model_fields["sampler_max_train_iters"].default,
@@ -496,6 +502,7 @@ class EesCli:
             draw_recorder=draw_recorder,
             exploration_epsilon=args.exploration_epsilon,
             competence_after_first_success=args.competence_after_first_success,
+            refit_samplers_every_attempt=args.refit_samplers_every_attempt,
             sampler_max_train_iters=args.sampler_max_train_iters,
             goal_pursuit_horizon=args.goal_pursuit_horizon,
             goal_pursuit_init_cycles=args.goal_pursuit_init_cycles,
@@ -911,6 +918,7 @@ class Tossing3DPomdpCli(EesCli):
                 deploy_curve_priors=EesCli.deploy_curve_priors(args=args),
                 exploration_epsilon=args.exploration_epsilon,
                 competence_after_first_success=args.competence_after_first_success,
+                refit_samplers_every_attempt=args.refit_samplers_every_attempt,
                 sampler_max_train_iters=args.sampler_max_train_iters,
                 goal_pursuit_horizon=args.goal_pursuit_horizon,
                 goal_pursuit_init_cycles=args.goal_pursuit_init_cycles,
