@@ -1055,14 +1055,16 @@ class DpCli(EesCli):
             "--dp-budget",
             type=lambda value: EesCli.positive_float(value=value),
             required=True,
-            help="DP budget B in the explicit --dp-budget-unit: cost or target-skill episodes.",
+            help="DP budget B in --dp-budget-unit: cost, target episodes or executions.",
         )
         parser.add_argument(
             "--dp-budget-unit",
-            choices=["cost", "episodes"],
+            choices=["cost", "episodes", "executions"],
             default=fields["dp_budget_unit"].default,
             help="Cost includes robot steps and human resets; episodes count completed target "
-            "rollouts, successful or failed, excluding setup executions and human resets.",
+            "rollouts, successful or failed, excluding setup executions and human resets; "
+            "executions count every completed robot try-skill run (--practice-try-skills), "
+            "setup included, human resets excluded.",
         )
         parser.add_argument(
             "--dp-allocation-schedule",

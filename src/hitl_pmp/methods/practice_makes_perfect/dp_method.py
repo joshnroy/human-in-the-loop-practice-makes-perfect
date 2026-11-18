@@ -47,7 +47,11 @@ class DpMethod(EesMethod):
     DP_PRIOR_STRENGTH: ClassVar[float] = 2.0
 
     dp_budget: float = Field(gt=0.0, allow_inf_nan=False)
-    dp_budget_unit: Literal["cost", "episodes"] = "cost"
+    # "executions" (Josh, 2026-11-18): every robot try-skill execution costs a unit,
+    # setup runs on the way to the target included, as it does for our method. DP still
+    # plans each episode at one unit -- its model has no setup -- and setup still trains
+    # nothing, so a sweep5 episode reached through a gather costs two units of budget.
+    dp_budget_unit: Literal["cost", "episodes", "executions"] = "cost"
     dp_allocation_schedule: Literal["once", "period"] = "period"
     dp_solver: Literal["gurobi", "enumeration"] = "gurobi"
     dp_solver_time_limit: float = Field(default=60.0, gt=0.0, allow_inf_nan=False)
@@ -91,14 +95,15 @@ class DpMethod(EesMethod):
     _dp_solved_period: int | None = PrivateAttr(default=None)
     _dp_no_allocation: bool = PrivateAttr(default=False)
     _dp_episodes: int = PrivateAttr(default=0)
+    _dp_executions: int = PrivateAttr(default=0)
     _dp_solver_result: DpAllocationResult[GroundSkill] | None = PrivateAttr(default=None)
     _dp_skill_priors: dict[str, DpSkillPrior] = PrivateAttr(default_factory=dict)
     _dp_prior_sha256: str | None = PrivateAttr(default=None)
 
     @model_validator(mode="after")
     def _budget_and_calibration_are_consistent(self) -> "DpMethod":
-        if self.dp_budget_unit == "episodes" and not self.dp_budget.is_integer():
-            raise ValueError("DP's episode budget must be an integer number of target rollouts")
+        if self.dp_budget_unit != "cost" and not self.dp_budget.is_integer():
+            raise ValueError(f"DP's {self.dp_budget_unit} budget must be an integer count")
         if self.dp_prior_calibration is not None:
             calibration = DpPriorCalibration.load(path=self.dp_prior_calibration)
             calibration.verify_simulators()
@@ -180,14 +185,7 @@ class DpMethod(EesMethod):
             and self._dp_solved_period is not None
             and not any(self.dp_remaining_allocation().values())
         )
-        spent = (
-            self._dp_episodes
-            if self.dp_budget_unit == "episodes"
-            else (
-                self._practice_accounting.total_cost if self._practice_accounting is not None else 0
-            )
-        )
-        if spent >= self.dp_budget:
+        if self._spent() >= self.dp_budget:
             return "budget_spent"
         if self._dp_no_allocation:
             return "zero_allocation"
@@ -197,6 +195,16 @@ class DpMethod(EesMethod):
 
     def dp_episodes(self) -> int:
         return self._dp_episodes
+
+    def dp_executions(self) -> int:
+        return self._dp_executions
+
+    def _spent(self) -> float:
+        if self.dp_budget_unit == "episodes":
+            return self._dp_episodes
+        if self.dp_budget_unit == "executions":
+            return self._dp_executions
+        return self._practice_accounting.total_cost if self._practice_accounting is not None else 0
 
     def end_cycle(self) -> None:
         super().end_cycle()
@@ -211,9 +219,8 @@ class DpMethod(EesMethod):
         return self._dp_solver_result
 
     def _remaining_budget(self) -> float:
-        accounting = self._require_accounting()
-        spent = self._dp_episodes if self.dp_budget_unit == "episodes" else accounting.total_cost
-        return max(0.0, self.dp_budget - spent)
+        self._require_accounting()
+        return max(0.0, self.dp_budget - self._spent())
 
     def _needs_allocation(self) -> bool:
         return self._dp_solved_period is None or (
@@ -288,8 +295,15 @@ class DpMethod(EesMethod):
             # A forced reset is the human's, so its charge is never DP's estimate.
             self._dp_forced_reset_pending = False
             return
-        if self._execution_ground_skill in self.skill_provider.human_cube_bin_reset_skills():
+        executed = self._execution_ground_skill
+        if executed in self.skill_provider.human_cube_bin_reset_skills():
             cost = 0.0
+        elif (
+            complete
+            and executed is not None
+            and EesMethod.counts_as_try(ground_skill=executed, try_skills=self.practice_try_skills)
+        ):
+            self._dp_executions += 1
         target = self._dp_active_target
         if target is not None and complete and self._execution_ground_skill == target:
             costs = self._dp_costs.setdefault(target, [])
@@ -394,7 +408,7 @@ class DpMethod(EesMethod):
             )
         costs = {
             candidate: 1.0
-            if self.dp_budget_unit == "episodes"
+            if self.dp_budget_unit in ("episodes", "executions")
             else self.dp_expected_attempt_cost(ground_skill=candidate)
             for candidate in candidates
         }
@@ -492,6 +506,7 @@ class DpMethod(EesMethod):
                     "remaining_budget": self._remaining_budget(),
                     "period": self._practice_periods,
                     "episodes": self._dp_episodes,
+                    "executions": self._dp_executions,
                     "physical_cost": self._require_accounting().total_cost,
                     "prior_calibration_sha256": self._dp_prior_sha256,
                     "initial_competence": dict(self.dp_initial_competence),
