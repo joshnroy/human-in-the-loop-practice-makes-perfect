@@ -232,6 +232,12 @@ class EesCli:
             "(the paper uses 0.5).",
         )
         parser.add_argument(
+            "--competence-after-first-success",
+            action="store_true",
+            help="A skill with parameters conditions competence on its outcomes only from "
+            "its first practice success on; failures before it are uniform search.",
+        )
+        parser.add_argument(
             "--sampler-max-train-iters",
             type=int,
             default=EesMethod.model_fields["sampler_max_train_iters"].default,
@@ -489,6 +495,7 @@ class EesCli:
             ),
             draw_recorder=draw_recorder,
             exploration_epsilon=args.exploration_epsilon,
+            competence_after_first_success=args.competence_after_first_success,
             sampler_max_train_iters=args.sampler_max_train_iters,
             goal_pursuit_horizon=args.goal_pursuit_horizon,
             goal_pursuit_init_cycles=args.goal_pursuit_init_cycles,
@@ -903,6 +910,7 @@ class Tossing3DPomdpCli(EesCli):
                 ),
                 deploy_curve_priors=EesCli.deploy_curve_priors(args=args),
                 exploration_epsilon=args.exploration_epsilon,
+                competence_after_first_success=args.competence_after_first_success,
                 sampler_max_train_iters=args.sampler_max_train_iters,
                 goal_pursuit_horizon=args.goal_pursuit_horizon,
                 goal_pursuit_init_cycles=args.goal_pursuit_init_cycles,
