@@ -433,11 +433,15 @@ only a mean. Keep the table too.
 
 ### Training-curve style, fixed project-wide
 
-- **Colour carries the method, never anything else.** Okabe–Ito: ours, Model B
-  (`local_trend`) `#0072B2`; ours, Model A (`global_curve`) `#56B4E9`; EES `#009E73`. A new
-  method takes `#CC79A7`, then `#E69F00`, then `#F0E442`, and keeps its colour in every
-  figure. **The environment is never a colour**: each figure names it in text (e.g.
-  `Tossing3D` in the title or a corner annotation).
+- **Colour carries the method, never anything else.** One palette, shared by every result
+  figure and the paper's PGM, taken from Tom's EES diagrams (Office theme; Josh, 2026-11-17):
+  ours `#4472C4`, EES `#70AD47`, DP `#ED7D31`, DP-period `#FFC000`; navy `#1F3864` for ink.
+  Import it from `hitl-pmp-results/paper-figures/palette.py` rather than hard-coding hex
+  values, so a palette change is one edit plus a re-run. Ours, Model A (`global_curve`) is a
+  lighter blue than Model B (`local_trend`). A new method takes Office grey-blue `#5B9BD5`,
+  then `#A5A5A5`, and keeps its colour in every figure. **The environment is never a
+  colour**: each figure names it in text (e.g. `Tossing3D` in the title or a corner
+  annotation).
 - **Linestyle carries whether the human reset is available.** Solid = available, dashed
   `(0, (4, 2))` = not available (e.g. a `--no-human-reset` arm). An arm whose reset exists
   but never fires is still solid: the finding is that it existed and went unused.
@@ -445,10 +449,10 @@ only a mean. Keep the table too.
   dark = large (λ for ours, human-reset cost for EES), with the value in the legend. A figure
   of one method across many knob values uses the shade ramp; a figure of several methods
   keeps colour for the method and gives knob values shades or markers. The two blues use
-  disjoint bands (Model A at or lighter than `#56B4E9`, Model B at or darker than `#0072B2`)
-  so a shade never reads as the other model.
+  disjoint bands (Model A lighter than ours `#4472C4`, Model B at or darker than it) so a
+  shade never reads as the other model.
 - **A crashed run gets an `✕` marker in its arm's colour.**
-- **Reference/oracle/ceiling arms are grey `#999999`, dotted, and flat horizontal lines,
+- **Reference/oracle/ceiling arms are grey `#7F7F7F`, dotted, and flat horizontal lines,
   never a curve** — plotting a non-learner as a wandering line invites a reader to hunt for
   a trend that isn't there.
 - **Faint per-seed traces (`alpha≈0.16`, `linewidth≈0.8`) drawn first, underneath the bold
