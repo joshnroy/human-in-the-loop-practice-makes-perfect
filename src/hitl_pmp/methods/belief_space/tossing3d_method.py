@@ -77,6 +77,8 @@ def make_belief_space_planner(
     observation_probability_weight: float,
     log_full_search_tree: bool = False,
     value_bound_heuristic: bool = False,
+    probability_weighted_gain: bool = False,
+    mean_backup: bool = False,
     draw_scope: DrawScope = "node",
     variant: DeterminizedVariant = "algorithm3",
     num_rollouts: int | None = None,
@@ -84,8 +86,12 @@ def make_belief_space_planner(
     """Return the injected planner or construct the configured planner once."""
     if planner is not None:
         return planner
-    if (draw_scope != "node" or variant != "algorithm3") and solver != "determinized_astar":
-        raise ValueError("draw scopes and variants are determinized_astar options")
+    if (
+        draw_scope != "node" or variant != "algorithm3" or probability_weighted_gain or mean_backup
+    ) and solver != "determinized_astar":
+        raise ValueError(
+            "draw scopes, variants and probability-weighted gain are determinized_astar options"
+        )
     if solver == "expectimax":
         return ExpectimaxPlanner(
             use_model_j=True,
@@ -97,6 +103,8 @@ def make_belief_space_planner(
         observation_probability_weight=observation_probability_weight,
         log_full_search_tree=log_full_search_tree,
         value_bound_heuristic=value_bound_heuristic,
+        probability_weighted_gain=probability_weighted_gain,
+        mean_backup=mean_backup,
         draw_scope=draw_scope,
         variant=variant,
         num_rollouts=num_rollouts,
@@ -112,6 +120,8 @@ class Tossing3DPomdpMethod(EesMethod):
     pomdp_search_depth: int | None = Field(default=None, ge=0)
     pomdp_log_full_search_tree: bool = False
     pomdp_value_bound_heuristic: bool = False
+    pomdp_probability_weighted_gain: bool = False
+    pomdp_mean_backup: bool = False
     pomdp_solver: Literal["expectimax", "determinized_astar"] = "expectimax"
     pomdp_max_search_iterations: int = Field(default=100, ge=1)
     # determinized_astar only. A plan may run past the end of the practice session: it
@@ -453,6 +463,8 @@ class Tossing3DPomdpMethod(EesMethod):
             observation_probability_weight=self.pomdp_observation_probability_weight,
             log_full_search_tree=self.pomdp_log_full_search_tree,
             value_bound_heuristic=self.pomdp_value_bound_heuristic,
+            probability_weighted_gain=self.pomdp_probability_weighted_gain,
+            mean_backup=self.pomdp_mean_backup,
             draw_scope=self.pomdp_draw_scope,
             variant=self.pomdp_determinized_variant,
             num_rollouts=self.pomdp_num_rollouts,

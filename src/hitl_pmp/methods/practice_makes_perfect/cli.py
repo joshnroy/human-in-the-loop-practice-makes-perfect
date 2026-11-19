@@ -699,6 +699,23 @@ class Tossing3DPomdpCli(EesCli):
             "optimistic_policy_value); g alone still selects the plan.",
         )
         parser.add_argument(
+            "--pomdp-probability-weighted-gain",
+            action=argparse.BooleanOptionalAction,
+            default=False,
+            help="determinized_astar: score a path by each step's deployment gain times the "
+            "chance of reaching it with the assumed outcome, and each action's cost times "
+            "the chance of getting to try it, instead of the surprise charge (needs "
+            "--pomdp-observation-probability-weight 0).",
+        )
+        parser.add_argument(
+            "--pomdp-mean-backup",
+            action=argparse.BooleanOptionalAction,
+            default=False,
+            help="determinized_astar, variant curtis: search as Curtis does, then decide on "
+            "the explored graph with each action's outcomes averaged by probability rather "
+            "than the best one taken (unexpanded nodes worth their stop value).",
+        )
+        parser.add_argument(
             "--pomdp-log-full-search-tree",
             action=argparse.BooleanOptionalAction,
             default=Tossing3DPomdpMethod.model_fields["pomdp_log_full_search_tree"].default,
@@ -942,6 +959,8 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_observation_probability_weight=args.pomdp_observation_probability_weight,
                 pomdp_log_full_search_tree=args.pomdp_log_full_search_tree,
                 pomdp_value_bound_heuristic=args.pomdp_value_bound_heuristic,
+                pomdp_probability_weighted_gain=args.pomdp_probability_weighted_gain,
+                pomdp_mean_backup=args.pomdp_mean_backup,
                 pomdp_draw_scope=args.pomdp_draw_scope,
                 pomdp_determinized_variant=args.pomdp_determinized_variant,
                 pomdp_num_rollouts=args.pomdp_num_rollouts,
