@@ -747,12 +747,33 @@ class DeterminizedAStarPlanner(
         def node_worth(*, key: object, on_path: frozenset[object]) -> float:
             if key in worth:
                 return worth[key]
-            stop = policy_value_by_key[key]
             if key in on_path or key not in children_by_key:
-                return stop
-            best = max([stop, *q_values(key=key, on_path=on_path | {key}).values()])
-            worth[key] = best
-            return best
+                return policy_value_by_key[key]
+            # Depth-first with an explicit stack: an explored chain of resets (they
+            # spend no budget) runs deeper than Python's recursion limit. A node is
+            # backed up once every child it can reach is resolved, so the q_values
+            # call below only reads memoised or stopping children.
+            stack = [(key, on_path | {key})]
+            while stack:
+                node, path = stack[-1]
+                if node in worth:
+                    stack.pop()
+                    continue
+                pending = [
+                    child
+                    for outcomes in children_by_key[node].values()
+                    for child in outcomes
+                    if child not in worth and child not in path and child in children_by_key
+                ]
+                if pending:
+                    stack.extend((child, path | {child}) for child in pending)
+                    continue
+                worth[node] = max([
+                    policy_value_by_key[node],
+                    *q_values(key=node, on_path=path).values(),
+                ])
+                stack.pop()
+            return worth[key]
 
         return q_values(key=root_key, on_path=frozenset({root_key}))
 
