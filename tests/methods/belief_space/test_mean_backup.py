@@ -110,3 +110,24 @@ def test_the_flag_reaches_the_method() -> None:
     ]  # fmt: skip
     assert Cli.parse_args(argv=base).pomdp_mean_backup is False
     assert Cli.parse_args(argv=[*base, "--pomdp-mean-backup"]).pomdp_mean_backup is True
+
+
+def test_a_graph_deeper_than_the_recursion_limit_backs_up() -> None:
+    # 2026-11-18: a real 3D Serving run explored a chain of resets (they spend no budget)
+    # deeper than Python's recursion limit, and the recursive backup overflowed.
+    depth = 5_000
+    children = {n: {"step": {n + 1: (1.0, 0.0)}} for n in range(depth)}
+    values = {n: 0.0 for n in range(depth + 1)}
+    values[depth] = 1.0
+    q = DeterminizedAStarPlanner.mean_backup_values(
+        root_key=0, children_by_key=children, policy_value_by_key=values, cost_lambda=1.0
+    )
+    assert q == {"step": 1.0}
+
+
+def test_a_node_reached_again_on_its_own_path_counts_as_stopping() -> None:
+    children = {0: {"go": {1: (1.0, 0.0)}}, 1: {"back": {0: (1.0, 0.0)}}}
+    q = DeterminizedAStarPlanner.mean_backup_values(
+        root_key=0, children_by_key=children, policy_value_by_key={0: 5.0, 1: 2.0}, cost_lambda=1.0
+    )
+    assert q == {"go": 5.0}
