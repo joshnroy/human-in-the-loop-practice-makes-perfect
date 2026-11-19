@@ -61,6 +61,9 @@ class DeterminizedPathRecoveryInfo(BaseModel, Generic[ActionT]):
     steps: float = 0.0
     # Practice tries the path spends; only read under an episode budget.
     episodes: float = 0.0
+    # The chance the path's assumed outcomes all happen; only read under
+    # probability_weighted_gain.
+    reach_probability: float = 1.0
 
 
 class DeterminizedSearchQueueEntry(

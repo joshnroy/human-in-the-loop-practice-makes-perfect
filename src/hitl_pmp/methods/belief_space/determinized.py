@@ -49,6 +49,8 @@ class DeterminizedAStarPlanner(
         observation_probability_weight: float = 0.1,
         log_full_search_tree: bool = False,
         value_bound_heuristic: bool = False,
+        probability_weighted_gain: bool = False,
+        mean_backup: bool = False,
         draw_scope: DrawScope = "node",
         variant: DeterminizedVariant = "algorithm3",
         num_rollouts: int | None = None,
@@ -74,6 +76,24 @@ class DeterminizedAStarPlanner(
         # Order the open list by g minus the model's optimistic gain still reachable with
         # the practice left (`optimistic_gain`); g alone still selects the plan.
         self.value_bound_heuristic = value_bound_heuristic
+        # Josh, 2026-11-18: score a path by each step's deployment gain times the chance of
+        # reaching it with the assumed outcome, and each action's cost times the chance of
+        # getting to try it, instead of charging w * -log p in nats against a gain in
+        # reward: g = sum_t [P(<t) lambda c(a_t) - P(<=t) (V(b_t) - V(b_t-1))].
+        if probability_weighted_gain and observation_probability_weight != 0.0:
+            raise ValueError(
+                "probability_weighted_gain replaces the surprise charge: set the observation "
+                f"probability weight to 0 (got {observation_probability_weight})"
+            )
+        self.probability_weighted_gain = probability_weighted_gain
+        # Josh, 2026-11-18: search as Curtis does, but read the decision off the explored
+        # graph with an action's outcomes averaged, not the best one taken: a node is
+        # worth max(stop, max_a sum_k p_k (V(child_k) - lambda c_k)), an unexpanded node
+        # its stop value (`mean_backup_values`). The surprise charge then only orders the
+        # expansion; with every node expanded this is expectimax.
+        if mean_backup and variant != "curtis":
+            raise ValueError("mean_backup averages Curtis's one child per outcome: variant curtis")
+        self.mean_backup = mean_backup
         # "node": one independent draw per (search node, action) edge, so a node that a
         # cheap reset makes new re-rolls the same skill's outcome. Otherwise one uniform
         # per `model.outcome_draw_key(scope=...)` -- what the outcome distribution reads,
@@ -134,6 +154,17 @@ class DeterminizedAStarPlanner(
                 f"determinized_astar takes no search depth (got {horizon}); it is bounded "
                 "only by max_iterations and remaining_actions"
             )
+        cost_lambda = getattr(model, "linear_cost_lambda", None)
+        if (self.probability_weighted_gain or self.mean_backup) and cost_lambda is None:
+            raise ValueError(
+                "probability_weighted_gain and mean_backup need a model with a linear cost "
+                "weight (linear_cost_lambda) to separate a step's gain from its cost"
+            )
+        # Under mean_backup: each expanded node's outcome children by action, as
+        # {action: {child key: (probability, cost)}}, and every node's stop value net of
+        # the cost spent reaching it (its policy value), which a merged node shares.
+        children_by_key: dict[object, dict[ActionT, dict[object, tuple[float, float]]]] = {}
+        policy_value_by_key: dict[object, float] = {}
         assert remaining_actions is None or remaining_actions >= 0, (
             "remaining_actions must be non-negative"
         )
@@ -398,6 +429,12 @@ class DeterminizedAStarPlanner(
                     steps=None if remaining_steps is None else next_steps,
                     episodes=None if remaining_episodes is None else next_episodes,
                 )
+                if self.mean_backup:
+                    assert cost_lambda is not None
+                    children_by_key.setdefault(current_node.cache_info.key, {}).setdefault(
+                        action, {}
+                    )[key] = (estimated_observation_probability, sampled_cost)
+                    policy_value_by_key[key] = value + cost_lambda * next_cost
                 child_is_new = key not in search_node_ids
                 if not child_is_new:
                     diagnostics.merged_nodes += 1
@@ -450,9 +487,17 @@ class DeterminizedAStarPlanner(
                 # Algorithm 3, line 18: self.heuristic returns the complete alpha*h_hat term.
                 heuristic_cost = self.heuristic(node=child)
                 assert math.isfinite(heuristic_cost), "heuristic must return a finite value"
-                next_path_cost = (
-                    current_node.g - estimated_reward + observation_surprise + heuristic_cost
-                )  # Algorithm 3: g'.
+                reach = current_node.path_recovery_info.reach_probability
+                if self.probability_weighted_gain:
+                    assert cost_lambda is not None
+                    step_cost = cost_lambda * sampled_cost
+                    gain = estimated_reward + step_cost
+                    child_reach = reach * estimated_observation_probability
+                    edge_cost = reach * step_cost - child_reach * gain
+                else:
+                    child_reach = reach
+                    edge_cost = -estimated_reward + observation_surprise
+                next_path_cost = current_node.g + edge_cost + heuristic_cost  # Algorithm 3: g'.
                 action_path = current_node.path_recovery_info.action_path + (action,)
                 cumulative_surprise = (
                     current_node.path_recovery_info.observation_surprise + observation_surprise
@@ -565,6 +610,7 @@ class DeterminizedAStarPlanner(
                                 heuristic_cost=cumulative_heuristic,
                                 steps=next_steps,
                                 episodes=next_episodes,
+                                reach_probability=child_reach,
                             ),
                         ),
                     )
@@ -579,6 +625,26 @@ class DeterminizedAStarPlanner(
         elif diagnostics.episode_budget_terminal_nodes:
             diagnostics.termination_reason = "episode_budget_exhausted"
 
+        if self.mean_backup:
+            assert cost_lambda is not None
+            policy_value_by_key[root_key] = root_value + cost_lambda * summed_cost
+            means = self.mean_backup_values(
+                root_key=root_key,
+                children_by_key=children_by_key,
+                policy_value_by_key=policy_value_by_key,
+                cost_lambda=cost_lambda,
+            )
+            best_objective_value, best_action = root_value, STOP_ACTION
+            for action, q in means.items():
+                value_net = q - cost_lambda * summed_cost
+                if ValueResolution.rank(value=best_objective_value) < ValueResolution.rank(
+                    value=value_net
+                ):
+                    best_objective_value, best_action = value_net, action
+            for path in root_action_paths:
+                path["curtis_path_value"] = path.get("value")
+                path["value"] = means[path["root_action"]] - cost_lambda * summed_cost
+                path["mean_backup"] = True
         if trace is not None:
             for path in root_action_paths:
                 root_action = path.pop("root_action")
@@ -652,6 +718,43 @@ class DeterminizedAStarPlanner(
                 **draw_fields,
             )
         return best_objective_value, best_action
+
+    @staticmethod
+    def mean_backup_values(
+        *,
+        root_key: object,
+        children_by_key: dict[object, dict[ActionT, dict[object, tuple[float, float]]]],
+        policy_value_by_key: dict[object, float],
+        cost_lambda: float,
+    ) -> dict[ActionT, float]:
+        """Each root action's worth on the explored graph, in policy value (net of no
+        cost spent before the root): the probability-weighted mean over its outcome
+        children of each child's worth less the edge's cost, a child worth the best of
+        stopping and its own actions, an unexpanded child its stop value. A node met
+        again on its own path (a cycle) counts as stopping there."""
+        worth: dict[object, float] = {}
+
+        def q_values(*, key: object, on_path: frozenset[object]) -> dict[ActionT, float]:
+            return {
+                action: sum(
+                    probability * (node_worth(key=child, on_path=on_path) - cost_lambda * cost)
+                    for child, (probability, cost) in outcomes.items()
+                )
+                / sum(probability for probability, _ in outcomes.values())
+                for action, outcomes in children_by_key.get(key, {}).items()
+            }
+
+        def node_worth(*, key: object, on_path: frozenset[object]) -> float:
+            if key in worth:
+                return worth[key]
+            stop = policy_value_by_key[key]
+            if key in on_path or key not in children_by_key:
+                return stop
+            best = max([stop, *q_values(key=key, on_path=on_path | {key}).values()])
+            worth[key] = best
+            return best
+
+        return q_values(key=root_key, on_path=frozenset({root_key}))
 
     @staticmethod
     def strictly_improves(*, candidate: float, previous: float) -> bool:
