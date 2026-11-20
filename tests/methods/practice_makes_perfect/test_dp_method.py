@@ -715,3 +715,199 @@ class TestSetupResetsTrainNothing:
 
     def test_a_human_reset_outside_practice_setup_still_is(self) -> None:
         assert self._observed_human_tries(target=False) == 1
+
+
+def _author_setup(*, monkeypatch, budget: float = 10.0, initial: float | None = 0.5):
+    """`--dp-protocol author` on the pick_wiper -> return_wiper chain, no outcomes yet."""
+    method = _build(budget=budget)
+    method.dp_protocol = "author"
+    method.dp_author_initial_competence = initial
+    pick = _ground(method=method, name="PickWiper")
+    back = _ground(method=method, name="ReturnWiper")
+    cube = _ground(method=method, name="PickCubeFromShelf")
+    monkeypatch.setattr(
+        DpTaskModel,
+        "build",
+        staticmethod(
+            lambda **kwargs: DpMdp(
+                initial_probabilities={0: 1},
+                terminal_rewards={2: 1},
+                transitions=[
+                    DpTransition(state=0, skill=pick, successor=1),
+                    DpTransition(state=1, skill=back, successor=2),
+                ],
+            )
+        ),
+    )
+    return method, pick, back, cube
+
+
+def _fixed_allocation(*, monkeypatch, counts: dict) -> list:
+    """Every solve returns `counts` (zero for the rest); records each solve's kwargs."""
+    calls: list = []
+
+    def allocate(**kwargs):
+        calls.append(kwargs)
+        return {ground: counts.get(ground, 0) for ground in kwargs["costs"]}
+
+    monkeypatch.setattr(DpAllocator, "allocate", staticmethod(allocate))
+    return calls
+
+
+class TestAuthorProtocol:
+    """`--dp-protocol author` follows shivamvats/deliberate-practice @ 7c2b5d1 where that
+    code takes a decision, under the fairness rules Josh approved on 2026-11-20."""
+
+    def test_the_default_protocol_is_ours(self) -> None:
+        assert DpMethod.model_fields["dp_protocol"].default == "ours"
+
+    def test_competence_starts_at_the_flag_and_delta_at_two_tenths(self, *, monkeypatch) -> None:
+        method, pick, _back, _cube = _author_setup(monkeypatch=monkeypatch, initial=0.001)
+        assert method.dp_author_competence(ground_skill=pick) == pytest.approx(0.001)
+        assert method.dp_author_learning_rate(ground_skill=pick) == pytest.approx(0.2)
+
+    def test_without_the_flag_competence_starts_at_our_prior_mean(self, *, monkeypatch) -> None:
+        method, pick, _back, _cube = _author_setup(monkeypatch=monkeypatch, initial=None)
+        # The EES default prior Beta(10, 1).
+        assert method.dp_author_competence(ground_skill=pick) == pytest.approx(10 / 11)
+
+    def test_competence_is_the_window_rate_accepted_only_above_old_minus_a_tenth(
+        self, *, monkeypatch
+    ) -> None:
+        method, pick, _back, _cube = _author_setup(monkeypatch=monkeypatch, initial=0.5)
+        seen = []
+        for outcome in [False, True, True, False]:
+            method.observe_outcome(ground_skill=pick, success=outcome)
+            seen.append(method.dp_author_competence(ground_skill=pick))
+        # 0/1 = 0 is not > 0.4: kept. 1/2 > 0.4. 2/3 > 0.4. 2/4 = 0.5 > 0.5667 fails.
+        assert seen == pytest.approx([0.5, 0.5, 2 / 3, 2 / 3])
+
+    def test_the_window_holds_the_last_twenty_attempts(self, *, monkeypatch) -> None:
+        method, pick, _back, _cube = _author_setup(monkeypatch=monkeypatch, initial=0.001)
+        _observe(method=method, ground=pick, outcomes=[False] * 5 + [True] * 20)
+        assert method.dp_author_competence(ground_skill=pick) == pytest.approx(1.0)
+
+    def test_delta_moves_a_quarter_towards_the_clipped_improvement(self, *, monkeypatch) -> None:
+        method, pick, _back, _cube = _author_setup(monkeypatch=monkeypatch, initial=0.5)
+        method.observe_outcome(ground_skill=pick, success=True)  # p: 0.5 -> 1.0
+        assert method.dp_author_learning_rate(ground_skill=pick) == pytest.approx(
+            0.75 * 0.2 + 0.25 * 0.5
+        )
+        method.observe_outcome(ground_skill=pick, success=False)  # 0.5 rejected
+        assert method.dp_author_learning_rate(ground_skill=pick) == pytest.approx(
+            0.75 * (0.75 * 0.2 + 0.25 * 0.5)
+        )
+
+    def test_an_accepted_decrease_never_makes_delta_negative(self, *, monkeypatch) -> None:
+        method, pick, _back, _cube = _author_setup(monkeypatch=monkeypatch, initial=0.05)
+        method.observe_outcome(ground_skill=pick, success=False)  # 0 > -0.05: accepted
+        assert method.dp_author_competence(ground_skill=pick) == pytest.approx(0.0)
+        assert method.dp_author_learning_rate(ground_skill=pick) == pytest.approx(0.15)
+
+    def test_a_setup_run_updates_neither_competence_nor_delta(self, *, monkeypatch) -> None:
+        method, pick, back, _cube = _author_setup(monkeypatch=monkeypatch, initial=0.5)
+        method.begin_practice_attempt(ground_skill=back)
+        method.record_action_cost(ground_skill=pick)
+        method.observe_outcome(ground_skill=pick, success=True)
+        assert method.dp_author_competence(ground_skill=pick) == pytest.approx(0.5)
+        assert method.dp_author_learning_rate(ground_skill=pick) == pytest.approx(0.2)
+
+    def test_the_allocator_sees_author_competence_delta_and_discount(self, *, monkeypatch) -> None:
+        method, pick, back, _cube = _author_setup(monkeypatch=monkeypatch, initial=0.001)
+        calls = _fixed_allocation(monkeypatch=monkeypatch, counts={pick: 1})
+        method.select_skill_to_practice(true_atoms=pick.preconditions)
+        assert calls[0]["competences"][back] == pytest.approx(0.001)
+        assert calls[0]["learning_rates"][back] == pytest.approx(0.2)
+        assert calls[0]["mdp"].discount == pytest.approx(0.99)
+
+    def test_ours_keeps_the_undiscounted_objective(self, *, monkeypatch) -> None:
+        method, pick, _back, _cube = _two_skill_setup(monkeypatch=monkeypatch)
+        calls = _fixed_allocation(monkeypatch=monkeypatch, counts={pick: 1})
+        method.choose_practice_target()
+        assert calls[0]["mdp"].discount == 1.0
+
+    def test_re_solves_after_every_target_attempt_with_the_budget_left(
+        self, *, monkeypatch
+    ) -> None:
+        method, pick, _back, _cube = _author_setup(monkeypatch=monkeypatch, budget=5)
+        method.dp_budget_unit = "episodes"
+        calls = _fixed_allocation(monkeypatch=monkeypatch, counts={pick: 5})
+        atoms = pick.preconditions
+        method.select_skill_to_practice(true_atoms=atoms)
+        method.select_skill_to_practice(true_atoms=atoms)  # nothing attempted: no solve
+        _execute(method=method, ground=pick)
+        method.select_skill_to_practice(true_atoms=atoms)
+        _execute(method=method, ground=pick)
+        method.select_skill_to_practice(true_atoms=atoms)
+        assert [call["budget"] for call in calls] == [5, 4, 3]
+
+    def test_an_all_zero_allocation_stops_practice(self, *, monkeypatch) -> None:
+        method, pick, _back, _cube = _author_setup(monkeypatch=monkeypatch)
+        _fixed_allocation(monkeypatch=monkeypatch, counts={})
+        assert method.select_skill_to_practice(true_atoms=pick.preconditions) == [STOP_SKILL]
+        assert method.practice_completion_reason() == "zero_allocation"
+
+    def test_lazy_keeps_the_last_target_while_it_is_still_allocated(self, *, monkeypatch) -> None:
+        method, pick, back, _cube = _author_setup(monkeypatch=monkeypatch)
+        _fixed_allocation(monkeypatch=monkeypatch, counts={pick: 2, back: 3})
+        method.begin_practice_attempt(ground_skill=back)
+        monkeypatch.setattr(DpMethod, "dp_steps_to_precondition", lambda self, **kw: 1)
+        order = method.select_skill_to_practice(true_atoms=pick.preconditions)
+        assert order[:2] == [back, pick]
+        assert order[-1] == STOP_SKILL
+
+    def test_lazy_drops_the_last_target_once_unallocated(self, *, monkeypatch) -> None:
+        method, pick, back, _cube = _author_setup(monkeypatch=monkeypatch)
+        _fixed_allocation(monkeypatch=monkeypatch, counts={back: 3})
+        method.begin_practice_attempt(ground_skill=pick)
+        monkeypatch.setattr(DpMethod, "dp_steps_to_precondition", lambda self, **kw: 1)
+        assert method.select_skill_to_practice(true_atoms=pick.preconditions) == [
+            back,
+            STOP_SKILL,
+        ]
+
+    def test_lazy_prefers_allocated_skills_applicable_now_in_skill_order(
+        self, *, monkeypatch
+    ) -> None:
+        method, pick, back, cube = _author_setup(monkeypatch=monkeypatch)
+        method.practice_groundings = "all"
+        _fixed_allocation(monkeypatch=monkeypatch, counts={pick: 1, back: 1, cube: 1})
+        atoms = pick.preconditions | cube.preconditions
+        assert not back.preconditions <= atoms
+        monkeypatch.setattr(DpMethod, "dp_steps_to_precondition", lambda self, **kw: 1)
+        order = method.select_skill_to_practice(true_atoms=atoms)
+        applicable = [g for g in method.dp_allocation() if g in (pick, cube)]
+        assert len(applicable) == 2
+        assert order == [*applicable, back, STOP_SKILL]
+
+    def test_lazy_otherwise_takes_the_fewest_steps_and_skips_unreachable(
+        self, *, monkeypatch
+    ) -> None:
+        method, pick, back, cube = _author_setup(monkeypatch=monkeypatch)
+        _fixed_allocation(monkeypatch=monkeypatch, counts={pick: 1, back: 1, cube: 1})
+        steps = {pick: 3, back: 1, cube: None}
+        monkeypatch.setattr(
+            DpMethod,
+            "dp_steps_to_precondition",
+            lambda self, *, true_atoms, ground_skill: steps[ground_skill],
+        )
+        assert method.select_skill_to_practice(true_atoms=frozenset()) == [
+            back,
+            pick,
+            STOP_SKILL,
+        ]
+
+    def test_steps_to_a_precondition_plan_every_skill_at_one_price(self, *, monkeypatch) -> None:
+        """Upstream's plan_to_skill_precond prices each edge max(-log p, 10) = 10, so it
+        finds the fewest skills; human resets are priced the same."""
+        method, pick, back, _cube = _author_setup(monkeypatch=monkeypatch)
+        seen: dict = {}
+
+        def plan(self, *, skills, init_atoms, goal, ground_skill_costs):  # noqa: PLR0917
+            seen.update(ground_skill_costs)
+            return [pick, pick]
+
+        monkeypatch.setattr(DpMethod, "_plan_or_raise", plan)
+        assert method.dp_steps_to_precondition(true_atoms=frozenset(), ground_skill=back) == 2
+        assert set(seen.values()) == {10.0}
+        assert _human(method=method) in seen
