@@ -1997,7 +1997,7 @@ class StepPracticeRunner:
                 stop_streak = stop_streak + 1 if stopped and actions == 0 else 0
                 # The always-ask wrapper's reset after a STOP-only session is that
                 # session's own last act, so the session stays STOP-only for both streaks.
-                owed = method.stop_only_session_reset() if stopped and actions == 0 else None
+                owed = None  # Pouring always-ask (Josh 2026-11-20, as tossing v13h): no reset after a STOP-only session
                 if owed is not None and not grant_human(
                     destination=SAMPLED_START_RESET_DESTINATION,
                     request_cost=owed,
