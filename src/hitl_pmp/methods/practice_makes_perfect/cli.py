@@ -1063,6 +1063,22 @@ class DpCli(EesCli):
             "setup included, human resets excluded.",
         )
         parser.add_argument(
+            "--dp-protocol",
+            choices=["ours", "author"],
+            default=fields["dp_protocol"].default,
+            help="ours: the protocol every published DP number used. author: the DP "
+            "authors' released code where it decides (re-solve after every target attempt, "
+            "windowed competence with their acceptance rule, their Delta update, lazy skill "
+            "choice, discount 0.99), on the same budget, unit and charges.",
+        )
+        parser.add_argument(
+            "--dp-author-initial-competence",
+            type=float,
+            default=fields["dp_author_initial_competence"].default,
+            help="--dp-protocol author: every robot skill's starting competence (upstream "
+            "0.001). Unset, each starts at the competence its prior gives it.",
+        )
+        parser.add_argument(
             "--dp-allocation-schedule",
             choices=["once", "period"],
             default=fields["dp_allocation_schedule"].default,
@@ -1188,6 +1204,8 @@ class DpCli(EesCli):
                 dp_budget=args.dp_budget,
                 dp_budget_unit=args.dp_budget_unit,
                 dp_allocation_schedule=args.dp_allocation_schedule,
+                dp_protocol=args.dp_protocol,
+                dp_author_initial_competence=args.dp_author_initial_competence,
                 dp_solver=args.dp_solver,
                 dp_solver_time_limit=args.dp_solver_time_limit,
                 dp_prior_calibration=args.dp_prior_calibration,
