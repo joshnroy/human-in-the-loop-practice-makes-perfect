@@ -58,6 +58,16 @@ def test_dp_cli_parses_repeatable_initial_competences():
     )
     assert args.dp_initial_competence == {"PickCube": 0.99, "MoveToTossLocationAndToss": 0.1}
     assert CostFixtures.parse(argv=base).dp_initial_competence == {}
+
+
+def test_dp_cli_parses_the_protocol_and_the_author_initial_competence():
+    base = ["--env", "tossing3d", "--method", "dp", "--dp-budget", "8"]
+    default = CostFixtures.parse(argv=base)
+    assert (default.dp_protocol, default.dp_author_initial_competence) == ("ours", None)
+    args = CostFixtures.parse(
+        argv=[*base, "--dp-protocol", "author", "--dp-author-initial-competence", "0.001"]
+    )
+    assert (args.dp_protocol, args.dp_author_initial_competence) == ("author", 0.001)
     for bad in (["PickCube"], ["PickCube=high"], ["PickCube=0.5", "PickCube=0.6"]):
         with pytest.raises(SystemExit):
             CostFixtures.parse(

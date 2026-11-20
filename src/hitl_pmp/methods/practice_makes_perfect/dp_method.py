@@ -11,6 +11,7 @@ from pydantic import Field, PrivateAttr, model_validator
 from hitl_pmp.core.method.types import GroundSkill, Policy
 from hitl_pmp.core.practice_costs import PracticeAccounting
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Task
+from hitl_pmp.planning.fast_downward import PlanningFailure
 from hitl_pmp.results_writer.jsonl_log import JsonlLog
 
 from .competence_models import LinearSkillCompetenceModel, OptimisticSkillCompetenceModel
@@ -81,6 +82,30 @@ class DpMethod(EesMethod):
     dp_max_allocations: int = Field(default=200_000, ge=1)
     dp_max_states: int = Field(default=4096, ge=1)
     skill_cost_prior_steps: float = Field(default=1.0, gt=0.0, allow_inf_nan=False)
+    # "author" (Josh, 2026-11-20) follows shivamvats/deliberate-practice @ 7c2b5d1 where
+    # that code takes a decision, under the agreed fairness rules: the same budget, unit
+    # and charges as "ours"; a re-solve after every target attempt; competence the
+    # windowed success rate under upstream's acceptance rule; upstream's Delta update;
+    # its "lazy" practice choice; and its 0.99 objective discount.
+    dp_protocol: Literal["ours", "author"] = "ours"
+    # The author protocol's starting competence for every robot skill (upstream: 0.001);
+    # None starts each at the competence our own prior gives it.
+    dp_author_initial_competence: float | None = Field(default=None, ge=0.0, le=1.0)
+
+    AUTHOR_WINDOW: ClassVar[int] = 20  # upstream's CMA-ES population size
+    AUTHOR_ACCEPTANCE_SLACK: ClassVar[float] = 0.1
+    AUTHOR_INITIAL_DELTA: ClassVar[float] = 0.2
+    AUTHOR_DELTA_STEP: ClassVar[float] = 0.25
+    AUTHOR_ALLOCATION_THRESHOLD: ClassVar[float] = 0.3
+    AUTHOR_DISCOUNT: ClassVar[float] = 0.99
+    # plan_to_skill_precond's edge cost max(-log p, 10) is 10 for every p >= e^-10.
+    AUTHOR_EDGE_COST: ClassVar[float] = 10.0
+
+    _dp_author_outcomes: dict[GroundSkill, list[bool]] = PrivateAttr(default_factory=dict)
+    _dp_author_competences: dict[GroundSkill, float] = PrivateAttr(default_factory=dict)
+    _dp_author_deltas: dict[GroundSkill, float] = PrivateAttr(default_factory=dict)
+    _dp_lazy_target: GroundSkill | None = PrivateAttr(default=None)
+    _dp_solved_at: tuple[int, float] | None = PrivateAttr(default=None)
 
     _dp_costs: dict[GroundSkill, list[float]] = PrivateAttr(default_factory=dict)
     _dp_pending_costs: dict[GroundSkill, float] = PrivateAttr(default_factory=dict)
@@ -223,6 +248,10 @@ class DpMethod(EesMethod):
         return max(0.0, self.dp_budget - self._spent())
 
     def _needs_allocation(self) -> bool:
+        if self.dp_protocol == "author":
+            # Upstream re-solves before every practice round; here, whenever a target
+            # attempt or a charged execution has happened since the last solve.
+            return self._dp_solved_at != (self._dp_episodes, self._spent())
         return self._dp_solved_period is None or (
             self.dp_allocation_schedule == "period"
             and self._dp_solved_period != self._practice_periods
@@ -276,13 +305,98 @@ class DpMethod(EesMethod):
             # before-first-success period.
             self.before_first_success(ground_skill=ground_skill, success=success)
             return
+        if self.dp_protocol == "author":
+            self._observe_author_outcome(ground_skill=ground_skill, success=success)
         super().observe_outcome(
             ground_skill=ground_skill,
             success=success,
             was_random_exploration=was_random_exploration,
         )
 
+    def _observe_author_outcome(self, *, ground_skill: GroundSkill, success: bool) -> None:
+        """Upstream's update after a round, per attempt: p is the success rate of the
+        skill's last <= 20 attempts, adopted only if above old p - 0.1 (every attempt
+        counts, as every rollout does upstream); then Delta <- 0.75 Delta +
+        0.25 max(0, p_new - p_old) (`update_skill_competence`, one budget unit)."""
+        outcomes = self._dp_author_outcomes.setdefault(ground_skill, [])
+        outcomes.append(success)
+        del outcomes[: -self.AUTHOR_WINDOW]
+        old = self.dp_author_competence(ground_skill=ground_skill)
+        rate = sum(outcomes) / len(outcomes)
+        new = rate if rate > old - self.AUTHOR_ACCEPTANCE_SLACK else old
+        self._dp_author_competences[ground_skill] = new
+        self._dp_author_deltas[ground_skill] = (
+            1.0 - self.AUTHOR_DELTA_STEP
+        ) * self.dp_author_learning_rate(ground_skill=ground_skill) + self.AUTHOR_DELTA_STEP * max(
+            0.0, new - old
+        )
+
+    def dp_author_competence(self, *, ground_skill: GroundSkill) -> float:
+        if ground_skill in self._dp_author_competences:
+            return self._dp_author_competences[ground_skill]
+        if self.dp_author_initial_competence is not None:
+            return self.dp_author_initial_competence
+        return self._linear_model(history=None, ground_skill=ground_skill).get_current_competence()
+
+    def dp_author_learning_rate(self, *, ground_skill: GroundSkill) -> float:
+        return self._dp_author_deltas.get(ground_skill, self.AUTHOR_INITIAL_DELTA)
+
+    def dp_lazy_target(self) -> GroundSkill | None:
+        return self._dp_lazy_target
+
+    def dp_steps_to_precondition(
+        self, *, true_atoms: frozenset[GroundAtom], ground_skill: GroundSkill
+    ) -> int | None:
+        """Upstream's `plan_to_skill_precond` cost, as a number of skills: every edge,
+        human resets included, costs the same, so the cheapest plan is the shortest.
+        None when no plan reaches the precondition."""
+        resets = self.offered_partial_resets()
+        skills = (*self.skills(), *dict.fromkeys(g.skill for g in resets))
+        uniform = dict.fromkeys((*self.all_practice_groundings(), *resets), self.AUTHOR_EDGE_COST)
+        try:
+            plan = self._plan_or_raise(
+                skills=skills,
+                init_atoms=true_atoms,
+                goal=ground_skill.preconditions,
+                ground_skill_costs=uniform,
+            )
+        except PlanningFailure:
+            return None
+        return len(plan)
+
+    def _author_practice_order(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
+        """Upstream's "lazy" choice as an ordered candidate list; the episode takes the
+        first one it can reach. Keep the last target while its allocation exceeds 0.3;
+        else the first allocated skill (fixed skill order) applicable now; else the
+        allocated skill whose precondition is fewest skills away."""
+        if self.practice_complete():
+            return [STOP_SKILL]
+        if self._needs_allocation():
+            self._solve(budget=self._remaining_budget())
+        if self.practice_complete():
+            return [STOP_SKILL]
+        allocated = [
+            ground
+            for ground, count in self._dp_allocation.items()
+            if count > self.AUTHOR_ALLOCATION_THRESHOLD
+        ]
+        order = [self._dp_lazy_target] if self._dp_lazy_target in allocated else []
+        order += [g for g in allocated if g not in order and g.preconditions <= true_atoms]
+        steps = {
+            ground: self.dp_steps_to_precondition(true_atoms=true_atoms, ground_skill=ground)
+            for ground in allocated
+            if ground not in order
+        }
+        order += sorted(
+            (ground for ground, count in steps.items() if count is not None),
+            key=lambda ground: steps[ground] or 0,
+        )
+        for candidate in order[:1]:
+            self.record_practice_target(name=candidate.skill.name, field="scored")
+        return [*order, STOP_SKILL]
+
     def begin_practice_attempt(self, *, ground_skill: GroundSkill) -> None:
+        self._dp_lazy_target = ground_skill
         self._dp_active_target = ground_skill
         self._dp_pending_costs[ground_skill] = (
             self._dp_pending_costs.get(ground_skill, 0.0) + self._dp_unassigned_cost
@@ -334,7 +448,8 @@ class DpMethod(EesMethod):
 
     def select_skill_to_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
         """Use DP's curriculum without activating EES-only selector behavior."""
-        del true_atoms
+        if self.dp_protocol == "author":
+            return self._author_practice_order(true_atoms=true_atoms)
         return self.choose_practice_target()
 
     def choose_practice_target(self) -> list[GroundSkill]:
@@ -365,6 +480,9 @@ class DpMethod(EesMethod):
             max_states=self.dp_max_states,
             goal_rewards=self.skill_provider.goal_rewards(),
         )
+        author = self.dp_protocol == "author"
+        if author:
+            mdp = mdp.model_copy(update={"discount": self.AUTHOR_DISCOUNT})
         if self.dp_prior_calibration is not None:
             missing = {edge.skill.skill.name for edge in mdp.transitions} - set(
                 self._dp_skill_priors
@@ -396,6 +514,10 @@ class DpMethod(EesMethod):
                 tries = sum(len(c) for c in history.cycle_observations) if history else 0
                 competences[candidate] = min(1.0, curve[0] + curve[1] * tries)
                 learning_rates[candidate] = curve[1]
+                continue
+            if author and candidate not in humans:
+                competences[candidate] = self.dp_author_competence(ground_skill=candidate)
+                learning_rates[candidate] = self.dp_author_learning_rate(ground_skill=candidate)
                 continue
             model = self._linear_model(history=history, ground_skill=candidate)
             competences[candidate] = model.get_current_competence()
@@ -455,9 +577,11 @@ class DpMethod(EesMethod):
         self._dp_executed_since_solve = {}
         self._dp_no_allocation = not any(self._dp_allocation.values())
         self._dp_solved_period = self._practice_periods
+        self._dp_solved_at = (self._dp_episodes, self._spent())
         self._write_solver_record(
             record={
                 **result.model_dump(exclude={"allocation"}),
+                **({"protocol": "author", "discount": mdp.discount} if author else {}),
                 "budget": budget,
                 "allocation": [
                     {
