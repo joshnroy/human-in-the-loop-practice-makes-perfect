@@ -1922,3 +1922,28 @@ def test_a_run_recorded_before_measure_after_learning_updates_still_resumes():
     assert StepProtocolResume.comparable(arguments={}) == StepProtocolResume.comparable(
         arguments={"measure_after_learning_updates": str([])}
     )
+
+
+def test_an_always_ask_run_is_refused_when_its_cost_file_cannot_price_the_named_reset(*, tmp_path):
+    """With --always-ask-reset-skill the check reads that reset's price, not the full
+    reset's: pouring's file prices human_bulk_pour_back."""
+    from hitl_pmp.step_protocol import StepProtocolValidation
+
+    sampled_only = tmp_path / "sampled.json"
+    sampled_only.write_text(json.dumps({"human_skills": {"reset_to_sampled_start": {}}}))
+    pour_back = tmp_path / "pour_back.json"
+    pour_back.write_text(json.dumps({"human_skills": {"human_bulk_pour_back": {}}}))
+
+    def args(*, costs):
+        return _step_args(
+            output_dir=tmp_path / "run",
+            budget=10,
+            interval=5,
+            practice_cost_config=costs,
+            always_ask_reset=True,
+            always_ask_reset_skill="human_bulk_pour_back",
+        )
+
+    with pytest.raises(ValueError, match="human_bulk_pour_back"):
+        StepProtocolValidation.check(args=args(costs=sampled_only))
+    StepProtocolValidation.check(args=args(costs=pour_back))

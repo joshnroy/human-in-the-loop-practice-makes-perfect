@@ -32,7 +32,9 @@ from hitl_pmp.core.method.types import (
 from hitl_pmp.core.practice_costs import PracticeAccounting
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Object, State, Type
-from hitl_pmp.core.problem.human.types import SAMPLED_START_RESET_SKILL_NAME
+from hitl_pmp.core.problem.human.types import (
+    SAMPLED_START_RESET_DESTINATION,
+)
 from hitl_pmp.core.problem.tasks.types import GroundAtom, Predicate, Task
 from hitl_pmp.planning.fast_downward import FastDownwardPlanner, PlanningFailure
 from hitl_pmp.planning.grounding import SkillGrounder
@@ -1354,12 +1356,12 @@ class EesMethod(Method):
         if self._practice_accounting is not None:
             return (
                 self._practice_accounting.costs.human_weight
-                * self._practice_accounting.human_charge(skill=SAMPLED_START_RESET_SKILL_NAME).cost
+                * self._practice_accounting.human_charge(skill=self.always_ask_reset.skill).cost
             )
         if self.always_ask_reset.cost is None:
             raise ValueError(
                 "--always-ask-reset needs a price: a --practice-cost-config that prices "
-                f"{SAMPLED_START_RESET_SKILL_NAME!r}, or --always-ask-reset-cost"
+                f"{self.always_ask_reset.skill!r}, or --always-ask-reset-cost"
             )
         return self.always_ask_reset.cost
 
@@ -1960,7 +1962,9 @@ class _EesEpisode:
         # The reset rebuilds the scene, so nothing queued survives it.
         self._plan = []
         self._practice_target = None
-        raise HumanStartResetRequested(cost=cost)
+        if rule.destination() == SAMPLED_START_RESET_DESTINATION:
+            raise HumanStartResetRequested(cost=cost)
+        raise HumanCubeBinResetRequested(cost=cost, destination=rule.destination())
 
     def _tick_goal_pursuit_horizon(self) -> None:
         """Spend one step of the goal-pursuit budget, and end the goal phase once it

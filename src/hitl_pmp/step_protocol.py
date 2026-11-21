@@ -1062,15 +1062,14 @@ class StepProtocolValidation:
         cost_path = args.practice_cost_config
         if args.human_skill_steps != 1:
             raise ValueError("Configure human durations in the cost file, not --human-skill-steps")
+        forced = getattr(args, "always_ask_reset_skill", SAMPLED_START_RESET_SKILL_NAME)
         if (
             getattr(args, "always_ask_reset", False)
-            and SAMPLED_START_RESET_SKILL_NAME
-            not in PracticeCosts.load(path=cost_path).human_skills
+            and forced not in PracticeCosts.load(path=cost_path).human_skills
         ):
             # Otherwise the first forced reset raises mid-run, after the first sweep/toss.
             raise ValueError(
-                f"{cost_path} does not price {SAMPLED_START_RESET_SKILL_NAME!r}, which "
-                "--always-ask-reset requests"
+                f"{cost_path} does not price {forced!r}, which --always-ask-reset requests"
             )
         output = Path(args.output_dir)
         if getattr(args, "resume", None) is not None:
@@ -1997,7 +1996,8 @@ class StepPracticeRunner:
                 stop_streak = stop_streak + 1 if stopped and actions == 0 else 0
                 # The always-ask wrapper's reset after a STOP-only session is that
                 # session's own last act, so the session stays STOP-only for both streaks.
-                owed = None  # Pouring always-ask (Josh 2026-11-20, as tossing v13h): no reset after a STOP-only session
+                # Launch only (Josh 2026-11-20, as tossing v13h): rule 3 off.
+                owed = None
                 if owed is not None and not grant_human(
                     destination=SAMPLED_START_RESET_DESTINATION,
                     request_cost=owed,
