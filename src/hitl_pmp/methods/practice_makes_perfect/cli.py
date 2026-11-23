@@ -112,7 +112,11 @@ class EesCli:
     def always_ask_reset(*, args: argparse.Namespace) -> AlwaysAskReset | None:
         if not args.always_ask_reset:
             return None
-        return AlwaysAskReset(cost=args.always_ask_reset_cost)
+        skills = getattr(args, "always_ask_reset_skills", None)
+        return AlwaysAskReset(
+            cost=args.always_ask_reset_cost,
+            trigger_skills=None if skills is None else frozenset(skills),
+        )
 
     @staticmethod
     def known_curves(*, args: argparse.Namespace) -> dict[str, tuple[float, float]]:
@@ -436,6 +440,13 @@ class EesCli:
             default=None,
             help="Price of one --always-ask-reset reset when no --practice-cost-config "
             "prices reset_to_sampled_start. A costs file's price always wins.",
+        )
+        parser.add_argument(
+            "--always-ask-reset-skills",
+            nargs="+",
+            default=None,
+            help="Only these parameterized skills trigger --always-ask-reset's reset "
+            "after them (default: every skill with continuous parameters).",
         )
         parser.add_argument(
             "--defer-rendering",

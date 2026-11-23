@@ -45,6 +45,9 @@ class AlwaysAskReset(BaseModel):
 
     # An explicit price, used only when no practice-cost file prices the reset by name.
     cost: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
+    # When named, only these parameterized skills owe a reset (3D Sweeping: the sweeps,
+    # not gather, whose reset would undo it before sweep5; Josh 2026-11-23).
+    trigger_skills: frozenset[str] | None = None
 
     _owed: bool = PrivateAttr(default=False)
     _skill_attempts: int = PrivateAttr(default=0)
@@ -79,7 +82,9 @@ class AlwaysAskReset(BaseModel):
         return list(self._events)
 
     def observe_dispatch(self, *, ground_skill: GroundSkill) -> None:
-        if AlwaysAskReset.triggers(ground_skill=ground_skill):
+        if AlwaysAskReset.triggers(ground_skill=ground_skill) and (
+            self.trigger_skills is None or ground_skill.skill.name in self.trigger_skills
+        ):
             self._skill_attempts += 1
             self._owed = True
         # A robot skill ran, so any run of back-to-back stranded resets is over.
