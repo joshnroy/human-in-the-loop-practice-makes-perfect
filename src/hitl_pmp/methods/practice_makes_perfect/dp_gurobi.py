@@ -16,12 +16,21 @@ optimization objective or the independent certification checks.
 Dual feasibility must be tightened alongside primal feasibility and MIP gaps:
 small learning gains can fall below the default reduced-cost tolerance, yielding
 a suboptimal allocation and an understated solver bound that agree with each other.
+
+Gurobi can also report OPTIMAL on a point that violates the bilinear flow equalities by
+far more than FeasibilityTol in the original model (presolve and scaling act on a
+transformed one). Such a point can claim unattainable reward, so the independent value
+check rejects it; that rejection is correct and is never loosened. Instead a rejected
+solve is repeated once with NumericFocus raised, and certified again. A solve that
+passes on the first attempt is never repeated, so retrying changes only solves that
+would otherwise have raised.
 """
 
+import importlib.util
 import math
 import time
 from collections.abc import Hashable, Mapping
-from typing import Any, Generic, TypeVar
+from typing import Any, ClassVar, Generic, TypeVar
 
 from pydantic import BaseModel
 
@@ -41,6 +50,10 @@ class DpAllocationResult(BaseModel, Generic[SkillKey]):
     absolute_gap: float = 0.0
     tie_break_retries: int = 0
     runtime_seconds: float
+    # Gurobi's MaxVio for the returned solution, in the original model; None off Gurobi.
+    max_violation: float | None = None
+    # The rejected first attempt's diagnostics when the certified result is a retry.
+    numeric_retry: dict[str, object] | None = None
 
 
 class DpOptimizationError(RuntimeError):
@@ -50,6 +63,11 @@ class DpOptimizationError(RuntimeError):
 
 
 class DpGurobiAllocator:
+    FEASIBILITY_TOLERANCE: ClassVar[float] = 1e-9
+    # The value check's slack: the solver's own tolerances are all 1e-9.
+    CERTIFICATION_TOLERANCE: ClassVar[float] = 1e-7
+    RETRY_NUMERIC_FOCUS: ClassVar[int] = 3
+
     @staticmethod
     def allocate(
         *,
@@ -61,10 +79,8 @@ class DpGurobiAllocator:
         time_limit: float = 60.0,
         groups: Mapping[SkillKey, SkillKey] | None = None,
     ) -> DpAllocationResult[SkillKey]:
-        try:
-            import gurobipy as gp
-        except ImportError as error:
-            raise RuntimeError("DP's Gurobi backend needs the optional 'dp' dependency") from error
+        if importlib.util.find_spec("gurobipy") is None:
+            raise RuntimeError("DP's Gurobi backend needs the optional 'dp' dependency")
 
         if not math.isfinite(budget) or not math.isfinite(time_limit) or time_limit <= 0:
             raise ValueError("DP budget must be finite and solver time limit finite and positive")
@@ -88,6 +104,58 @@ class DpGurobiAllocator:
             if identities.get(group, group) != group:
                 raise ValueError("DP costs must price allocation groups, not duplicate members")
         limits = {group: max(0, math.floor(budget / cost + 1e-9)) for group, cost in costs.items()}
+        first = DpGurobiAllocator._solve(
+            mdp=mdp,
+            competences=competences,
+            learning_rates=learning_rates,
+            costs=costs,
+            budget=budget,
+            time_limit=time_limit,
+            groups=groups,
+            skills=skills,
+            limits=limits,
+            numeric_focus=None,
+        )
+        if isinstance(first, DpAllocationResult):
+            first.runtime_seconds = time.monotonic() - started
+            return first
+        retry = DpGurobiAllocator._solve(
+            mdp=mdp,
+            competences=competences,
+            learning_rates=learning_rates,
+            costs=costs,
+            budget=budget,
+            time_limit=time_limit,
+            groups=groups,
+            skills=skills,
+            limits=limits,
+            numeric_focus=DpGurobiAllocator.RETRY_NUMERIC_FOCUS,
+        )
+        if isinstance(retry, DpAllocationResult):
+            retry.numeric_retry = first
+            retry.runtime_seconds = time.monotonic() - started
+            return retry
+        raise DpOptimizationError(diagnostics={**retry, "first_attempt": first})
+
+    @staticmethod
+    def _solve(
+        *,
+        mdp: DpMdp[SkillKey],
+        competences: Mapping[SkillKey, float],
+        learning_rates: Mapping[SkillKey, float],
+        costs: Mapping[SkillKey, float],
+        budget: float,
+        time_limit: float,
+        groups: Mapping[SkillKey, SkillKey] | None,
+        skills: list[SkillKey],
+        limits: dict[SkillKey, int],
+        numeric_focus: int | None,
+    ) -> DpAllocationResult[SkillKey] | dict[str, object]:
+        """One model build and solve: a certified result, or the diagnostics of a solve
+        whose allocation failed the independent value check."""
+        import gurobipy as gp
+
+        identities = groups if groups is not None else {}
         with gp.Env(empty=True) as environment:
             environment.setParam("OutputFlag", 0)
             environment.start()
@@ -97,9 +165,11 @@ class DpGurobiAllocator:
                 model.Params.TimeLimit = time_limit
                 model.Params.MIPGap = 1e-9
                 model.Params.MIPGapAbs = 1e-9
-                model.Params.FeasibilityTol = 1e-9
+                model.Params.FeasibilityTol = DpGurobiAllocator.FEASIBILITY_TOLERANCE
                 model.Params.IntFeasTol = 1e-9
                 model.Params.OptimalityTol = 1e-9
+                if numeric_focus is not None:
+                    model.Params.NumericFocus = numeric_focus
                 counts = {
                     group: model.addVar(
                         lb=0, ub=limits[group], vtype=gp.GRB.INTEGER, name=f"b_{index}"
@@ -187,17 +257,18 @@ class DpGurobiAllocator:
                 theoretical_bound, _ = mdp.solve(competences=maximum_competences)
                 bound = min(model.ObjBound, theoretical_bound)
                 spent = sum(costs[skill] * count for skill, count in allocation.items())
-                if spent > max(0, budget) + 1e-7 or bound - value > 1e-7:
-                    raise DpOptimizationError(
-                        diagnostics={
-                            "phase": "primary_independent_verification",
-                            "objective": value,
-                            "solver_objective": model.ObjVal,
-                            "objective_bound": bound,
-                            "spent": spent,
-                            "budget": budget,
-                        }
-                    )
+                slack = DpGurobiAllocator.CERTIFICATION_TOLERANCE
+                if spent > max(0, budget) + slack or bound - value > slack:
+                    return {
+                        "phase": "primary_independent_verification",
+                        "objective": value,
+                        "solver_objective": model.ObjVal,
+                        "objective_bound": bound,
+                        "spent": spent,
+                        "budget": budget,
+                        "max_violation": model.MaxVio,
+                        "numeric_focus": numeric_focus,
+                    }
                 return DpAllocationResult(
                     allocation=allocation,
                     solver="gurobi",
@@ -206,7 +277,8 @@ class DpGurobiAllocator:
                     objective_bound=bound,
                     relative_gap=max(0, bound - value) / max(abs(value), 1e-12),
                     absolute_gap=max(0, bound - value),
-                    runtime_seconds=time.monotonic() - started,
+                    runtime_seconds=0.0,
+                    max_violation=model.MaxVio,
                 )
 
     @staticmethod

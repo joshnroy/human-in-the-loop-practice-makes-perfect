@@ -1,0 +1,808 @@
+{
+ "provenance": {
+  "scenario": "Pouring DP c=20 --dp-protocol author, seed 4, episode-55 re-solve (2026-11-21, neuronic)",
+  "replay_status": "reconstructed_input_reproduces_recorded_failure_exactly",
+  "note": "Deployment MDP rebuilt from the nine session-start states (canonical, spilled, holding, x3) and the episode-54 solver record plus one Pour1 and one PickPitcher success. With Gurobi 13.0.0 it reproduces the recorded episode-54 bound and the episode-55 failure diagnostics bit for bit. Needs a full Gurobi licence: the model exceeds the size-limited one."
+ },
+ "arguments": {
+  "mdp": {
+   "initial_probabilities": {
+    "0": 0.1111111111111111,
+    "1": 0.1111111111111111,
+    "2": 0.1111111111111111,
+    "3": 0.1111111111111111,
+    "4": 0.1111111111111111,
+    "5": 0.1111111111111111,
+    "6": 0.1111111111111111,
+    "7": 0.1111111111111111,
+    "8": 0.1111111111111111
+   },
+   "terminal_rewards": {
+    "33": 1.0,
+    "42": 1.0,
+    "51": 1.0,
+    "54": 1.0,
+    "60": 1.0,
+    "66": 1.0,
+    "123": 1.0,
+    "126": 1.0,
+    "129": 1.0
+   },
+   "transitions": [
+    {
+     "state": 0,
+     "skill": "PickPitcher(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 9
+    },
+    {
+     "state": 1,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 10
+    },
+    {
+     "state": 2,
+     "skill": "Pour1(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 11
+    },
+    {
+     "state": 2,
+     "skill": "Pour2(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 12
+    },
+    {
+     "state": 2,
+     "skill": "Pour3(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 13
+    },
+    {
+     "state": 2,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 14
+    },
+    {
+     "state": 3,
+     "skill": "PickPitcher(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 15
+    },
+    {
+     "state": 4,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 16
+    },
+    {
+     "state": 5,
+     "skill": "Pour1(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 17
+    },
+    {
+     "state": 5,
+     "skill": "Pour2(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 18
+    },
+    {
+     "state": 5,
+     "skill": "Pour3(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 19
+    },
+    {
+     "state": 5,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 20
+    },
+    {
+     "state": 6,
+     "skill": "PickPitcher(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 21
+    },
+    {
+     "state": 7,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 22
+    },
+    {
+     "state": 8,
+     "skill": "Pour1(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 23
+    },
+    {
+     "state": 8,
+     "skill": "Pour2(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 24
+    },
+    {
+     "state": 8,
+     "skill": "Pour3(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 25
+    },
+    {
+     "state": 8,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 26
+    },
+    {
+     "state": 9,
+     "skill": "Pour1(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 27
+    },
+    {
+     "state": 9,
+     "skill": "Pour2(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 28
+    },
+    {
+     "state": 9,
+     "skill": "Pour3(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 29
+    },
+    {
+     "state": 9,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 0
+    },
+    {
+     "state": 10,
+     "skill": "PickShrimpFromTray(robot,potsticker_0,tray)",
+     "successor": 30
+    },
+    {
+     "state": 10,
+     "skill": "PickShrimpFromTray(robot,potsticker_1,tray)",
+     "successor": 31
+    },
+    {
+     "state": 10,
+     "skill": "PickShrimpFromTray(robot,potsticker_2,tray)",
+     "successor": 32
+    },
+    {
+     "state": 11,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 33
+    },
+    {
+     "state": 12,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 34
+    },
+    {
+     "state": 13,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 35
+    },
+    {
+     "state": 15,
+     "skill": "Pour1(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 36
+    },
+    {
+     "state": 15,
+     "skill": "Pour2(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 37
+    },
+    {
+     "state": 15,
+     "skill": "Pour3(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 38
+    },
+    {
+     "state": 15,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 3
+    },
+    {
+     "state": 16,
+     "skill": "PickShrimpFromTray(robot,potsticker_0,tray)",
+     "successor": 39
+    },
+    {
+     "state": 16,
+     "skill": "PickShrimpFromTray(robot,potsticker_1,tray)",
+     "successor": 40
+    },
+    {
+     "state": 16,
+     "skill": "PickShrimpFromTray(robot,potsticker_2,tray)",
+     "successor": 41
+    },
+    {
+     "state": 17,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 42
+    },
+    {
+     "state": 18,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 43
+    },
+    {
+     "state": 19,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 44
+    },
+    {
+     "state": 21,
+     "skill": "Pour1(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 45
+    },
+    {
+     "state": 21,
+     "skill": "Pour2(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 46
+    },
+    {
+     "state": 21,
+     "skill": "Pour3(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 47
+    },
+    {
+     "state": 21,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 6
+    },
+    {
+     "state": 22,
+     "skill": "PickShrimpFromTray(robot,potsticker_0,tray)",
+     "successor": 48
+    },
+    {
+     "state": 22,
+     "skill": "PickShrimpFromTray(robot,potsticker_1,tray)",
+     "successor": 49
+    },
+    {
+     "state": 22,
+     "skill": "PickShrimpFromTray(robot,potsticker_2,tray)",
+     "successor": 50
+    },
+    {
+     "state": 23,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 51
+    },
+    {
+     "state": 24,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 52
+    },
+    {
+     "state": 25,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 53
+    },
+    {
+     "state": 27,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 54
+    },
+    {
+     "state": 28,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 55
+    },
+    {
+     "state": 29,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 56
+    },
+    {
+     "state": 30,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_0,pitcher)",
+     "successor": 57
+    },
+    {
+     "state": 31,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_1,pitcher)",
+     "successor": 58
+    },
+    {
+     "state": 32,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_2,pitcher)",
+     "successor": 59
+    },
+    {
+     "state": 36,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 60
+    },
+    {
+     "state": 37,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 61
+    },
+    {
+     "state": 38,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 62
+    },
+    {
+     "state": 39,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_0,pitcher)",
+     "successor": 63
+    },
+    {
+     "state": 40,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_1,pitcher)",
+     "successor": 64
+    },
+    {
+     "state": 41,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_2,pitcher)",
+     "successor": 65
+    },
+    {
+     "state": 45,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 66
+    },
+    {
+     "state": 46,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 67
+    },
+    {
+     "state": 47,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 68
+    },
+    {
+     "state": 48,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_0,pitcher)",
+     "successor": 69
+    },
+    {
+     "state": 49,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_1,pitcher)",
+     "successor": 70
+    },
+    {
+     "state": 50,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_2,pitcher)",
+     "successor": 71
+    },
+    {
+     "state": 57,
+     "skill": "PickShrimpFromTray(robot,potsticker_1,tray)",
+     "successor": 72
+    },
+    {
+     "state": 57,
+     "skill": "PickShrimpFromTray(robot,potsticker_2,tray)",
+     "successor": 73
+    },
+    {
+     "state": 58,
+     "skill": "PickShrimpFromTray(robot,potsticker_0,tray)",
+     "successor": 74
+    },
+    {
+     "state": 58,
+     "skill": "PickShrimpFromTray(robot,potsticker_2,tray)",
+     "successor": 75
+    },
+    {
+     "state": 59,
+     "skill": "PickShrimpFromTray(robot,potsticker_0,tray)",
+     "successor": 76
+    },
+    {
+     "state": 59,
+     "skill": "PickShrimpFromTray(robot,potsticker_1,tray)",
+     "successor": 77
+    },
+    {
+     "state": 63,
+     "skill": "PickShrimpFromTray(robot,potsticker_1,tray)",
+     "successor": 78
+    },
+    {
+     "state": 63,
+     "skill": "PickShrimpFromTray(robot,potsticker_2,tray)",
+     "successor": 79
+    },
+    {
+     "state": 64,
+     "skill": "PickShrimpFromTray(robot,potsticker_0,tray)",
+     "successor": 80
+    },
+    {
+     "state": 64,
+     "skill": "PickShrimpFromTray(robot,potsticker_2,tray)",
+     "successor": 81
+    },
+    {
+     "state": 65,
+     "skill": "PickShrimpFromTray(robot,potsticker_0,tray)",
+     "successor": 82
+    },
+    {
+     "state": 65,
+     "skill": "PickShrimpFromTray(robot,potsticker_1,tray)",
+     "successor": 83
+    },
+    {
+     "state": 69,
+     "skill": "PickShrimpFromTray(robot,potsticker_1,tray)",
+     "successor": 84
+    },
+    {
+     "state": 69,
+     "skill": "PickShrimpFromTray(robot,potsticker_2,tray)",
+     "successor": 85
+    },
+    {
+     "state": 70,
+     "skill": "PickShrimpFromTray(robot,potsticker_0,tray)",
+     "successor": 86
+    },
+    {
+     "state": 70,
+     "skill": "PickShrimpFromTray(robot,potsticker_2,tray)",
+     "successor": 87
+    },
+    {
+     "state": 71,
+     "skill": "PickShrimpFromTray(robot,potsticker_0,tray)",
+     "successor": 88
+    },
+    {
+     "state": 71,
+     "skill": "PickShrimpFromTray(robot,potsticker_1,tray)",
+     "successor": 89
+    },
+    {
+     "state": 72,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_1,pitcher)",
+     "successor": 90
+    },
+    {
+     "state": 73,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_2,pitcher)",
+     "successor": 91
+    },
+    {
+     "state": 74,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_0,pitcher)",
+     "successor": 90
+    },
+    {
+     "state": 75,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_2,pitcher)",
+     "successor": 92
+    },
+    {
+     "state": 76,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_0,pitcher)",
+     "successor": 91
+    },
+    {
+     "state": 77,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_1,pitcher)",
+     "successor": 92
+    },
+    {
+     "state": 78,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_1,pitcher)",
+     "successor": 93
+    },
+    {
+     "state": 79,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_2,pitcher)",
+     "successor": 94
+    },
+    {
+     "state": 80,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_0,pitcher)",
+     "successor": 93
+    },
+    {
+     "state": 81,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_2,pitcher)",
+     "successor": 95
+    },
+    {
+     "state": 82,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_0,pitcher)",
+     "successor": 94
+    },
+    {
+     "state": 83,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_1,pitcher)",
+     "successor": 95
+    },
+    {
+     "state": 84,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_1,pitcher)",
+     "successor": 96
+    },
+    {
+     "state": 85,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_2,pitcher)",
+     "successor": 97
+    },
+    {
+     "state": 86,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_0,pitcher)",
+     "successor": 96
+    },
+    {
+     "state": 87,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_2,pitcher)",
+     "successor": 98
+    },
+    {
+     "state": 88,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_0,pitcher)",
+     "successor": 97
+    },
+    {
+     "state": 89,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_1,pitcher)",
+     "successor": 98
+    },
+    {
+     "state": 90,
+     "skill": "PickShrimpFromTray(robot,potsticker_2,tray)",
+     "successor": 99
+    },
+    {
+     "state": 91,
+     "skill": "PickShrimpFromTray(robot,potsticker_1,tray)",
+     "successor": 100
+    },
+    {
+     "state": 92,
+     "skill": "PickShrimpFromTray(robot,potsticker_0,tray)",
+     "successor": 101
+    },
+    {
+     "state": 93,
+     "skill": "PickShrimpFromTray(robot,potsticker_2,tray)",
+     "successor": 102
+    },
+    {
+     "state": 94,
+     "skill": "PickShrimpFromTray(robot,potsticker_1,tray)",
+     "successor": 103
+    },
+    {
+     "state": 95,
+     "skill": "PickShrimpFromTray(robot,potsticker_0,tray)",
+     "successor": 104
+    },
+    {
+     "state": 96,
+     "skill": "PickShrimpFromTray(robot,potsticker_2,tray)",
+     "successor": 105
+    },
+    {
+     "state": 97,
+     "skill": "PickShrimpFromTray(robot,potsticker_1,tray)",
+     "successor": 106
+    },
+    {
+     "state": 98,
+     "skill": "PickShrimpFromTray(robot,potsticker_0,tray)",
+     "successor": 107
+    },
+    {
+     "state": 99,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_2,pitcher)",
+     "successor": 108
+    },
+    {
+     "state": 100,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_1,pitcher)",
+     "successor": 108
+    },
+    {
+     "state": 101,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_0,pitcher)",
+     "successor": 108
+    },
+    {
+     "state": 102,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_2,pitcher)",
+     "successor": 109
+    },
+    {
+     "state": 103,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_1,pitcher)",
+     "successor": 109
+    },
+    {
+     "state": 104,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_0,pitcher)",
+     "successor": 109
+    },
+    {
+     "state": 105,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_2,pitcher)",
+     "successor": 110
+    },
+    {
+     "state": 106,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_1,pitcher)",
+     "successor": 110
+    },
+    {
+     "state": 107,
+     "skill": "DropShrimpIntoPitcher(robot,potsticker_0,pitcher)",
+     "successor": 110
+    },
+    {
+     "state": 108,
+     "skill": "PickPitcher(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 111
+    },
+    {
+     "state": 109,
+     "skill": "PickPitcher(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 112
+    },
+    {
+     "state": 110,
+     "skill": "PickPitcher(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 113
+    },
+    {
+     "state": 111,
+     "skill": "Pour1(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 114
+    },
+    {
+     "state": 111,
+     "skill": "Pour2(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 115
+    },
+    {
+     "state": 111,
+     "skill": "Pour3(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 116
+    },
+    {
+     "state": 111,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 108
+    },
+    {
+     "state": 112,
+     "skill": "Pour1(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 117
+    },
+    {
+     "state": 112,
+     "skill": "Pour2(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 118
+    },
+    {
+     "state": 112,
+     "skill": "Pour3(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 119
+    },
+    {
+     "state": 112,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 109
+    },
+    {
+     "state": 113,
+     "skill": "Pour1(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 120
+    },
+    {
+     "state": 113,
+     "skill": "Pour2(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 121
+    },
+    {
+     "state": 113,
+     "skill": "Pour3(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)",
+     "successor": 122
+    },
+    {
+     "state": 113,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 110
+    },
+    {
+     "state": 114,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 123
+    },
+    {
+     "state": 115,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 124
+    },
+    {
+     "state": 116,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 125
+    },
+    {
+     "state": 117,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 126
+    },
+    {
+     "state": 118,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 127
+    },
+    {
+     "state": 119,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 128
+    },
+    {
+     "state": 120,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 129
+    },
+    {
+     "state": 121,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 130
+    },
+    {
+     "state": 122,
+     "skill": "PlacePitcherAtHome(robot,pitcher)",
+     "successor": 131
+    }
+   ],
+   "discount": 0.99
+  },
+  "competences": {
+   "PickPitcher(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)": 1.0,
+   "Pour1(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)": 0.8,
+   "PlacePitcherAtHome(robot,pitcher)": 0.8,
+   "Pour2(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)": 0.8,
+   "Pour3(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)": 0.8,
+   "PickShrimpFromTray(robot,potsticker_0,tray)": 0.8,
+   "PickShrimpFromTray(robot,potsticker_1,tray)": 0.8,
+   "PickShrimpFromTray(robot,potsticker_2,tray)": 0.8,
+   "DropShrimpIntoPitcher(robot,potsticker_0,pitcher)": 0.8,
+   "DropShrimpIntoPitcher(robot,potsticker_1,pitcher)": 0.8,
+   "DropShrimpIntoPitcher(robot,potsticker_2,pitcher)": 0.8,
+   "human_bulk_pour_back(robot,pitcher,tray,potsticker_0,potsticker_1,potsticker_2)": 0.9827586206896551
+  },
+  "learning_rates": {
+   "PickPitcher(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)": 8.494824846404063e-08,
+   "Pour1(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)": 8.494824846404063e-08,
+   "PlacePitcherAtHome(robot,pitcher)": 0.2,
+   "Pour2(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)": 0.2,
+   "Pour3(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)": 0.2,
+   "PickShrimpFromTray(robot,potsticker_0,tray)": 0.2,
+   "PickShrimpFromTray(robot,potsticker_1,tray)": 0.2,
+   "PickShrimpFromTray(robot,potsticker_2,tray)": 0.2,
+   "DropShrimpIntoPitcher(robot,potsticker_0,pitcher)": 0.2,
+   "DropShrimpIntoPitcher(robot,potsticker_1,pitcher)": 0.2,
+   "DropShrimpIntoPitcher(robot,potsticker_2,pitcher)": 0.2,
+   "human_bulk_pour_back(robot,pitcher,tray,potsticker_0,potsticker_1,potsticker_2)": 0.0003139207743356069
+  },
+  "costs": {
+   "PickPitcher(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)": 1.0,
+   "Pour1(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)": 1.0,
+   "PlacePitcherAtHome(robot,pitcher)": 1.0,
+   "Pour2(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)": 1.0,
+   "Pour3(robot,pitcher,potsticker_0,potsticker_1,potsticker_2)": 1.0,
+   "PickShrimpFromTray(robot,potsticker_0,tray)": 1.0,
+   "PickShrimpFromTray(robot,potsticker_1,tray)": 1.0,
+   "PickShrimpFromTray(robot,potsticker_2,tray)": 1.0,
+   "DropShrimpIntoPitcher(robot,potsticker_0,pitcher)": 1.0,
+   "DropShrimpIntoPitcher(robot,potsticker_1,pitcher)": 1.0,
+   "DropShrimpIntoPitcher(robot,potsticker_2,pitcher)": 1.0,
+   "human_bulk_pour_back(robot,pitcher,tray,potsticker_0,potsticker_1,potsticker_2)": 1.0
+  },
+  "budget": 20.0
+ },
+ "original_failure": {
+  "phase": "primary_independent_verification",
+  "objective": 0.7612749533356812,
+  "solver_objective": 0.7612765700600284,
+  "objective_bound": 0.7612765700600282,
+  "spent": 20.0,
+  "budget": 20.0
+ },
+ "certified_objective": 0.7612760042065068
+}

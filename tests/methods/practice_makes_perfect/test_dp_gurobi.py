@@ -188,8 +188,12 @@ def test_grouped_allocations_keep_independent_certification(*, monkeypatch):
             budget=1,
             groups={"left": "toss", "right": "toss"},
         )
-    assert failure.value.diagnostics["phase"] == "primary_independent_verification"
-    assert len(evaluations) == 1
+    diagnostics = failure.value.diagnostics
+    assert diagnostics["phase"] == "primary_independent_verification"
+    assert diagnostics["numeric_focus"] == DpGurobiAllocator.RETRY_NUMERIC_FOCUS
+    assert diagnostics["first_attempt"]["phase"] == "primary_independent_verification"
+    assert diagnostics["first_attempt"]["numeric_focus"] is None
+    assert len(evaluations) == 2
 
 
 def test_paper_counterexample_uses_the_jointly_improved_route():
@@ -356,8 +360,53 @@ def test_optimal_status_does_not_bypass_independent_value_check(*, monkeypatch, 
             costs={"toss": 1},
             budget=1,
         )
-    assert failure.value.diagnostics["phase"] == "primary_independent_verification"
-    assert len(evaluations) == 1
+    diagnostics = failure.value.diagnostics
+    assert diagnostics["phase"] == "primary_independent_verification"
+    assert diagnostics["numeric_focus"] == DpGurobiAllocator.RETRY_NUMERIC_FOCUS
+    assert diagnostics["first_attempt"]["phase"] == "primary_independent_verification"
+    assert diagnostics["first_attempt"]["numeric_focus"] is None
+    assert len(evaluations) == 2
+
+
+def test_numerically_violated_optimum_is_resolved_rather_than_accepted():
+    """Pouring DP-author seed 4, episode 55: Gurobi reported OPTIMAL on a point that
+    broke the flow equalities by ~7.6e-7, claiming the all-skills-maxed bound while its
+    allocation (Pour1 0, one Drop 14) was worth 1.05e-6 less than the true optimum. The
+    check must keep rejecting that point, and the safer re-solve must find the optimum."""
+    path = Path(__file__).parent / "fixtures" / "pouring_dp_author_seed4_ep55.json"
+    case = json.loads(path.read_text())
+    arguments = {**case["arguments"], "mdp": DpMdp[str].model_validate(case["arguments"]["mdp"])}
+    result = DpGurobiAllocator.allocate(**arguments)
+    retry = result.numeric_retry
+    assert retry is not None
+    for key in ("phase", "objective", "solver_objective", "objective_bound"):
+        assert retry[key] == case["original_failure"][key]
+    assert retry["max_violation"] > 100 * DpGurobiAllocator.FEASIBILITY_TOLERANCE
+    assert result.max_violation is not None
+    assert result.max_violation <= DpGurobiAllocator.FEASIBILITY_TOLERANCE
+    assert result.objective == pytest.approx(case["certified_objective"], abs=1e-12, rel=0)
+    assert result.objective_bound - result.objective <= 1e-7
+    pour = next(skill for skill in arguments["costs"] if skill.startswith("Pour1("))
+    assert result.allocation[pour] == 13
+    assert sum(result.allocation.values()) <= arguments["budget"]
+
+
+def test_a_certified_first_solve_is_never_retried():
+    mdp = DpMdp(
+        initial_probabilities={0: 1},
+        terminal_rewards={1: 1},
+        transitions=[DpTransition(state=0, skill="toss", successor=1)],
+    )
+    result = DpGurobiAllocator.allocate(
+        mdp=mdp,
+        competences={"toss": 0.1},
+        learning_rates={"toss": 0.1},
+        costs={"toss": 1},
+        budget=1,
+    )
+    assert result.numeric_retry is None
+    assert result.max_violation is not None
+    assert result.max_violation <= DpGurobiAllocator.FEASIBILITY_TOLERANCE
 
 
 @pytest.mark.parametrize("task_count", [1, 3, 10])
