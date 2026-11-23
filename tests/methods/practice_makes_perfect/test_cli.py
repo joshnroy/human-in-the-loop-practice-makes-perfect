@@ -862,3 +862,32 @@ def test_dp_rejects_out_of_range_knobs(*, flag: str) -> None:
     argv = ["--dp-budget", "1", flag, value]
     with pytest.raises(SystemExit):
         _build_dp_parser().parse_args(argv)
+
+
+@pytest.mark.parametrize(
+    ("flag", "expected"),
+    [([], None), (["--always-ask-reset-skills", "sweep3", "sweep5"], {"sweep3", "sweep5"})],
+)
+def test_always_ask_reset_skills_reach_the_wrapper(
+    *, flag: list[str], expected: set[str] | None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    from hitl_pmp.environments.tossing3d.cli import Tossing3DCli
+    from hitl_pmp.environments.tossing3d.environment import Tossing3DEnvironment
+    from hitl_pmp.environments.tossing3d.skill_provider import Tossing3DSkillProvider
+
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        Tossing3DCli, "run_method", staticmethod(lambda **kwargs: captured.update(kwargs))
+    )
+    CostFixtures.dispatch(
+        argv=["--env", "tossing3d", "--method", "ees", "--always-ask-reset", *flag]
+    )
+    env = Tossing3DEnvironment(scene_bg=False)
+    built = captured["method_factory"](  # type: ignore[operator]
+        SimpleNamespace(env=env, skill_provider=Tossing3DSkillProvider(env=env))
+    )
+    assert built.always_ask_reset.trigger_skills == (
+        None if expected is None else frozenset(expected)
+    )
