@@ -145,6 +145,18 @@ class EesCli:
         return out
 
     @staticmethod
+    def skill_competence_priors(*, args: argparse.Namespace) -> dict[str, tuple[float, float]]:
+        """--skill-prior as EES's per-skill Beta(alpha, beta), under
+        --ees-competence-from-skill-prior; empty otherwise."""
+        if not getattr(args, "ees_competence_from_skill_prior", False):
+            return {}
+        priors = EesCli.skill_priors(args=args)
+        if not priors:
+            raise ValueError("--ees-competence-from-skill-prior needs --skill-prior")
+        # strength - alpha, as competence_prior does, so a beta is never rounded below.
+        return {name: (c * k, k - c * k) for name, (c, k, _, _) in priors.items()}
+
+    @staticmethod
     def deploy_curve_priors(
         *, args: argparse.Namespace
     ) -> dict[str, tuple[float, float, float, float]]:
@@ -354,6 +366,14 @@ class EesCli:
                 "method there does: a labelled deviation from the paper.",
             )
         parser.add_argument(
+            "--ees-competence-from-skill-prior",
+            action="store_true",
+            help="EES only: start each skill named by --skill-prior, robot or human, from "
+            "Beta(C_MEAN*C_STRENGTH, (1-C_MEAN)*C_STRENGTH) in the competence that scores "
+            "and plans practice, as DP and the belief-space method do. Unnamed skills keep "
+            "the shared prior. Without it --skill-prior reaches EES's deployment only.",
+        )
+        parser.add_argument(
             "--competence-prior-mean",
             type=lambda value: EesCli.open_unit_float(value=value),
             default=None,
@@ -517,6 +537,7 @@ class EesCli:
             always_ask_reset=EesCli.always_ask_reset(args=args),
             prior_alpha=prior[0],
             prior_beta=prior[1],
+            skill_competence_priors=EesCli.skill_competence_priors(args=args),
             reproduce_predicators_double_observe=args.reproduce_predicators_double_observe,
             reproduce_predicators_practice_target_history=(
                 args.reproduce_predicators_practice_target_history
@@ -827,6 +848,11 @@ class Tossing3DPomdpCli(EesCli):
             raise ValueError("--practice-groundings applies only to --method ees or dp")
         if getattr(args, "ees_preview_test_goals", False):
             raise ValueError("--ees-preview-test-goals applies only to --method ees")
+        if getattr(args, "ees_competence_from_skill_prior", False):
+            raise ValueError(
+                "--ees-competence-from-skill-prior applies only to --method ees: the "
+                "belief-space method already reads --skill-prior"
+            )
         defaults = (
             EesMethod.model_fields["prior_alpha"].default,
             EesMethod.model_fields["prior_beta"].default,
@@ -1183,6 +1209,11 @@ class DpCli(EesCli):
     def run(*, args: argparse.Namespace, env_cli: type[EnvironmentCli]) -> None:
         if getattr(args, "ees_preview_test_goals", False):
             raise ValueError("--ees-preview-test-goals applies only to --method ees")
+        if getattr(args, "ees_competence_from_skill_prior", False):
+            raise ValueError(
+                "--ees-competence-from-skill-prior applies only to --method ees: DP reads "
+                "--skill-prior through its own priors"
+            )
         if args.dp_prior_calibration is not None:
             calibration = DpPriorCalibration.load(path=args.dp_prior_calibration)
             if (calibration.environment, calibration.layout, calibration.variant) != (

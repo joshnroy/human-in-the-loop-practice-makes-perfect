@@ -862,3 +862,62 @@ def test_dp_rejects_out_of_range_knobs(*, flag: str) -> None:
     argv = ["--dp-budget", "1", flag, value]
     with pytest.raises(SystemExit):
         _build_dp_parser().parse_args(argv)
+
+
+_SKILL_PRIORS = [
+    "--skill-prior", "MoveRobot=0.090075,2.7302,0.15,0.09",
+    "--skill-prior", "TurnOnLight=0.5,2,0.15,0.09",
+]  # fmt: skip
+
+
+def test_ees_ignores_skill_prior_for_its_competence_without_the_opt_in(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The 2026-11-20 EES arm passed --skill-prior for deployment only; its practice
+    competence stayed Beta(10, 1). Without the opt-in that must still hold."""
+    method = _ees_method_from(argv=_SKILL_PRIORS, monkeypatch=monkeypatch)
+    assert method.skill_competence_priors == {}  # type: ignore[attr-defined]
+    assert (method.prior_alpha, method.prior_beta) == (10.0, 1.0)  # type: ignore[attr-defined]
+
+
+def test_the_opt_in_gives_ees_each_skill_prior_as_a_beta(
+    *, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    method = _ees_method_from(
+        argv=[*_SKILL_PRIORS, "--ees-competence-from-skill-prior"], monkeypatch=monkeypatch
+    )
+    priors = method.skill_competence_priors  # type: ignore[attr-defined]
+    assert set(priors) == {"MoveRobot", "TurnOnLight"}
+    alpha = 0.090075 * 2.7302
+    assert priors["MoveRobot"] == pytest.approx((alpha, 2.7302 - alpha))
+    assert priors["TurnOnLight"] == pytest.approx((1.0, 1.0))
+    # Skills not named keep the shared prior.
+    assert (method.prior_alpha, method.prior_beta) == (10.0, 1.0)  # type: ignore[attr-defined]
+
+
+def test_the_opt_in_needs_a_skill_prior(*, monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(ValueError, match="ees-competence-from-skill-prior"):
+        _ees_method_from(argv=["--ees-competence-from-skill-prior"], monkeypatch=monkeypatch)
+
+
+def test_dp_rejects_the_ees_skill_prior_opt_in() -> None:
+    """DP reads --skill-prior through its own priors; the EES opt-in would otherwise
+    be parsed and silently change the EES competence models DP inherits."""
+    from hitl_pmp.methods.practice_makes_perfect.cli import DpCli
+
+    args = _build_dp_parser().parse_args([
+        "--dp-budget",
+        "1",
+        *_SKILL_PRIORS,
+        "--ees-competence-from-skill-prior",
+    ])
+    with pytest.raises(ValueError, match="ees-competence-from-skill-prior"):
+        DpCli.run(args=args, env_cli=LightSwitchCli)
+
+
+def test_pomdp_rejects_the_ees_skill_prior_opt_in() -> None:
+    parser = argparse.ArgumentParser()
+    Tossing3DPomdpCli.add_arguments(parser=parser)
+    args = parser.parse_args(["--ees-competence-from-skill-prior"])
+    with pytest.raises(ValueError, match="ees-competence-from-skill-prior"):
+        Tossing3DPomdpCli.run(args=args, env_cli=LightSwitchCli)
