@@ -720,3 +720,32 @@ def test_the_wrapper_drops_only_the_tossing3d_human_reset_belief(
         if wrapped
         else TOSSING3D_DOMAIN
     )
+
+
+def test_named_trigger_skills_owe_a_reset_only_after_those_skills() -> None:
+    """3D Sweeping's always-ask resets after each sweep but not after gather (Josh,
+    2026-11-23): a reset after gather would undo it before sweep5 can run. Naming the
+    trigger skills restricts the parameterized trigger to them."""
+    pick = Tossing3DSkills.PICK_CUBE.model_copy(update={"param_dim": 1})
+    toss = Tossing3DSkills.MOVE_TO_TOSS_LOCATION_AND_TOSS
+    rule = AlwaysAskReset(trigger_skills=frozenset({toss.name}))
+    rule.observe_dispatch(ground_skill=_any_grounding(skill=pick))
+    assert not rule.take_owed()
+    assert rule.skill_attempts == 0
+    rule.observe_dispatch(ground_skill=_any_grounding(skill=toss))
+    assert rule.take_owed()
+    assert rule.skill_attempts == 1
+
+
+def test_a_named_trigger_skill_still_needs_continuous_parameters() -> None:
+    pick = Tossing3DSkills.PICK_CUBE
+    rule = AlwaysAskReset(trigger_skills=frozenset({pick.name}))
+    rule.observe_dispatch(ground_skill=_any_grounding(skill=pick))
+    assert not rule.take_owed()
+
+
+def test_without_named_trigger_skills_every_parameterized_skill_triggers() -> None:
+    pick = Tossing3DSkills.PICK_CUBE.model_copy(update={"param_dim": 1})
+    rule = AlwaysAskReset()
+    rule.observe_dispatch(ground_skill=_any_grounding(skill=pick))
+    assert rule.take_owed()
