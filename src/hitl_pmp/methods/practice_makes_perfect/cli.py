@@ -492,9 +492,12 @@ class EesCli:
         that is EES with a different practice-target choice (`DpCli`)."""
         if args.record_ees_decisions and args.output_dir is None:
             raise ValueError("--record-ees-decisions requires --output-dir")
-        preview = getattr(args, "ees_preview_test_goals", False)
+        # DpCli.run rejects the EES flag, so at most one of the two is set.
+        dp_preview = getattr(args, "dp_preview_test_goals", False)
+        preview = dp_preview or getattr(args, "ees_preview_test_goals", False)
         if preview and not ctx.test_task_goals:
-            raise ValueError(f"--ees-preview-test-goals: --env {args.env} enumerates no test goals")
+            flag = "--dp-preview-test-goals" if dp_preview else "--ees-preview-test-goals"
+            raise ValueError(f"{flag}: --env {args.env} enumerates no test goals")
         prior = EesCli.competence_prior(args=args)
         if prior is None:
             prior = (args.ees_prior_alpha, args.ees_prior_beta)
@@ -1189,6 +1192,14 @@ class DpCli(EesCli):
             default=fields["dp_max_states"].default,
             help="Raise rather than approximate when the reachable deployment MDP "
             "exceeds this many symbolic states.",
+        )
+        parser.add_argument(
+            "--dp-preview-test-goals",
+            action="store_true",
+            help="DP's twin of --ees-preview-test-goals: DP's deployment MDP weighs each "
+            "goal of the domain's test-task distribution once, and no training task, and "
+            "every robot skill on those goals' plans is a practice candidate from the "
+            "start. Without it DP solves only for the training tasks' goals.",
         )
 
     @staticmethod
