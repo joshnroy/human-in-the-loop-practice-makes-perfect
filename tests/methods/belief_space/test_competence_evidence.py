@@ -27,6 +27,8 @@ ADMITS = {
     E.ALL: {C.INFORMED, C.UNINFORMATIVE, C.EPSILON_RANDOM, C.NO_SAMPLER},
     E.NON_EPSILON: {C.INFORMED, C.UNINFORMATIVE, C.NO_SAMPLER},
     E.INFORMED: {C.INFORMED, C.NO_SAMPLER},
+    # Without a sampler success, as `admits` assumes unless told.
+    E.SAMPLER_SUCCEEDED: {C.INFORMED, C.NO_SAMPLER},
 }
 
 
@@ -156,3 +158,23 @@ def test_search_forecasts_under_the_same_evidence_rule(
         evidence.admits(consultation=C.EPSILON_RANDOM)
     )
     assert conditioned_mass == pytest.approx(expected)
+
+
+@pytest.mark.parametrize(("labels", "conditioned"), [((True,), True), ((False,), False)])
+def test_ours_conditions_an_uninformative_pick_once_its_sampler_has_succeeded(
+    *, labels: tuple[bool, ...], conditioned: bool
+) -> None:
+    method = _method(evidence=E.SAMPLER_SUCCEEDED)
+    for success in labels:
+        method.observe_sampler_outcome(
+            skill_name=TOSS_SKILL, param_dim=4, sampler_input=[float(success)], success=success
+        )
+    method.sampler(skill_name=TOSS_SKILL, param_dim=4).fit()
+    before = _belief(method=method, name=TOSS_SKILL)
+    ground = next(g for g in method._pomdp_model.ground_skills if g.skill.name == TOSS_SKILL)  # noqa: SLF001
+    method.record_practice_attempt(
+        skill_name=TOSS_SKILL, success=True, consultation=C.UNINFORMATIVE
+    )
+    method.observe_outcome(ground_skill=ground, success=True, was_random_exploration=False)
+    after = _belief(method=method, name=TOSS_SKILL)
+    assert (after.cycle_successes == before.cycle_successes + 1) is conditioned
