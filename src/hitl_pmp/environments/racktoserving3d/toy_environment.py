@@ -32,7 +32,7 @@ from hitl_pmp.environments.sweepoffshelf3d.types import HumanEvent, SweepOffShel
 from .environment import HUMAN_RETURN_SETTLE_STEPS, RackServingEnvironment
 from .food import RackFoodController
 from .objects import RackServing3DObjects as Objects
-from .predicates import GATHERED
+from .predicates import GATHERED, RackServing3DAtoms
 from .robot_batch_return import RackRobotBatchReturn
 from .toy_interface import (
     GATHER,
@@ -61,6 +61,11 @@ class RackServingToyEnvironment(RackServingEnvironment):
     # and Route B rewards).
     sweep3_reward: float = Field(default=3.0, gt=0.0)
     sweep5_reward: float = Field(default=4.0, gt=0.0)
+    # Opt-in (Josh, 2026-11-24): gather succeeds only when, beyond the blade-band
+    # Gathered classifier, it leaves the food clustered tightly enough for sweep5
+    # (`RackServing3DAtoms.clustered_for_sweep`). None keeps the blade band alone.
+    gather_success_half_width: float | None = Field(default=None, gt=0.0)
+    gather_success_depth: float | None = Field(default=None, gt=0.0)
 
     _toy_flags: frozenset[str] = PrivateAttr(default_factory=ServingToyTransitions.initial)
     # The toy skill running now and the backend control-step count it started at:
@@ -108,8 +113,25 @@ class RackServingToyEnvironment(RackServingEnvironment):
         batch = RackRobotBatchReturn(controllers=controllers)
         return ServingToyMeasurement(
             plate_count=backend.plate_count(),
-            gathered=(GATHERED.name, ()) in self._gathered(),
+            gathered=(GATHERED.name, ()) in self._gathered() and self._clustered_for_sweep(),
             full_rack=all(batch.in_place(name=name) for name in backend.cube_names),
+        )
+
+    def _clustered_for_sweep(self) -> bool:
+        if self.gather_success_half_width is None:
+            return True
+        backend, controllers = self.backend(), self.rack_controllers()
+        geometry = controllers.stroke_geometry()
+        return RackServing3DAtoms.clustered_for_sweep(
+            unserved_corners=[
+                backend.corners(name=name)
+                for name in backend.cube_names
+                if backend.location(name=name) != "OnTray"
+            ],
+            center_y=geometry["plate_center_y"],
+            rack_front=geometry["rack_front"],
+            half_width=self.gather_success_half_width,
+            depth=self.gather_success_depth,
         )
 
     def cost_observation(self) -> dict[str, Any]:
