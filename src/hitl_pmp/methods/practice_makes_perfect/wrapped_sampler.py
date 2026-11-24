@@ -391,6 +391,14 @@ class LearnedSkillSampler(BaseModel):
         return self._classifier.is_fitted
 
     @property
+    def fitted_with_success(self) -> bool:
+        """Whether the fit now scoring candidates saw at least one success: fitted, and
+        not the all-failure single-class shortcut. False before the first fit and after
+        a fit on failures alone -- the "no success yet, so a uniform draw" case."""
+        classifier = self._classifier
+        return classifier.is_fitted and classifier._single_class_prediction != 0.0  # noqa: SLF001
+
+    @property
     def num_observations(self) -> int:
         return len(self._labels)
 

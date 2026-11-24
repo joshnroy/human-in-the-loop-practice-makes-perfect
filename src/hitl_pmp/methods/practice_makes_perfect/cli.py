@@ -271,8 +271,9 @@ class EesCli:
             "--competence-from-informed-only",
             action="store_true",
             help="Learn each skill's competence only from the sampler's informed picks: "
-            "an uninformative pick (no success yet, so a uniform draw) still counts as a "
-            "try but its outcome is not observed. Off reproduces every earlier run.",
+            "a uniform draw made before the sampler's first success still counts as a "
+            "try but its outcome is not observed; one from a fit that has seen a success "
+            "counts. Off reproduces every earlier run.",
         )
         # Each default is the EesMethod field's; see that field for why it is what it
         # is. Only --reproduce-predicators-practice-target-history defaults on.
@@ -774,8 +775,10 @@ class Tossing3DPomdpCli(EesCli):
             choices=[evidence.value for evidence in CompetenceEvidence],
             default=Tossing3DPomdpMethod.model_fields["pomdp_competence_evidence"].default.value,
             help="Which toss practice outcomes condition competence: all attempts, "
-            "all but epsilon-greedy random picks (default), or only the classifier's "
-            "informed argmax picks. Every attempt still trains the sampler and "
+            "all but epsilon-greedy random picks (default), only the classifier's "
+            "informed argmax picks, or sampler_succeeded: all but epsilon picks and "
+            "uniform draws made before the sampler's first success. Every attempt still "
+            "trains the sampler and "
             "advances the training clock; skills without a sampler are always "
             "conditioned.",
         )
