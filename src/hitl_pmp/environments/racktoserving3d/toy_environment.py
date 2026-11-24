@@ -9,8 +9,9 @@ the price. A planner action is one of the toy's skills:
   controllers' Sweep, Gather or Sweep (`RackControllers.sweep` / `.gather`).
 * robot_reset: a held scraper is put home (ReturnScraper's controller), then every
   dumpling out of place is picked and set back on its slot (`RackRobotBatchReturn`).
-* human_reset (a human skill, `reset_movables`): the person puts the scraper home and
-  returns the food to a fresh draw of the start layout.
+* human_reset (a human skill, `reset_movables`): the person puts the scraper home, the
+  robot back at its episode-start pose, and the food to a fresh draw of the start
+  layout.
 
 Which atoms hold afterwards follows the toy (`ServingToyTransitions.after`); only
 whether the skill succeeded is measured, after it returns
@@ -68,6 +69,9 @@ class RackServingToyEnvironment(RackServingEnvironment):
     _toy_skill_start: int = PrivateAttr(default=0)
     # The last skill's measured outcome, for logs.
     _toy_measurement: ServingToyMeasurement | None = PrivateAttr(default=None)
+    # Every robot joint as this episode started (`RackServingBackend.ROBOT_JOINTS`),
+    # where the human reset puts the robot back.
+    _robot_start: np.ndarray | None = PrivateAttr(default=None)
 
     def toy_flags(self) -> frozenset[str]:
         return self._toy_flags
@@ -82,7 +86,9 @@ class RackServingToyEnvironment(RackServingEnvironment):
         self._toy_flags = ServingToyTransitions.initial()
         self._toy_skill = None
         self._toy_measurement = None
-        return super().reset_to_seed(seed=seed)
+        state = super().reset_to_seed(seed=seed)
+        self._robot_start = self.backend().robot_configuration()
+        return state
 
     def _observed_state(self, *, seed: int, steps_taken: int) -> SweepOffShelf3DState:
         backend = self.backend()
@@ -187,9 +193,9 @@ class RackServingToyEnvironment(RackServingEnvironment):
 
     def reset_movables(self, *, destination: str | None = None) -> bool:
         """The human's reset, offered from any end (`NeedsReset`), mid-route included,
-        as the toy offers it: the scraper home, then the food back from the start
-        layout. It succeeds when the full rack is measured back; otherwise the robot
-        is where it was."""
+        as the toy offers it: the scraper home, the robot back at its episode-start
+        pose, then the food back from the start layout. It succeeds when the full rack
+        is measured back; otherwise the toy's flags are left as they were."""
         if destination != HUMAN_RESET:
             raise ValueError(f"unknown human intervention: {destination!r}")
         if not ServingToyTransitions.applicable(skill=HUMAN_RESET, flags=self._toy_flags):
@@ -199,6 +205,7 @@ class RackServingToyEnvironment(RackServingEnvironment):
         if backend.held(name=Objects.scraper.name):
             controllers.tool.initialize_rest()
             backend.grip = controllers.shelf.grip
+        self._return_robot_to_start()
         backend.batch_return()
         RackFoodController(controllers=controllers).restore_gripper_force()
         controllers.held_food = None
@@ -211,6 +218,18 @@ class RackServingToyEnvironment(RackServingEnvironment):
         )
         self.current_state = self._observed_state(seed=seed, steps_taken=count + 1)
         return True
+
+    def _return_robot_to_start(self) -> None:
+        """The person puts the robot back where this episode started, base and arm, so
+        a robot_reset that aborted mid-carry does not leave it stranded where no stance
+        reaches the scraper (B=120 ees05 seed 0, 2026-11-23). The start pose is also
+        within one turn of every continuous joint's zero, so this unwinds them."""
+        if self._robot_start is None:
+            raise RuntimeError("reset the episode before a human reset")
+        shelf = self.rack_controllers().shelf
+        self.backend().place_robot(configuration=self._robot_start)
+        shelf.base_target = self._robot_start[:3].copy()
+        shelf.arm_reference = shelf.data.qpos[shelf.qa].copy()
 
     def _open_motion_skill(self, *, action: np.ndarray) -> None:
         self._motion_steps = 0
