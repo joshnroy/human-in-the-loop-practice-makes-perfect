@@ -343,8 +343,10 @@ class EesMethod(Method):
     # (89.0 +- 16.0 against its 91.0 +- 12.0) -- a positive control on the port.
     sampler_max_train_iters: int = 10000
     # Opt-in (Josh, 2026-11-15): learn competence only from the sampler's informed picks.
-    # An uninformative pick (no success yet to learn from, so a uniform draw) is skipped
-    # rather than observed, but still counts as a try. Off reproduces every earlier run.
+    # An uninformative pick made before the sampler's first success (no success yet to
+    # learn from, so a uniform draw; `picked_before_sampler_success`) is skipped rather
+    # than observed, but still counts as a try. One from an all-success fit counts
+    # (coordinator for Josh, 2026-11-24). Off reproduces every earlier run.
     competence_from_informed_only: bool = False
 
     _practice_accounting: PracticeAccounting | None = PrivateAttr(default=None)
@@ -607,6 +609,19 @@ class EesMethod(Method):
             was_random_exploration=was_random_exploration,
             was_uninformative=was_uninformative,
         )
+
+    def picked_before_sampler_success(
+        self, *, skill_name: str, consultation: SamplerConsultation
+    ) -> bool:
+        """Whether a pick was a uniform draw made while its sampler had no success to
+        learn from (unfitted, or fitted on failures alone): what
+        `competence_from_informed_only` keeps out of competence. An UNINFORMATIVE pick
+        from a fit that has seen a success -- a skill that has never failed, whose
+        one-class fit ties every candidate at 1.0 -- is evidence and counts."""
+        if consultation is not SamplerConsultation.UNINFORMATIVE:
+            return False
+        sampler = self._samplers.get(skill_name)
+        return sampler is None or not sampler.fitted_with_success
 
     def record_competence_outcome(
         self,
@@ -2149,7 +2164,9 @@ class _EesEpisode:
                 was_random_exploration=attempt is not None and attempt.was_random_exploration,
                 was_uninformative=(
                     attempt is not None
-                    and attempt.consultation is SamplerConsultation.UNINFORMATIVE
+                    and self._method.picked_before_sampler_success(
+                        skill_name=self._pending.skill.name, consultation=attempt.consultation
+                    )
                 ),
             )
             self._method.observe_symbolic_transition(
