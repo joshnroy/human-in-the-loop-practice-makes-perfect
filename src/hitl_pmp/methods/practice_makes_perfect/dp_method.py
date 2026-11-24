@@ -262,11 +262,24 @@ class DpMethod(EesMethod):
 
     def get_practice_policy(self, *, task: Task) -> Policy:
         policy = super().get_practice_policy(task=task)
+        # EES registers the preview only under its own selector; DP's is its own.
+        if self.preview_test_goals and not self._preview_tasks:
+            self._register_preview_tasks(init_atoms=self.abstract_state(state=task.initial_state))
         self._dp_active_target = None
         remaining = self._remaining_budget()
         if remaining > 0 and self._needs_allocation():
             self._solve(budget=remaining)
         return policy
+
+    def dp_tasks(self) -> list[tuple[frozenset[GroundAtom], frozenset[GroundAtom]]]:
+        """The tasks DP's deployment MDP weighs equally. Under `--dp-preview-test-goals`,
+        the test goals alone, as EES's preview scores against them and ours' fixed plans
+        weigh each test goal once: a training stream that always delivers one goal (the
+        kitchen's practice is always requested_count 1) would otherwise leave every other
+        goal's skills worthless to DP."""
+        if self.preview_test_goals:
+            return list(self._preview_tasks)
+        return self.planning_progress_tasks()
 
     def dp_allocation(self) -> dict[GroundSkill, int]:
         """The current period's allocated target attempts, including zero counts."""
@@ -480,7 +493,7 @@ class DpMethod(EesMethod):
 
     def _solve(self, *, budget: float) -> None:
         mdp = DpTaskModel.build(
-            tasks=self.planning_progress_tasks(),
+            tasks=self.dp_tasks(),
             skills=self.skills(),
             objects=self.objects(),
             max_states=self.dp_max_states,
