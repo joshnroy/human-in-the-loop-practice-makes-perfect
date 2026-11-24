@@ -636,6 +636,8 @@ class Tossing3DPomdpMethod(EesMethod):
             skill_name, consultation = pending
             assert skill_name == ground_skill.skill.name, (skill_name, ground_skill.skill.name)
             assert (consultation is SamplerConsultation.EPSILON_RANDOM) == was_random_exploration
+        sampler = self._samplers.get(ground_skill.skill.name)
+        sampler_has_success = sampler is not None and sampler.fitted_with_success
         self._pomdp_state = self._pomdp_model.observe_outcome(
             state=self._pomdp_state,
             ground_skill=ground_skill,
@@ -644,6 +646,7 @@ class Tossing3DPomdpMethod(EesMethod):
             observed_cost=None,
             consultation=consultation,
             admitted=admitted,
+            sampler_has_success=sampler_has_success,
         )
         self.record_diagnostic(
             event="outcome",
@@ -655,7 +658,10 @@ class Tossing3DPomdpMethod(EesMethod):
             competence_conditioned=(
                 not was_random_exploration
                 if consultation is None
-                else admitted and self.pomdp_competence_evidence.admits(consultation=consultation)
+                else admitted
+                and self.pomdp_competence_evidence.admits(
+                    consultation=consultation, sampler_has_success=sampler_has_success
+                )
             ),
             belief=self._pomdp_state.model_dump(mode="json"),
             beliefs=self.belief_diagnostics(),

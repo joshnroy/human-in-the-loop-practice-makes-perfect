@@ -19,6 +19,7 @@ from hitl_pmp.methods.belief_space.tossing3d_observation_model import (
 )
 from hitl_pmp.methods.belief_space.types.belief_state import (
     ConcreteSkillBelief,
+    SamplerTrainingState,
     Tossing3DBeliefState,
 )
 from hitl_pmp.methods.belief_space.types.competence_evidence import CompetenceEvidence
@@ -381,6 +382,23 @@ def binary_outcomes(
     return tuple(outcomes)
 
 
+def greedy_draw_admitted(
+    *, evidence: CompetenceEvidence, training: SamplerTrainingState | None
+) -> bool:
+    """Whether `evidence` conditions competence on a greedy draw from the sampler fit
+    `training` describes. The draw is taken as `INFORMED` from a mixed-class fit and
+    `UNINFORMATIVE` from a one-class or unfitted one (the tie-fraction fallback of a
+    mixed fit is not modelled); a fit that has seen a success is what
+    `CompetenceEvidence.SAMPLER_SUCCEEDED` asks about."""
+    uninformative = training is not None and not training.fitted_mixed_classes
+    return evidence.admits(
+        consultation=(
+            SamplerConsultation.UNINFORMATIVE if uninformative else SamplerConsultation.INFORMED
+        ),
+        sampler_has_success=training is not None and training.fitted_successes > 0,
+    )
+
+
 def toss_outcomes(
     *,
     state: Tossing3DBeliefState,
@@ -408,11 +426,6 @@ def toss_outcomes(
     training = state.sampler_training.get(ground_skill.skill.name)
     if training is not None and not training.fitted_mixed_classes:
         exploration_epsilon = 0.0
-    greedy_consultation = (
-        SamplerConsultation.UNINFORMATIVE
-        if training is not None and not training.fitted_mixed_classes
-        else SamplerConsultation.INFORMED
-    )
     for is_random, choice_probability, success_probability in (
         (
             False,
@@ -429,10 +442,10 @@ def toss_outcomes(
             if probability <= 0.0:
                 continue
             belief = state.skill_beliefs[belief_name]
-            if competence_evidence.admits(
-                consultation=SamplerConsultation.EPSILON_RANDOM
+            if (
+                competence_evidence.admits(consultation=SamplerConsultation.EPSILON_RANDOM)
                 if is_random
-                else greedy_consultation
+                else greedy_draw_admitted(evidence=competence_evidence, training=training)
             ):
                 belief = condition_skill_belief(belief=belief, success=success)
             effect_outcomes = (
