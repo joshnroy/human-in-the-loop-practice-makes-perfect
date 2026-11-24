@@ -396,13 +396,16 @@ class Tossing3DPracticeModel(BaseModel):
         observed_cost: float | None = None,
         consultation: SamplerConsultation | None = None,
         admitted: bool = True,
+        sampler_has_success: bool = False,
     ) -> Tossing3DBeliefState:
         """Apply any belief observation associated with a practiced skill.
 
         With a `consultation`, `competence_evidence` decides whether the outcome
         conditions competence; without one (a reset) the attempt is not
         epsilon-random and is admitted. `admitted=False` (the method's
-        before-first-success rule) keeps a consulted outcome out as well."""
+        before-first-success rule) keeps a consulted outcome out as well.
+        `sampler_has_success`: whether the fit that made the pick had seen a success
+        (`CompetenceEvidence.SAMPLER_SUCCEEDED`)."""
         return self._skill_belief_models[ground_skill].observe_outcome(
             state=state,
             success=success,
@@ -413,7 +416,9 @@ class Tossing3DPracticeModel(BaseModel):
                 if not admitted
                 else None
                 if consultation is None
-                else self.competence_evidence.admits(consultation=consultation)
+                else self.competence_evidence.admits(
+                    consultation=consultation, sampler_has_success=sampler_has_success
+                )
             ),
         )
 
