@@ -64,6 +64,27 @@ class RackServing3DAtoms:
         )
 
     @staticmethod
+    def clustered_for_sweep(
+        *,
+        unserved_corners: Sequence[np.ndarray],
+        center_y: float,
+        rack_front: float,
+        half_width: float,
+        depth: float | None,
+    ) -> bool:
+        """Whether a gather left the food tight enough for the final sweep (Josh,
+        2026-11-24): every dumpling not yet on the plate lies, footprint and all, within
+        `half_width` of the plate's centre line and, when `depth` is given, no farther
+        than `depth` behind the rack's front edge. Measured, not read off parameters."""
+        for corners in unserved_corners:
+            points = np.asarray(corners)
+            if float(np.max(np.abs(points[:, 1] - center_y))) > half_width:
+                return False
+            if depth is not None and float(np.max(points[:, 0])) - rack_front > depth:
+                return False
+        return True
+
+    @staticmethod
     def with_summaries(
         *,
         atoms: frozenset[AbstractAtom],
