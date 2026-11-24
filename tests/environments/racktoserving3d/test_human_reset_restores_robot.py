@@ -29,7 +29,7 @@ def _toy_env():
     return problem.env
 
 
-def _robot_qpos(env) -> np.ndarray:
+def _robot_qpos(*, env) -> np.ndarray:
     backend = env.backend()
     model, data = backend.model(), backend.data()
     return np.array([
@@ -42,7 +42,7 @@ def test_human_reset_returns_a_stranded_robot_to_its_episode_start_pose():
 
     env = _toy_env()
     try:
-        start = _robot_qpos(env)
+        start = _robot_qpos(env=env)
         backend, shelf = env.backend(), env.rack_controllers().shelf
         data = backend.data()
         # Strand the robot as the aborted robot_reset did, and wind one continuous
@@ -54,10 +54,10 @@ def test_human_reset_returns_a_stranded_robot_to_its_episode_start_pose():
         shelf.arm_reference = data.qpos[shelf.qa].copy()
         shelf.sim.forward()
         shelf.hold(count=5, label="stranded")
-        assert np.linalg.norm(_robot_qpos(env)[:2] - start[:2]) > 0.5
+        assert np.linalg.norm(_robot_qpos(env=env)[:2] - start[:2]) > 0.5
         env._toy_flags = frozenset({"NeedsReset", "AfterSweep3"})
         assert env.reset_movables(destination=HUMAN_RESET)
-        after = _robot_qpos(env)
+        after = _robot_qpos(env=env)
         np.testing.assert_allclose(after[:3], start[:3], atol=2e-3)
         np.testing.assert_allclose(after[3:10], start[3:10], atol=2e-2)
         np.testing.assert_allclose(shelf.base_target, start[:3], atol=1e-9)
@@ -71,9 +71,9 @@ def test_human_reset_leaves_a_robot_at_its_start_pose_where_it_is():
 
     env = _toy_env()
     try:
-        start = _robot_qpos(env)
+        start = _robot_qpos(env=env)
         env._toy_flags = frozenset({"NeedsReset", "AfterSweep3"})
         assert env.reset_movables(destination=HUMAN_RESET)
-        np.testing.assert_allclose(_robot_qpos(env)[:10], start[:10], atol=2e-3)
+        np.testing.assert_allclose(_robot_qpos(env=env)[:10], start[:10], atol=2e-3)
     finally:
         env.close()
