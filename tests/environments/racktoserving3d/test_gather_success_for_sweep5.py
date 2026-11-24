@@ -69,9 +69,12 @@ def test_the_cli_carries_the_gather_success_thresholds_to_the_toy_environment():
     env = RackServingCli.build_problem(args=args, mode="training").env
     assert env.gather_success_half_width is None
     assert env.gather_success_depth is None
-    args = parser.parse_args(
-        ["--gather-success-half-width", "0.09", "--gather-success-depth", "0.12"]
-    )
+    args = parser.parse_args([
+        "--gather-success-half-width",
+        "0.09",
+        "--gather-success-depth",
+        "0.12",
+    ])
     args.seed = 0
     env = RackServingCli.build_problem(args=args, mode="training").env
     assert env.gather_success_half_width == pytest.approx(0.09)

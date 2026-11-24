@@ -76,6 +76,20 @@ class RackServingCli:
             ("--sweep5-reward", "sweep5_reward", "What serving five by sweep5 is worth"),
         ):
             parser.add_argument(flag, type=float, default=fields[name].default, help=text)
+        for flag, text in (
+            (
+                "--gather-success-half-width",
+                "Opt-in: gather succeeds only if every dumpling not on the plate lies "
+                "within this many metres of the plate's centre line (default: the blade "
+                "band alone)",
+            ),
+            (
+                "--gather-success-depth",
+                "With --gather-success-half-width: and no farther than this many metres "
+                "behind the rack's front edge (default: no depth bound)",
+            ),
+        ):
+            parser.add_argument(flag, type=float, default=None, help=text)
         parser.add_argument("--scene-bg", action=argparse.BooleanOptionalAction, default=False)
         parser.add_argument("--canonical-seed", type=int, default=0)
         parser.add_argument("--skill-step-limit", type=int, default=12000)
@@ -124,6 +138,8 @@ class RackServingCli:
             robot_reset_price=args.robot_reset_price,
             sweep3_reward=args.sweep3_reward,
             sweep5_reward=args.sweep5_reward,
+            gather_success_half_width=args.gather_success_half_width,
+            gather_success_depth=args.gather_success_depth,
         )
         tasks = RackServingToyTasks(
             env=env, seed=args.seed, test_env_seed_offset=args.test_env_seed_offset
