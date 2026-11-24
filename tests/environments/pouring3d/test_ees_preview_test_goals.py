@@ -213,3 +213,114 @@ def test_with_the_preview_off_scoring_still_uses_the_seen_training_tasks(*, worl
     )
     assert "train" in {kind for kind, _ in ids}
     assert denominator == len(method._seen_tasks)
+
+
+class _Captured(Exception):
+    """Stops DP at its first solve, once the tasks it would solve for are recorded."""
+
+
+def _dp(*, env, provider, preview):
+    from hitl_pmp.core.practice_costs import ChargeFunction, PracticeAccounting, PracticeCosts
+    from hitl_pmp.methods.practice_makes_perfect.dp_method import DpMethod
+
+    method = DpMethod(
+        env=env,
+        skill_provider=provider,
+        dp_budget=10.0,
+        dp_budget_unit="episodes",
+        dp_solver="enumeration",
+        preview_test_goals=preview,
+    )
+    method.configure_practice_accounting(
+        accounting=PracticeAccounting(
+            costs=PracticeCosts(robot_step=ChargeFunction(value=0.01), human_skills={})
+        )
+    )
+    return method
+
+
+def _dp_solve_goals(*, method, tasks, monkeypatch):
+    from hitl_pmp.methods.practice_makes_perfect.dp_mdp import DpTaskModel
+
+    seen = []
+
+    def build(**kwargs):
+        seen.append([goal for _init, goal in kwargs["tasks"]])
+        raise _Captured
+
+    monkeypatch.setattr(DpTaskModel, "build", staticmethod(build))
+    with pytest.raises(_Captured):
+        method.get_practice_policy(task=tasks.sample_train_task_in_place())
+    (goals,) = seen
+    return goals
+
+
+def test_dp_with_the_preview_solves_for_each_test_goal_once_and_no_training_goal(
+    *, world, monkeypatch
+):
+    env, tasks, provider = world
+    goals = tuple(EesMethod.named_goal(goal=goal.atoms) for goal in tasks.test_task_goals())
+    method = _dp(env=env, provider=provider, preview=goals)
+    solved = _dp_solve_goals(method=method, tasks=tasks, monkeypatch=monkeypatch)
+    assert _requests(goals=solved) == ["request_1", "request_2", "request_3"]
+    assert _pours(method=method) == ["Pour1", "Pour2", "Pour3"]
+
+
+def test_dp_without_the_preview_solves_for_the_training_goal_alone(*, world, monkeypatch):
+    env, tasks, provider = world
+    method = _dp(env=env, provider=provider, preview=())
+    solved = _dp_solve_goals(method=method, tasks=tasks, monkeypatch=monkeypatch)
+    assert _requests(goals=solved) == ["request_1"]
+    assert method._preview_tasks == []
+
+
+def _dp_kitchen_args(*, extra):
+    return Cli.parse_args(
+        argv=[
+            "--env",
+            "pouring3d_kitchen",
+            "--method",
+            "dp",
+            "--dp-budget",
+            "10",
+            "--dp-budget-unit",
+            "episodes",
+            "--payload-count",
+            "3",
+            "--requested-counts",
+            "1",
+            "2",
+            "3",
+            "--num-test-tasks",
+            "3",
+            "--practice-step-budget",
+            "100",
+            *CostFixtures.argv(env="pouring3d_kitchen"),
+            *extra,
+        ]  # fmt: skip
+    )
+
+
+@pytest.mark.parametrize("flag,expected", [([], 0), (["--dp-preview-test-goals"], 3)])
+def test_cli_flag_passes_the_kitchen_test_goals_to_dp(*, flag, expected, monkeypatch):
+    from hitl_pmp.cli import METHODS
+
+    built = []
+
+    def capture(*, args, method_factory, **kwargs):
+        problem = KitchenCli.build_problem(args=args)
+        built.append(method_factory(KitchenCli.context(args=args, problem=problem)))
+
+    monkeypatch.setattr(KitchenCli, "run_method", staticmethod(capture))
+    METHODS["dp"].run(args=_dp_kitchen_args(extra=flag), env_cli=KitchenCli)
+    (method,) = built
+    assert len(method.preview_test_goals) == expected
+
+
+def test_the_ees_flag_is_still_rejected_for_dp():
+    from hitl_pmp.cli import METHODS
+
+    with pytest.raises(ValueError, match="--ees-preview-test-goals applies only to --method ees"):
+        METHODS["dp"].run(
+            args=_dp_kitchen_args(extra=["--ees-preview-test-goals"]), env_cli=KitchenCli
+        )
