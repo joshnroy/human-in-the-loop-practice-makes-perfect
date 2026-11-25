@@ -6,8 +6,9 @@ reward times competence is largest, so the value of a set of competences is
 largest route reward.
 """
 
+from collections import OrderedDict
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 from numpy.typing import NDArray
@@ -17,6 +18,7 @@ from hitl_pmp.core.method.skill_provider import SkillProvider
 from .practice_domain import PracticeDomain, SampleSkills
 from .types.practice_example_source import PracticeExampleSource
 from .types.skill_belief import SkillBelief
+from .types.weighted_hypothesis_belief import WeightedHypothesisBelief
 
 ROUTES_EXPECTATION_SAMPLES = 4096
 ROUTES_EXPECTATION_SEED = 0
@@ -100,10 +102,53 @@ class RewardedRoutesPracticeDomain(PracticeDomain):
         )
 
     def expected_policy_value(self, *, beliefs: Mapping[str, SkillBelief]) -> float:
-        return float(
+        key = self.value_memo_key(beliefs=beliefs)
+        memo = RewardedRoutesPracticeDomain._value_memo
+        if key is not None and (cached := memo.get(key)) is not None:
+            memo.move_to_end(key)
+            return cached
+        value = float(
             self.sample_policy_values(
                 beliefs=beliefs,
                 rng=np.random.default_rng(ROUTES_EXPECTATION_SEED),
                 count=ROUTES_EXPECTATION_SAMPLES,
             ).mean()
         )
+        if key is not None:
+            memo[key] = value
+            while len(memo) > RewardedRoutesPracticeDomain.VALUE_MEMO_SIZE:
+                memo.popitem(last=False)
+        return value
+
+    # A search values the same beliefs again and again -- J and the open-list bound value
+    # each node, and a known curve reaches one belief by many paths -- and each value is
+    # a fresh fixed-seed draw of thousands of samples. Bounded: a prior grid's key holds
+    # its competences and weights, about 7 kB per route.
+    VALUE_MEMO_SIZE: ClassVar[int] = 4096
+    _value_memo: ClassVar[OrderedDict[tuple[object, ...], float]] = OrderedDict()
+
+    def value_memo_key(self, *, beliefs: Mapping[str, SkillBelief]) -> tuple[object, ...] | None:
+        """What the fixed-seed value depends on, exactly, or None to compute it afresh.
+
+        A weighted belief's draw reads only its weights (which rows the uniforms pick)
+        and competences (the rows' first column); the bytes tell -0.0 from 0.0, which
+        compare equal but need not give the same float."""
+        if type(self) is not RewardedRoutesPracticeDomain:
+            return None
+        parts: list[object] = [self.route_rewards]
+        for name, _ in self.route_rewards:
+            belief = beliefs[name]
+            if type(belief) is not WeightedHypothesisBelief:
+                return None
+            parts.append(
+                np.array(belief.probabilities).tobytes() + np.array(belief.competences).tobytes()
+            )
+        return tuple(parts)
+
+    @staticmethod
+    def clear_value_memo() -> None:
+        RewardedRoutesPracticeDomain._value_memo.clear()
+
+    @staticmethod
+    def value_memo_size() -> int:
+        return len(RewardedRoutesPracticeDomain._value_memo)

@@ -7,6 +7,7 @@ identifier is admissible only if it is the same identifier.
 
 import gc
 import hashlib
+import time
 import weakref
 from enum import Enum
 
@@ -195,3 +196,57 @@ def test_remembered_digests_neither_keep_beliefs_alive_nor_outlive_them() -> Non
     gc.collect()
     assert reference() is None
     assert key not in BeliefDigest._digests
+
+
+def _grid_belief(*, size: int, seed: int) -> WeightedHypothesisBelief:
+    rng = np.random.default_rng(seed)
+    weights = rng.random(size) + 1e-3
+    competences = rng.random(size).tolist()
+    competences[:3] = [0.0, -0.0, 1.0]
+    return WeightedHypothesisBelief.of(
+        hypotheses=tuple(
+            WeightedHypothesis(
+                hypothesis=SkillHypothesis(competence=c, learning_rate=float(r)), probability=p
+            )
+            for c, r, p in zip(
+                competences, rng.random(size) * 0.3, (weights / weights.sum()).tolist(), strict=True
+            )
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        ((0.5, -0.0, 1e-300), (2.0,), ()),
+        ((0.5, np.float64(0.25)), (0.1, 0.2)),
+        ((0.5, 1), (True, 0.2)),
+        ((0.5, "x"), (0.1,)),
+        (((0.5,),), (0.1,)),
+        ((0.5, 0.25), [0.1]),
+    ],
+)
+def test_tuples_of_float_tuples_encode_to_the_reference_bytes(*, value: tuple) -> None:
+    """A weighted belief's signature is a tuple of float triples; any member that is not
+    exactly a float takes the general route, to the same bytes or the same refusal."""
+    try:
+        expected = ReferenceDigest.of(value=value)
+    except TypeError:
+        with pytest.raises(TypeError):
+            BeliefDigest.digest(value=value)
+        return
+    assert BeliefDigest.digest(value=value) == expected
+
+
+def test_a_prior_grid_digest_is_the_reference_and_takes_about_a_millisecond() -> None:
+    beliefs = [_grid_belief(size=1681, seed=seed) for seed in range(5)]
+    for belief in beliefs:
+        assert BeliefDigest.digest(
+            value=(type(belief).__module__, type(belief).__qualname__, belief.signature())
+        ) == ReferenceDigest.belief(belief=belief)
+    started = time.perf_counter()
+    for belief in beliefs * 4:
+        BeliefDigest.digest(
+            value=(type(belief).__module__, type(belief).__qualname__, belief.signature())
+        )
+    assert (time.perf_counter() - started) / 20 < 5.5e-3
