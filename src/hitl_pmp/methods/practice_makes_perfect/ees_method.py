@@ -922,9 +922,14 @@ class EesMethod(Method):
             curve is not None
             and consultation is not SamplerConsultation.NO_SAMPLER
             and curve.controls(name=skill_name)
-            and self.execution_trains_skill()
+            and self.execution_counts_as_curve_try()
         ):
             curve.record_try(name=skill_name)
+
+    def execution_counts_as_curve_try(self) -> bool:
+        """Whether the execution just observed advances `--curve-controlled-sampler`'s n.
+        Exactly the executions that train their skill, unless a subclass says otherwise."""
+        return self.execution_trains_skill()
 
     def execution_trains_skill(self) -> bool:
         """Whether the execution just observed is a try of its own skill, as the toy's

@@ -1168,6 +1168,12 @@ class DpCli(EesCli):
             "0.001). Unset, each starts at the competence its prior gives it.",
         )
         parser.add_argument(
+            "--curve-count-setup-tries",
+            action="store_true",
+            help="Trial, with --curve-controlled-sampler only: a setup run of a skill also "
+            "counts toward that skill's n in alpha(n). It still trains nothing else.",
+        )
+        parser.add_argument(
             "--dp-allocation-schedule",
             choices=["once", "period"],
             default=fields["dp_allocation_schedule"].default,
@@ -1285,6 +1291,8 @@ class DpCli(EesCli):
                 "--ees-competence-from-skill-prior applies only to --method ees: DP reads "
                 "--skill-prior through its own priors"
             )
+        if args.curve_count_setup_tries and not args.curve_controlled_sampler:
+            raise ValueError("--curve-count-setup-tries needs --curve-controlled-sampler")
         if args.dp_prior_calibration is not None:
             calibration = DpPriorCalibration.load(path=args.dp_prior_calibration)
             if (calibration.environment, calibration.layout, calibration.variant) != (
@@ -1308,6 +1316,7 @@ class DpCli(EesCli):
                 dp_allocation_schedule=args.dp_allocation_schedule,
                 dp_protocol=args.dp_protocol,
                 dp_author_initial_competence=args.dp_author_initial_competence,
+                curve_count_setup_tries=args.curve_count_setup_tries,
                 dp_solver=args.dp_solver,
                 dp_solver_time_limit=args.dp_solver_time_limit,
                 dp_prior_calibration=args.dp_prior_calibration,
