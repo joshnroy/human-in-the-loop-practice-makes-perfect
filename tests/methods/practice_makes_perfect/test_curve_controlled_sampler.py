@@ -21,7 +21,7 @@ from hitl_pmp.environments.racktoserving3d.toy_interface import (
     SWEEP3,
     SWEEP5,
 )
-from hitl_pmp.methods.practice_makes_perfect.cli import EesCli
+from hitl_pmp.methods.practice_makes_perfect.cli import DpCli, EesCli
 from hitl_pmp.methods.practice_makes_perfect.curve_controlled_sampler import (
     CurveControlledSampler,
 )
@@ -35,13 +35,19 @@ def _provider(*, gather_delta_high: float | None = 0.2) -> RackServingSkillProvi
     return RackServingSkillProvider(env=env)
 
 
-def _method(*, curve: bool, seed: int = 0, cls: type[EesMethod] = EesMethod) -> EesMethod:
+def _method(
+    *,
+    curve: bool,
+    seed: int = 0,
+    cls: type[EesMethod] = EesMethod,
+    dp_kwargs: dict[str, object] | None = None,
+) -> EesMethod:
     provider = _provider()
     return cls(
         env=provider.env,
         skill_provider=provider,
         seed=seed,
-        **({"dp_budget": 10.0} if cls is DpMethod else {}),
+        **({"dp_budget": 10.0, **(dp_kwargs or {})} if cls is DpMethod else {}),
         curve_controlled_sampler=(
             CurveControlledSampler(regions=provider.known_outcome_regions()) if curve else None
         ),
@@ -152,6 +158,64 @@ def test_a_dp_setup_run_does_not_count_as_a_try() -> None:
         skill_name=SWEEP5, success=True, consultation=SamplerConsultation.INFORMED
     )
     assert curve.tries == {SWEEP5: 1}
+
+
+def _setup_then_target(*, method: EesMethod) -> None:
+    """One DP setup run of gather (it succeeds), then one target run of sweep5."""
+    assert isinstance(method, DpMethod)
+    gather = method.skill_provider.ground(name=GATHER)
+    method._dp_setup_dispatch = True
+    method.record_practice_attempt(
+        skill_name=GATHER, success=True, consultation=SamplerConsultation.INFORMED
+    )
+    method.observe_outcome(ground_skill=gather, success=True)
+    method._dp_setup_dispatch = False
+    method.record_practice_attempt(
+        skill_name=SWEEP5, success=True, consultation=SamplerConsultation.INFORMED
+    )
+
+
+def test_with_curve_count_setup_tries_a_dp_setup_run_counts_as_a_try() -> None:
+    # Trial variant (Josh, 2026-11-26): DP's setup runs advance the curve's n too.
+    method = _method(curve=True, cls=DpMethod, dp_kwargs={"curve_count_setup_tries": True})
+    curve = method.curve_controlled_sampler
+    assert curve is not None
+    _setup_then_target(method=method)
+    assert curve.tries == {GATHER: 1, SWEEP5: 1}
+
+
+def test_curve_count_setup_tries_changes_nothing_but_the_curves_count() -> None:
+    on = _method(curve=True, cls=DpMethod, dp_kwargs={"curve_count_setup_tries": True})
+    off = _method(curve=True, cls=DpMethod)
+    for method in (on, off):
+        _setup_then_target(method=method)
+    assert isinstance(on, DpMethod) and isinstance(off, DpMethod)
+    on._dp_setup_dispatch = off._dp_setup_dispatch = True
+    # A setup run still trains nothing: not the sampler, not competence.
+    assert on.execution_trains_skill() is off.execution_trains_skill() is False
+    assert on.practice_outcomes() == off.practice_outcomes()
+    assert on._all_attempt_outcomes == off._all_attempt_outcomes == {}
+    assert on._competence_models.keys() == off._competence_models.keys()
+    assert on.dp_allocation() == off.dp_allocation()
+
+
+def test_curve_count_setup_tries_stays_out_of_the_deployment_snapshot() -> None:
+    on = _method(curve=True, cls=DpMethod, dp_kwargs={"curve_count_setup_tries": True})
+    off = _method(curve=True, cls=DpMethod)
+    for specific in (False, True):
+        assert DeploymentSnapshot.encode(
+            method=on, method_specific=specific
+        ) == DeploymentSnapshot.encode(method=off, method_specific=specific)
+
+
+def test_the_dp_cli_takes_curve_count_setup_tries_only_with_the_curve() -> None:
+    parser = argparse.ArgumentParser()
+    DpCli.add_arguments(parser=parser)
+    assert parser.parse_args(["--dp-budget", "10"]).curve_count_setup_tries is False
+    on = parser.parse_args(["--dp-budget", "10", "--curve-count-setup-tries"])
+    assert on.curve_count_setup_tries is True
+    with pytest.raises(ValueError, match="--curve-controlled-sampler"):
+        DpCli.run(args=on, env_cli=None)  # type: ignore[arg-type]
 
 
 def test_the_test_policy_draws_at_the_current_n() -> None:

@@ -91,6 +91,10 @@ class DpMethod(EesMethod):
     # The author protocol's starting competence for every robot skill (upstream: 0.001);
     # None starts each at the competence our own prior gives it.
     dp_author_initial_competence: float | None = Field(default=None, ge=0.0, le=1.0)
+    # Trial (Josh, 2026-11-26): a setup run of a curve-controlled skill also advances
+    # the curve's n. It still trains nothing else. A DpMethod field, not an EesMethod
+    # one, so the deployment snapshot (EesMethod's fields only) is unchanged.
+    curve_count_setup_tries: bool = False
 
     AUTHOR_WINDOW: ClassVar[int] = 20  # upstream's CMA-ES population size
     AUTHOR_ACCEPTANCE_SLACK: ClassVar[float] = 0.1
@@ -294,6 +298,9 @@ class DpMethod(EesMethod):
     def execution_trains_skill(self) -> bool:
         """A setup run trains nothing (`record_action_cost`)."""
         return not self._dp_setup_dispatch
+
+    def execution_counts_as_curve_try(self) -> bool:
+        return self.curve_count_setup_tries or self.execution_trains_skill()
 
     def learns_from_human_outcome(self, *, ground_skill: GroundSkill) -> bool:
         """A human reset on the way to the practice target is setup too: like a robot
