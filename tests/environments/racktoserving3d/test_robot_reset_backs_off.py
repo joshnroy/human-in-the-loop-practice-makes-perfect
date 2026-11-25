@@ -23,7 +23,15 @@ pytestmark = pytest.mark.skipif(
 # Where the aborted robot_reset left the robot, read off the recording's last tick:
 # base (x, y, yaw), then the seven arm joints (two continuous ones wound many turns).
 STRANDED_BASE = np.array([0.7011175, -0.1794553, 0.1235147])
-STRANDED_ARM = np.array([11.787767, 0.265377, -96.21010, -1.057221, 12.159588, -1.463130, -54.716045])
+STRANDED_ARM = np.array([
+    11.787767,
+    0.265377,
+    -96.21010,
+    -1.057221,
+    12.159588,
+    -1.463130,
+    -54.716045,
+])
 
 
 def _toy_problem():
@@ -43,7 +51,9 @@ def _robot_reset(*, problem):
 
     env = problem.env
     env._toy_flags = frozenset({"NeedsReset", "AfterGather"})
-    problem.take_action(action=RackServingActions.encode(name="robot_reset", params=np.array([]), bounds=()))
+    problem.take_action(
+        action=RackServingActions.encode(name="robot_reset", params=np.array([]), bounds=())
+    )
     return env.last_skill_error()
 
 
@@ -70,7 +80,7 @@ def _strand(*, env) -> None:
     shelf.hold(count=5, label="stranded")
 
 
-def _wrapped(arm: np.ndarray) -> np.ndarray:
+def _wrapped(*, arm: np.ndarray) -> np.ndarray:
     return (np.asarray(arm, dtype=float) + np.pi) % (2 * np.pi) - np.pi
 
 
@@ -79,7 +89,7 @@ def _assert_parked(*, env) -> None:
 
     shelf, config = env.rack_controllers().shelf, env.config
     np.testing.assert_allclose(
-        _wrapped(shelf.data.qpos[shelf.qa] - shelf.home_arm), np.zeros(7), atol=0.05
+        _wrapped(arm=shelf.data.qpos[shelf.qa] - shelf.home_arm), np.zeros(7), atol=0.05
     )
     stances = RackControllers.stances
     standard = [
@@ -88,10 +98,13 @@ def _assert_parked(*, env) -> None:
         stances.side_base(side=1, config=config),
     ]
     base = shelf.data.qpos[shelf.ba]
-    assert min(
-        max(np.linalg.norm(base[:2] - s[:2]), abs(_wrapped(base[2:] - s[2:])[0]))
-        for s in standard
-    ) < 0.02, base
+    assert (
+        min(
+            max(np.linalg.norm(base[:2] - s[:2]), abs(_wrapped(arm=base[2:] - s[2:])[0]))
+            for s in standard
+        )
+        < 0.02
+    ), base
 
 
 def test_a_robot_reset_that_succeeds_ends_with_the_arm_at_its_episode_start_pose():
@@ -102,7 +115,7 @@ def test_a_robot_reset_that_succeeds_ends_with_the_arm_at_its_episode_start_pose
         assert _robot_reset(problem=problem) is None
         shelf = env.rack_controllers().shelf
         np.testing.assert_allclose(
-            _wrapped(shelf.data.qpos[shelf.qa] - shelf.home_arm), np.zeros(7), atol=0.05
+            _wrapped(arm=shelf.data.qpos[shelf.qa] - shelf.home_arm), np.zeros(7), atol=0.05
         )
     finally:
         env.close()
@@ -135,15 +148,15 @@ def test_an_aborted_robot_reset_backs_off_to_a_standard_stance_from_which_the_sc
 
 
 def test_a_robot_reset_aborted_with_food_in_the_hand_backs_off_still_holding_it(*, monkeypatch):
-    from hitl_pmp.environments.racktoserving3d.food import WeldedFoodSkills
     from hitl_pmp.environments.racktoserving3d.controllers import RackControllers
+    from hitl_pmp.environments.racktoserving3d.food import WeldedFoodSkills
 
     problem = _toy_problem()
     env = problem.env
     try:
         _displace_one_dumpling(env=env)
 
-        def refused(self, **kwargs):  # noqa: ARG001
+        def refused(*_args, **_kwargs):
             raise SkillFailed("food_lift: refused for this test")
 
         monkeypatch.setattr(WeldedFoodSkills, "place", refused)
