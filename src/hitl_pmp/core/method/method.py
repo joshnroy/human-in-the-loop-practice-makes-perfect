@@ -144,7 +144,11 @@ class Method(BaseModel, abc.ABC):
         return self.get_task_policy(task=task)
 
     def observe_practice_action_budget(
-        self, *, remaining_actions: int, remaining_steps: int | None = None
+        self,
+        *,
+        remaining_actions: int,
+        remaining_steps: int | None = None,
+        remaining_episodes: int | None = None,
     ) -> None:
         """Receive the session's remaining action slots immediately before a step.
 
@@ -152,7 +156,20 @@ class Method(BaseModel, abc.ABC):
         consume one slot in PracticeLoop. Methods that plan beyond the next action
         can use this limit without confusing it with a search-compute budget.
         Methods that do not need the limit inherit this no-op.
+
+        ``remaining_episodes`` is passed only under ``--practice-episode-budget``: the
+        practice tries left in the whole run (see ``practice_episode_dispatched``).
         """
+
+    def practice_episode_dispatched(self) -> bool:
+        """Whether the practice action this Method's policy just returned is a try of a
+        skill with learnable parameters (``param_dim > 0``): the unit an episode budget
+        counts. The step protocol asks once per robot action, after it has run, and
+        only under ``--practice-episode-budget``."""
+        raise NotImplementedError(
+            f"{type(self).__name__} does not say which practice action is an episode, "
+            "so it cannot run under --practice-episode-budget"
+        )
 
     def practice_complete(self) -> bool:
         """Whether this Method has finished practising for the whole run, for a Method
