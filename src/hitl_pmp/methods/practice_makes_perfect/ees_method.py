@@ -42,6 +42,7 @@ from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
 from .always_ask_reset import PARAMETERIZED_SKILL, STOP_ONLY_SESSION, STRANDED, AlwaysAskReset
 from .competence_models import OptimisticSkillCompetenceModel
+from .curve_controlled_sampler import CurveControlledSampler
 from .wrapped_sampler import LearnedSkillSampler, SamplerChoice
 
 logger = logging.getLogger(__name__)
@@ -255,6 +256,11 @@ class EesMethod(Method):
     # EES's, or a subclass's -- still chooses every robot action; see
     # `always_ask_reset.py`.
     always_ask_reset: AlwaysAskReset | None = None
+    # `--curve-controlled-sampler` (Josh, 2026-11-25): an oracle control. For every
+    # skill it has measured regions for, it draws the parameters in place of the
+    # learned sampler and its epsilon exploration, at practice and at test. None (off)
+    # leaves every draw, and the deployment snapshot, as they were.
+    curve_controlled_sampler: CurveControlledSampler | None = None
     # Local extension, off by default (`--ees-preview-test-goals`): the test-task
     # distribution's goals, told to EES before practice. At the first practice period
     # each becomes a seen task from that period's initial abstract state, pinned so the
@@ -872,6 +878,20 @@ class EesMethod(Method):
         self._practice_tallies[skill_name] = self._practice_tallies.get(
             skill_name, SkillPracticeTally()
         ).with_attempt(success=success, consultation=consultation)
+        curve = self.curve_controlled_sampler
+        if (
+            curve is not None
+            and consultation is not SamplerConsultation.NO_SAMPLER
+            and curve.controls(name=skill_name)
+            and self.execution_trains_skill()
+        ):
+            curve.record_try(name=skill_name)
+
+    def execution_trains_skill(self) -> bool:
+        """Whether the execution just observed is a try of its own skill, as the toy's
+        `execution_trains` has it. Every practice execution is, unless a subclass runs
+        some skills only as setup (DP)."""
+        return True
 
     def practice_outcomes(self) -> dict[str, SkillPracticeTally]:
         """Per lifted skill, cumulative over the run; method_runner.py differences them
@@ -1581,9 +1601,14 @@ class EesMethod(Method):
         function of its arguments and draws no randomness, so nothing a run does
         changes."""
         skill = ground_skill.skill
+        curve = self.curve_controlled_sampler
         if skill.param_dim == 0:
             params: np.ndarray = np.zeros(0)
             record = None
+        elif curve is not None and curve.controls(name=skill.name):
+            params, record = self._curve_controlled_choice(
+                ground_skill=ground_skill, state=state, explore=explore, curve=curve
+            )
         else:
             candidates, diagnostics = self._draw_parameter_candidates(
                 ground_skill=ground_skill, state=state
@@ -1624,6 +1649,45 @@ class EesMethod(Method):
         return self._labeled_action(
             ground_skill=ground_skill, params=params, state=state, record=record
         ), record
+
+    def _curve_controlled_choice(
+        self,
+        *,
+        ground_skill: GroundSkill,
+        state: State,
+        explore: bool,
+        curve: CurveControlledSampler,
+    ) -> tuple[np.ndarray, "_SkillAttempt"]:
+        """`--curve-controlled-sampler`'s draw, filed as an ordinary informed pick: the
+        competence models count it as evidence, and the classifier still records the
+        outcome (it scores nothing while the oracle draws)."""
+        skill = ground_skill.skill
+        params = curve.draw(name=skill.name, rng=self._rng)
+        choice = SamplerChoice(params=params, was_random=False, was_informed=True)
+        self.record_parameter_sampling(
+            ground_skill=ground_skill,
+            explore=explore,
+            diagnostics=ParameterSamplingDiagnostics(
+                requested_candidates=1,
+                sampled_proposals=1,
+                accepted_candidates=1,
+                max_proposals=1,
+                rejection_reasons={},
+            ),
+            choice=choice,
+        )
+        return params, _SkillAttempt(
+            skill_name=skill.name,
+            param_dim=skill.param_dim,
+            sampler_input=self.sampler_input_row(
+                ground_skill=ground_skill, state=state, params=params
+            ),
+            params=[float(p) for p in params],
+            was_random_exploration=False,
+            was_informed_choice=True,
+            consultation=choice.consultation,
+            records_training_row=explore,
+        )
 
     def execute_random_ground_skill(
         self, *, ground_skill: GroundSkill, state: State

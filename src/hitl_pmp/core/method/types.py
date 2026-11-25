@@ -26,6 +26,27 @@ class LabeledAction(BaseModel):
 Policy = Callable[[State], LabeledAction]
 
 
+class KnownOutcomeRegions(BaseModel):
+    """A skill's measured parameter regions: a box of settings that succeeded near
+    certainly and one that failed near certainly, each one (low, high) per parameter.
+    What `--curve-controlled-sampler` draws from; the settings between the two boxes
+    are never drawn."""
+
+    model_config = ConfigDict(frozen=True)
+
+    success: tuple[tuple[float, float], ...]
+    failure: tuple[tuple[float, float], ...]
+
+    @model_validator(mode="after")
+    def _boxes_are_well_formed(self) -> KnownOutcomeRegions:
+        if len(self.success) != len(self.failure):
+            raise ValueError("success and failure regions must have the same dimension")
+        for low, high in (*self.success, *self.failure):
+            if not low < high:
+                raise ValueError(f"region interval ({low}, {high}) is empty")
+        return self
+
+
 class ParameterSamplingDiagnostics(BaseModel):
     """One proposal batch, including rejected draws that never became actions."""
 

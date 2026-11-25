@@ -1,0 +1,4 @@
+{"provenance": "PROVISIONAL", "skills": {
+ "gather": {"success": [[0.03, 0.11], [0.005, 0.03]], "failure": [[0.03, 0.11], [0.12, 0.2]]},
+ "sweep3": {"success": [[0.04, 0.12]], "failure": [[0.0, 0.035]]},
+ "sweep5": {"success": [[0.04, 0.12]], "failure": [[0.0, 0.035]]}}}

@@ -21,6 +21,7 @@ from hitl_pmp.methods.belief_space.types.practice_example_source import Practice
 from hitl_pmp.sampler_draws import SamplerDrawRecorder
 
 from .always_ask_reset import AlwaysAskReset
+from .curve_controlled_sampler import CurveControlledSampler
 from .dp_method import DpMethod
 from .dp_priors import DpPriorCalibration
 from .ees_method import EesMethod
@@ -107,6 +108,20 @@ class EesCli:
         # and a beta below one puts infinite density on the grid's competence-1 bin.
         alpha = mean * strength
         return alpha, strength - alpha
+
+    @staticmethod
+    def curve_controlled_sampler(
+        *, args: argparse.Namespace, provider: SkillProvider
+    ) -> CurveControlledSampler | None:
+        if not getattr(args, "curve_controlled_sampler", False):
+            return None
+        regions = provider.known_outcome_regions()
+        if not regions:
+            raise ValueError(
+                "--curve-controlled-sampler: this environment has no measured success and "
+                "failure regions for its skills"
+            )
+        return CurveControlledSampler(regions=regions)
 
     @staticmethod
     def always_ask_reset(*, args: argparse.Namespace) -> AlwaysAskReset | None:
@@ -254,6 +269,14 @@ class EesCli:
             help="Gradient steps per sampler refit. The default 10000 matches "
             "predicators' settings.py default; the paper's launch configs override it "
             "to 100000, which trains the classifier to interpolation on Ball-Ring.",
+        )
+        parser.add_argument(
+            "--curve-controlled-sampler",
+            action="store_true",
+            help="Oracle control (experiment only): draw each skill's parameters from its "
+            "measured success region with probability min(1, 0.1 + 0.15 n), n its own "
+            "practice tries, else from its measured failure region, at practice and at "
+            "test, in place of the learned sampler. Needs a domain with measured regions.",
         )
         parser.add_argument(
             "--competence-from-informed-only",
@@ -535,6 +558,9 @@ class EesCli:
             ),
             deploy_curve_priors=EesCli.deploy_curve_priors(args=args),
             always_ask_reset=EesCli.always_ask_reset(args=args),
+            curve_controlled_sampler=EesCli.curve_controlled_sampler(
+                args=args, provider=ctx.skill_provider
+            ),
             prior_alpha=prior[0],
             prior_beta=prior[1],
             reproduce_predicators_double_observe=args.reproduce_predicators_double_observe,
@@ -953,6 +979,9 @@ class Tossing3DPomdpCli(EesCli):
                 competence_window_size=args.competence_window_size,
                 competence_recency_size=args.competence_recency_size,
                 always_ask_reset=EesCli.always_ask_reset(args=args),
+                curve_controlled_sampler=EesCli.curve_controlled_sampler(
+                    args=args, provider=ctx.skill_provider
+                ),
                 reproduce_predicators_double_observe=args.reproduce_predicators_double_observe,
                 reproduce_predicators_practice_target_history=(
                     args.reproduce_predicators_practice_target_history

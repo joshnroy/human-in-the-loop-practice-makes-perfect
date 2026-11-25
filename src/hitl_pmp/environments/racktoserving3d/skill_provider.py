@@ -2,12 +2,14 @@
 `chained_route_b`) over the 3D scene. The same skills, predicates, failure effects and
 rewards, renamed; the continuous parameters are the split controllers' own."""
 
+import json
+from pathlib import Path
 from typing import ClassVar
 
 import numpy as np
 
 from hitl_pmp.core.method.skill_provider import OraclePolicyProvider, SkillProvider
-from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Skill
+from hitl_pmp.core.method.types import GroundSkill, KnownOutcomeRegions, LabeledAction, Skill
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 
@@ -80,6 +82,23 @@ class RackServingSkillProvider(SkillProvider):
             return None
         return [1.0, *(float(value) for value in params)]
 
+    def known_outcome_regions(self) -> dict[str, KnownOutcomeRegions]:
+        """The measured regions in `outcome_regions.json`, refused when this scene's
+        bounds cannot reach them (gather's failure region needs
+        `--gather-delta-high 0.2`)."""
+        regions = RackServingOutcomeRegions.load()
+        for name, region in regions.items():
+            bounds = self.bounds(name=name)
+            for box in (region.success, region.failure):
+                if len(box) != len(bounds) or any(
+                    not lo <= a < b <= hi for (a, b), (lo, hi) in zip(box, bounds, strict=True)
+                ):
+                    raise ValueError(
+                        f"{name}: measured region {box} lies outside the skill's bounds "
+                        f"{bounds}; the regions were measured with --gather-delta-high 0.2"
+                    )
+        return regions
+
     def failure_kept_predicates(self) -> dict[str, frozenset[str]]:
         return {
             SWEEP3: frozenset({"NeedsReset", "AfterSweep3"}),
@@ -97,6 +116,24 @@ class RackServingSkillProvider(SkillProvider):
 
     def movables_reset_destination(self, *, ground_skill: GroundSkill) -> str | None:
         return ground_skill.skill.name
+
+
+class RackServingOutcomeRegions:
+    """Reads `outcome_regions.json`: each skill's near-certain success and failure
+    parameter boxes, measured on the v2 scene (provenance in the file)."""
+
+    PATH: ClassVar[Path] = Path(__file__).with_name("outcome_regions.json")
+
+    @staticmethod
+    def load() -> dict[str, KnownOutcomeRegions]:
+        data = json.loads(RackServingOutcomeRegions.PATH.read_text())
+        return {
+            name: KnownOutcomeRegions(
+                success=tuple(tuple(interval) for interval in entry["success"]),
+                failure=tuple(tuple(interval) for interval in entry["failure"]),
+            )
+            for name, entry in data["skills"].items()
+        }
 
 
 class RackServingActions:
