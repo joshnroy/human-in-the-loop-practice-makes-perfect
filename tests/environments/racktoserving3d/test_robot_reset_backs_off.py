@@ -177,3 +177,32 @@ def test_a_robot_reset_aborted_with_food_in_the_hand_backs_off_still_holding_it(
         assert _robot_reset(problem=problem) is None
     finally:
         env.close()
+
+
+def test_a_robot_reset_aborted_mid_lift_lets_go_of_the_food_and_still_backs_off(*, monkeypatch):
+    """The recorded abort: the food lift refused just after the dumpling was snapped
+    into the hand, low over the rack, the dumpling already touching a rack support.
+    Nothing carrying it can move, so the hand lets go where it is, then backs off."""
+    from hitl_pmp.environments.racktoserving3d.food import _FoodMotion
+
+    problem = _toy_problem()
+    env = problem.env
+    try:
+        _displace_one_dumpling(env=env)
+        line = _FoodMotion.line
+
+        def refused_lift(self, **kwargs):  # noqa: PLR0917 -- a method's self
+            if kwargs.get("label") == "food_lift":
+                raise SkillFailed("food_lift: Cartesian fraction 0.062: refused for this test")
+            return line(self, **kwargs)
+
+        monkeypatch.setattr(_FoodMotion, "line", refused_lift)
+        error = _robot_reset(problem=problem)
+        assert error is not None and "refused for this test" in error
+        backend = env.backend()
+        assert not any(backend.held(name=name) for name in (*backend.cube_names, "wiper_0"))
+        _assert_parked(env=env)
+        monkeypatch.undo()
+        assert _robot_reset(problem=problem) is None
+    finally:
+        env.close()
