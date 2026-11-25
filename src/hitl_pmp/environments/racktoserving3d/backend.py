@@ -681,16 +681,6 @@ class RackServingBackend(SweepOffShelf3DBackend):
             data.qpos[model.jnt_qposadr[model.joint(joint).id]] for joint in self.ROBOT_JOINTS
         ])
 
-    def place_robot(self, *, configuration: np.ndarray) -> None:
-        """Set every robot joint to `configuration` (`robot_configuration`'s order), at
-        rest; privileged, the person's reset only. No control step is taken."""
-        model, data = self.model(), self.data()
-        for joint, value in zip(self.ROBOT_JOINTS, configuration, strict=True):
-            index = model.joint(joint).id
-            data.qpos[model.jnt_qposadr[index]] = value
-            data.qvel[model.jnt_dofadr[index]] = 0.0
-        self.core()._robot_env.sim.forward()  # noqa: SLF001
-
     def motion_state(self) -> dict[str, list[float]]:
         """`features` plus every robot joint and, after each body's own features, its
         pose (x, y, z, qw, qx, qy, qz): each dumpling's and the scraper's free joint, and
