@@ -76,8 +76,10 @@ def test_the_serving_regions_are_the_measured_near_certain_cells() -> None:
     regions = _provider().known_outcome_regions()
     assert set(regions) == {GATHER, SWEEP3, SWEEP5}
     assert regions[GATHER] == KnownOutcomeRegions(
-        success=((0.03, 0.11), (0.005, 0.03)), failure=((0.03, 0.11), (0.12, 0.2))
+        success=((0.05, 0.07), (0.005, 0.03)), failure=((0.03, 0.11), (0.12, 0.2))
     )
+    assert regions[SWEEP3] == KnownOutcomeRegions(success=((0.05, 0.12),), failure=((0.0, 0.03),))
+    assert regions[SWEEP5] == KnownOutcomeRegions(success=((0.08, 0.12),), failure=((0.0, 0.03),))
     for name, region in regions.items():
         bounds = _provider().bounds(name=name)
         for box in (region.success, region.failure):
