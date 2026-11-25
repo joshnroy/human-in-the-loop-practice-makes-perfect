@@ -883,8 +883,42 @@ class Tossing3DPomdpMethod(EesMethod):
         )
         self._cycle_index += 1
 
+    def uncounted_skills(self) -> frozenset[str]:
+        """Under `pomdp_clock_on_conditioned_only`, the skills with continuous
+        parameters, and no sampler of the domain's own, whose next greedy pick
+        `pomdp_competence_evidence` would keep out: taken as informed from a trained
+        fit and uninformative otherwise, as `greedy_draw_admitted` takes it."""
+        if not self.pomdp_clock_on_conditioned_only:
+            return frozenset()
+        uncounted = set()
+        for ground_skill in self._pomdp_model.ground_skills:
+            name = ground_skill.skill.name
+            if ground_skill.skill.param_dim == 0 or name in self.pomdp_domain.sampler_skills:
+                continue
+            if (
+                self.pomdp_domain.belief_name(skill_name=name)
+                not in self._pomdp_state.skill_beliefs
+            ):
+                continue
+            sampler = self._samplers.get(name)
+            if not self.pomdp_competence_evidence.admits(
+                consultation=(
+                    SamplerConsultation.INFORMED
+                    if sampler is not None and sampler.fitted_mixed_classes
+                    else SamplerConsultation.UNINFORMATIVE
+                ),
+                sampler_has_success=sampler is not None and sampler.fitted_with_success,
+            ):
+                uncounted.add(name)
+        return frozenset(uncounted)
+
     def select_skill_to_practice(self, *, true_atoms: frozenset[GroundAtom]) -> list[GroundSkill]:
         self._refresh_execution_forecasts()
+        if self.pomdp_clock_on_conditioned_only:
+            # The forecast's start: which skills' next pick the robot would not count.
+            self._pomdp_state = self._pomdp_state.model_copy(
+                update={"uncounted_skills": self.uncounted_skills()}
+            )
         self._decision_index += 1
         trace = SearchTrace()
         model: BeliefSpaceModel[

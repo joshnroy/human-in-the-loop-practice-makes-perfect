@@ -391,6 +391,13 @@ class LearnedSkillSampler(BaseModel):
         return self._classifier.is_fitted
 
     @property
+    def fitted_mixed_classes(self) -> bool:
+        """Whether the fit now scoring candidates is a trained net, on both labels, so
+        its picks can be informed rather than a uniform draw over tied scores."""
+        classifier = self._classifier
+        return classifier.is_fitted and classifier._single_class_prediction is None  # noqa: SLF001
+
+    @property
     def fitted_with_success(self) -> bool:
         """Whether the fit now scoring candidates saw at least one success: fitted, and
         not the all-failure single-class shortcut. False before the first fit and after
