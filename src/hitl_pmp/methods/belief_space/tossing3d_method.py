@@ -137,6 +137,10 @@ class Tossing3DPomdpMethod(EesMethod):
     pomdp_competence_model: Literal["global_curve", "local_trend"] = "local_trend"
     pomdp_inference_engine: Literal["particle", "grid"] = "particle"
     pomdp_competence_evidence: CompetenceEvidence = CompetenceEvidence.NON_EPSILON
+    # A try `pomdp_competence_evidence` keeps out of competence also leaves the
+    # learning curve's training clock alone (Josh, 2026-11-25). Off: every try advances
+    # the clock, as it always has.
+    pomdp_clock_on_conditioned_only: bool = False
     pomdp_grid_competence_bins: int = Field(default=25, ge=3)
     pomdp_grid_learning_rate_bins: int = Field(default=16, ge=2)
     pomdp_competence_process_noise_std: float = Field(default=0.03, ge=0.0)
@@ -174,6 +178,8 @@ class Tossing3DPomdpMethod(EesMethod):
     _pomdp_model: Tossing3DPracticeModel = PrivateAttr()
     _decision_index: int = PrivateAttr(default=0)
     _cycle_index: int = PrivateAttr(default=0)
+    # Whether the last observed try conditioned competence (`observe_outcome`).
+    _last_outcome_conditioned: bool = PrivateAttr(default=True)
     _practice_values: dict[str, float] = PrivateAttr(default_factory=dict)
     _belief_history: dict[str, list[BayesianSkillBelief]] = PrivateAttr(default_factory=dict)
     _execution_durations: dict[GroundSkill, list[int]] = PrivateAttr(default_factory=dict)
@@ -468,6 +474,7 @@ class Tossing3DPomdpMethod(EesMethod):
             domain=self.pomdp_domain,
             exploration_epsilon=self.exploration_epsilon,
             competence_evidence=self.pomdp_competence_evidence,
+            clock_on_conditioned_only=self.pomdp_clock_on_conditioned_only,
             ground_skills=tuple(ground_skills),
             linear_cost_lambda=self.pomdp_linear_cost_lambda,
             object_symmetry=reduce_search,
@@ -638,6 +645,16 @@ class Tossing3DPomdpMethod(EesMethod):
             assert (consultation is SamplerConsultation.EPSILON_RANDOM) == was_random_exploration
         sampler = self._samplers.get(ground_skill.skill.name)
         sampler_has_success = sampler is not None and sampler.fitted_with_success
+        conditioned = (
+            not was_random_exploration
+            if consultation is None
+            else admitted
+            and self.pomdp_competence_evidence.admits(
+                consultation=consultation, sampler_has_success=sampler_has_success
+            )
+        )
+        # Read by `observe_sampler_outcome`, which the episode calls next for this try.
+        self._last_outcome_conditioned = conditioned
         self._pomdp_state = self._pomdp_model.observe_outcome(
             state=self._pomdp_state,
             ground_skill=ground_skill,
@@ -655,14 +672,7 @@ class Tossing3DPomdpMethod(EesMethod):
             random_exploration=was_random_exploration,
             consultation=None if consultation is None else consultation.value,
             competence_evidence=self.pomdp_competence_evidence.value,
-            competence_conditioned=(
-                not was_random_exploration
-                if consultation is None
-                else admitted
-                and self.pomdp_competence_evidence.admits(
-                    consultation=consultation, sampler_has_success=sampler_has_success
-                )
-            ),
+            competence_conditioned=conditioned,
             belief=self._pomdp_state.model_dump(mode="json"),
             beliefs=self.belief_diagnostics(),
             estimated_costs=self.practice_skill_costs(),
@@ -821,7 +831,11 @@ class Tossing3DPomdpMethod(EesMethod):
             success=success,
         )
         self._pomdp_state = self._pomdp_model.observe_training_example(
-            state=self._pomdp_state, skill_name=skill_name, success=success
+            state=self._pomdp_state,
+            skill_name=skill_name,
+            success=success,
+            advance_clock=not self.pomdp_clock_on_conditioned_only
+            or self._last_outcome_conditioned,
         )
 
     def end_cycle(self) -> None:
