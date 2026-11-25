@@ -175,6 +175,9 @@ class EesMethod(Method):
     # active_sampler_learning.yaml overrides both to 2 for the simulated Ball-Ring,
     # so a Ball-Ring run passes --competence-window-size 2 --competence-recency-size 2.
     competence_window_size: int = 5
+    # Skill names that count as a practice try (episode). None: every skill with
+    # learnable parameters, the default rule (`counts_as_try`).
+    practice_try_skills: frozenset[str] | None = None
     competence_recency_size: int = 5
 
     # False matches vendor 5bd3f5bd: one observation per non-exploration attempt.
@@ -580,7 +583,17 @@ class EesMethod(Method):
     def practice_episode_dispatched(self) -> bool:
         # Every practice action is recorded by `record_action_cost` as it is dispatched.
         dispatched = self._execution_ground_skill
-        return dispatched is not None and dispatched.skill.param_dim > 0
+        return dispatched is not None and EesMethod.counts_as_try(
+            ground_skill=dispatched, try_skills=self.practice_try_skills
+        )
+
+    @staticmethod
+    def counts_as_try(*, ground_skill: Any, try_skills: frozenset[str] | None) -> bool:
+        """A try of a skill named in `try_skills`, or, when none are named, of any skill
+        with learnable parameters."""
+        if try_skills is not None:
+            return ground_skill.skill.name in try_skills
+        return ground_skill.skill.param_dim > 0
 
     def observe_execution_cost(self, *, cost: float, steps: int, complete: bool) -> None:
         """Receive host-measured execution cost independently of outcome learning."""
