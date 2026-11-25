@@ -10,6 +10,8 @@ with seeds PickScraper's hover IK onto another branch, and gather(0.05, 0.015) f
 
 import argparse
 import importlib.util
+import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -179,30 +181,68 @@ def test_a_robot_reset_aborted_with_food_in_the_hand_backs_off_still_holding_it(
         env.close()
 
 
-def test_a_robot_reset_aborted_mid_lift_lets_go_of_the_food_and_still_backs_off(*, monkeypatch):
-    """The recorded abort: the food lift refused just after the dumpling was snapped
-    into the hand, low over the rack, the dumpling already touching a rack support.
-    Nothing carrying it can move, so the hand lets go where it is, then backs off."""
-    from hitl_pmp.environments.racktoserving3d.food import _FoodMotion
+# The B=120 ees05 seed-0 run's scene (its config snapshot's flags).
+RECORDED_SCENE = (
+    "--start-layout middle_three --side-offset 0.13 --plate-tuck 0.035 --surface-kind wire_solid"
+    " --scraper-attachment grasp_weld --skill-step-limit 12000 --physics-timestep 0.002"
+    " --lean-control-step 1 --base-step-limit 0.04 --planned-joint-step 0.1"
+    " --settle-until-still 1 --gather-delta-high 0.2"
+)
+RECORDED = Path(__file__).parent / "fixtures" / "robot_reset_aborts_mid_lift_ees05_seed0.json"
 
-    problem = _toy_problem()
+
+def _recorded_problem():
+    """The toy scene posed as the recording's last tick before the aborted robot_reset:
+    every robot joint, the scraper's grasp weld and pose, and each dumpling's pose."""
+    import mujoco
+
+    from hitl_pmp.environments.racktoserving3d.cli import RackServingCli
+    from hitl_pmp.environments.racktoserving3d.recording import MOVABLES, WELDED
+    from hitl_pmp.environments.racktoserving3d.scraper_attachment import ScraperAttachment
+
+    parser = argparse.ArgumentParser()
+    RackServingCli.add_arguments(parser=parser)
+    args = parser.parse_args(RECORDED_SCENE.split())
+    args.seed = 0
+    problem = RackServingCli.build_problem(args=args, mode="training")
+    problem.hard_reset()
+    env = problem.env
+    state = json.loads(RECORDED.read_text())["state"]
+    backend = env.backend()
+    model, data = backend.model(), backend.data()
+    for joint, value in zip(backend.ROBOT_JOINTS, state["robot_joints"], strict=True):
+        data.qpos[model.jnt_qposadr[model.joint(joint).id]] = float(value)
+    data.qvel[:] = 0.0
+    ScraperAttachment.restore(model=model, data=data, state=state["scraper_attachment_state"])
+    for name in MOVABLES:
+        if name in WELDED:
+            continue
+        address = model.jnt_qposadr[model.joint(f"{name}_joint").id]
+        data.qpos[address : address + 7] = np.asarray(state[name][-7:], dtype=float)
+    mujoco.mj_forward(model, data)
+    controllers = env.rack_controllers()
+    shelf = controllers.shelf
+    shelf.base_target = data.qpos[shelf.ba].copy()
+    shelf.arm_reference = data.qpos[shelf.qa].copy()
+    backend.grip = shelf.grip = float(state["robot"][3])
+    shelf.in_hand = np.linalg.inv(shelf.site_pose()) @ controllers.tool.wiper_pose()
+    return problem
+
+
+def test_the_recorded_mid_lift_abort_lets_go_of_the_food_and_backs_off():
+    """Replayed from the recorded state, the food lift aborts exactly as recorded: the
+    dumpling was snapped into the hand low over the rack and already overlaps a rack
+    support, so nothing carrying it can move. The hand lets go where it is, then backs
+    off; the next robot_reset puts every dumpling back."""
+    problem = _recorded_problem()
     env = problem.env
     try:
-        _displace_one_dumpling(env=env)
-        line = _FoodMotion.line
-
-        def refused_lift(self, **kwargs):  # noqa: PLR0917 -- a method's self
-            if kwargs.get("label") == "food_lift":
-                raise SkillFailed("food_lift: Cartesian fraction 0.062: refused for this test")
-            return line(self, **kwargs)
-
-        monkeypatch.setattr(_FoodMotion, "line", refused_lift)
+        assert env.backend().held(name="wiper_0")
         error = _robot_reset(problem=problem)
-        assert error is not None and "refused for this test" in error
+        assert error is not None and "food_lift" in error and "rack_0_support" in error
         backend = env.backend()
         assert not any(backend.held(name=name) for name in (*backend.cube_names, "wiper_0"))
         _assert_parked(env=env)
-        monkeypatch.undo()
         assert _robot_reset(problem=problem) is None
     finally:
         env.close()
