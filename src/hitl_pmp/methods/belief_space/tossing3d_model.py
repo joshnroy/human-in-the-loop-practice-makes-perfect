@@ -559,6 +559,7 @@ class Tossing3DPracticeModel(BaseModel):
                 ),
                 tuple(sorted(belief_state.pending_examples.items())),
                 tuple(sorted(belief_state.sampler_training.items())),
+                tuple(sorted(belief_state.uncounted_skills)),
                 self.cost_key(cost=belief_state.accumulated_cost),
                 horizon,
             )
@@ -577,6 +578,7 @@ class Tossing3DPracticeModel(BaseModel):
             ),
             tuple(sorted(belief_state.pending_examples.items())),
             tuple(sorted(belief_state.sampler_training.items())),
+            tuple(sorted(belief_state.uncounted_skills)),
             self.cost_key(cost=belief_state.accumulated_cost),
             horizon,
         )
@@ -661,6 +663,7 @@ class Tossing3DPracticeModel(BaseModel):
             failure_effect_counts=self.failure_effect_counts,
             competence_evidence=self.competence_evidence,
             domain=self._domain,
+            clock_on_conditioned_only=self.clock_on_conditioned_only,
         )
         reset = self.forced_start_reset
         if reset is None or action.skill.param_dim == 0:
@@ -742,6 +745,7 @@ class Tossing3DPracticeModel(BaseModel):
             ),
             tuple(sorted(state.pending_examples.items())),
             tuple(sorted(state.sampler_training.items())),
+            tuple(sorted(state.uncounted_skills)),
             state.accumulated_cost,
             cost,
         )
