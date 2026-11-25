@@ -33,9 +33,11 @@ stays home. The measured state then says what is true, and this skill and the pe
 return both remain applicable.
 """
 
+import contextlib
 from typing import Any, ClassVar
 
 import numpy as np
+from spatialmath import SE2
 
 from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import SkillFailed
 
@@ -103,6 +105,21 @@ class RackRobotBatchReturn:
         raise SkillFailed("RobotBatchReturn returned 0: no draw of the start layout is clear")
 
     def run(self) -> None:
+        """Return the food, then leave the robot where its skills work: the arm at its
+        episode-start pose (`park`). An abort first backs off to a standard stance
+        (`back_off`), then fails as it would have."""
+        try:
+            self.return_food()
+        except SkillFailed as error:
+            try:
+                self.back_off()
+            except SkillFailed as refused:
+                raise SkillFailed(f"{error}; back-off refused: {refused}") from error
+            raise
+        if not self.hand_full():
+            self.park()
+
+    def return_food(self) -> None:
         backend, controllers = self.backend, self.controllers
         carried = backend.held(name="wiper_0")
         report: dict[str, Any] = {
@@ -165,3 +182,197 @@ class RackRobotBatchReturn:
             }
         if carried:
             controllers.pick_scraper()
+
+    def hand_full(self) -> bool:
+        backend = self.backend
+        return any(backend.held(name=name) for name in ("wiper_0", *backend.cube_names))
+
+    def standard_stances(self) -> list[np.ndarray]:
+        """The stances the gather and sweep strokes drive from (`StrokeStances`): the
+        rear stance and the two side stances, nearest the base first."""
+        config, shelf, stances = (
+            self.backend.config,
+            self.controllers.shelf,
+            self.controllers.stances,
+        )
+        out = [
+            stances.rear_base(y=config.rack_center_y, config=config),
+            stances.side_base(side=-1, config=config),
+            stances.side_base(side=1, config=config),
+        ]
+        base = shelf.data.qpos[shelf.ba].copy()
+        out.sort(key=lambda stance: float(np.linalg.norm(stance[:2] - base[:2])))
+        return out
+
+    def park(self) -> None:
+        """The empty arm, planned and driven, to its episode-start pose (`home_arm`)
+        where the base stands; from a base where that is refused, by way of `back_off`.
+
+        PickScraper seeds its hover IK from the arm as it finds it. From the arm the
+        last set-down left, the hover lands on another IK branch, and gather(0.05,
+        0.015) failed 5/5 starts that succeeded 5/5 from this pose; where the base
+        stood made no difference (2026-11-25)."""
+        try:
+            with self.controllers.feedback():
+                self.tuck()
+        except SkillFailed:
+            self.back_off()
+
+    def tuck(self) -> None:
+        """Plan the empty arm to `home_arm` at the base as it stands, and follow it."""
+        from hitl_pmp.environments.pouring3d.kitchen.planning.parameterized_skills import (
+            KitchenMotionPlanner,
+        )
+
+        from .planning import PlanningRefused, RackPyBulletSim, ScraperMotionPlanner
+
+        tool, shelf = self.controllers.tool, self.controllers.shelf
+        base = shelf.data.qpos[shelf.ba].copy()
+        start = self.unwound(arm=shelf.data.qpos[shelf.qa].copy())
+        home = np.asarray(shelf.home_arm, dtype=float)
+        if float(np.max(np.abs((start - home + np.pi) % (2 * np.pi) - np.pi))) < 0.01:
+            return
+        ok = ScraperMotionPlanner.mujoco_guard(tool=tool, holding=False)
+        sim = RackPyBulletSim.from_shelf(shelf=shelf)
+        try:
+            sim.set_robot_base(SE2(*(float(v) for v in base)))
+            path = ScraperMotionPlanner.plan_arm_to(
+                sim=sim,
+                start=start,
+                goal=KitchenMotionPlanner.with_fingers(sim=sim, arm=home),
+                what="the episode-start arm",
+                guard=ScraperMotionPlanner.arm_guard(ok=ok, base=base),
+            )
+        except PlanningRefused as exc:
+            raise SkillFailed(f"RobotBatchReturn park: {exc}") from exc
+        finally:
+            sim.close()
+        tool.follow_arm_path(path=[start, *path[1:]], label="robot_return_park")
+
+    def unwound(self, *, arm: np.ndarray) -> np.ndarray:
+        """`arm` with each continuous joint within a half turn of zero: the same pose,
+        in the range the planner checks. Long practice winds them tens of turns."""
+        from .planning import ScraperMotionPlanner
+
+        lower, upper = ScraperMotionPlanner.limits(shelf=self.controllers.shelf)
+        continuous = (lower <= -2 * np.pi) & (upper >= 2 * np.pi)
+        return np.where(continuous, (arm + np.pi) % (2 * np.pi) - np.pi, arm)
+
+    def back_off(self) -> None:
+        """After an abort: out of wherever it stopped to the nearest standard stance it
+        has a base path to, then, with an empty hand, the arm home there.
+
+        A food lift refused mid-carry left the hand out over the counter beside the
+        plate (B=120 ees05 seed 0, 2026-11-23). No later skill planned a base path out
+        with the arm carried as it was: every move brought the hand within the
+        planner's margin of the plate, and BlockedStart escapes only a start already
+        inside it. So the hand is first lifted along the escape's own checked line,
+        then the base is driven with the arm as it is, or else tucked first. Whatever
+        the hand holds stays in it: nothing is put down or hidden."""
+        from .tool import ESCAPE_UP_M, BlockedStart
+
+        controllers, backend = self.controllers, self.backend
+        food_name = next((n for n in backend.cube_names if backend.held(name=n)), None)
+        holding_scraper = backend.held(name="wiper_0")
+        motion: Any = controllers.tool
+        if food_name is not None:
+            food = RackFoodController(controllers=controllers)
+            food.carried = food_name
+            motion = food.motion
+        with controllers.feedback():
+            # No checked line up, nor back: drive from where the hand is.
+            with contextlib.suppress(SkillFailed):
+                BlockedStart.escape(
+                    tool=motion,
+                    label="robot_return_back_off_lift",
+                    holding=holding_scraper,
+                    distance=ESCAPE_UP_M,
+                    back_first=False,
+                    reason="RobotBatchReturn back-off",
+                )
+            self.drive_to_stance(
+                motion=motion,
+                held_name=food_name or ("wiper_0" if holding_scraper else None),
+                holding=holding_scraper,
+            )
+            if not self.hand_full():
+                self.tuck()
+
+    def drive_to_stance(self, *, motion: Any, held_name: str | None, holding: bool) -> None:
+        """A base path to the nearest standard stance that has one, carrying the arm as
+        it is or, with an empty hand and no path that way, tucked home first."""
+        from hitl_pmp.environments.pouring3d.kitchen.planning.parameterized_skills import (
+            HeldObject,
+            KitchenMotionPlanner,
+        )
+
+        from .planning import PlanningRefused, RackPyBulletSim, ScraperMotionPlanner
+
+        shelf = self.controllers.shelf
+        base = shelf.data.qpos[shelf.ba].copy()
+        arm = self.unwound(arm=shelf.data.qpos[shelf.qa].copy())
+        ignores_food = bool(getattr(motion, "ignores_food", False))
+        sim = RackPyBulletSim.from_shelf(shelf=shelf, ignores_food=ignores_food)
+        state = shelf.core._get_object_centric_state()  # noqa: SLF001
+        ok = ScraperMotionPlanner.mujoco_guard(tool=motion, holding=holding)
+        failures: list[str] = []
+        try:
+            sim.set_robot_base(SE2(*(float(v) for v in base)))
+            held = (
+                None
+                if held_name is None
+                else HeldObject.grasped(sim=sim, arm=arm, name=held_name, riders=())
+            )
+            ignore: tuple[str, ...] | None = None if held_name is None else (held_name,)
+            if ignores_food:
+                ignore = tuple(
+                    name
+                    for name in state.get_object_names()
+                    if name.startswith(RackPyBulletSim.movable_prefix)
+                )
+            carries: list[list[np.ndarray]] = [[arm]]
+            if held is None:
+                try:
+                    carries.append(
+                        ScraperMotionPlanner.plan_arm_to(
+                            sim=sim,
+                            start=arm,
+                            goal=KitchenMotionPlanner.with_fingers(
+                                sim=sim, arm=np.asarray(shelf.home_arm, dtype=float)
+                            ),
+                            what="the episode-start arm",
+                            guard=ScraperMotionPlanner.arm_guard(ok=ok, base=base),
+                        )
+                    )
+                except PlanningRefused as exc:
+                    failures.append(str(exc))
+            for stance in self.standard_stances():
+                for carry in carries:
+                    try:
+                        sim.set_robot_base(SE2(*(float(v) for v in base)))
+                        path = ScraperMotionPlanner.plan_base(
+                            sim=sim,
+                            state=state,
+                            base=base,
+                            target=stance,
+                            arm=carry[-1],
+                            what="a standard stance",
+                            guard=ScraperMotionPlanner.base_guard(ok=ok, arm=carry[-1]),
+                            held=held,
+                            ignore=ignore,
+                        )
+                    except PlanningRefused as exc:
+                        failures.append(str(exc))
+                        continue
+                    if len(carry) > 1:
+                        motion.follow_arm_path(
+                            path=[arm, *carry[1:]], label="robot_return_back_off_tuck"
+                        )
+                    motion.follow_base_path(path=path, label="robot_return_back_off")
+                    return
+        finally:
+            sim.close()
+        raise SkillFailed(
+            "RobotBatchReturn back-off: no base path to a standard stance "
+            f"({ScraperMotionPlanner.tally(failures=failures)})"
+        )
