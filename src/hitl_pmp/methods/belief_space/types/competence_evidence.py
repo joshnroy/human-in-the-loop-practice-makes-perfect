@@ -9,8 +9,9 @@ class CompetenceEvidence(Enum):
     """Filter on a sampler-driven attempt's `SamplerConsultation`.
 
     Only competence conditioning is filtered. Every attempt still enters the
-    sampler's training data, and so still advances the training clock, and every
-    attempt still updates the cost filter. A skill with no sampler (`NO_SAMPLER`:
+    sampler's training data and still updates the cost filter; it advances the
+    training clock too, unless `Tossing3DPomdpMethod.pomdp_clock_on_conditioned_only`
+    keeps a filtered-out attempt off the clock as well. A skill with no sampler (`NO_SAMPLER`:
     pick, open gripper, and the resets, which report no consultation at all) is a
     fixed controller whose every attempt is evidence, so every setting admits it.
     """

@@ -782,8 +782,15 @@ class Tossing3DPomdpCli(EesCli):
             "informed argmax picks, or sampler_succeeded: all but epsilon picks and "
             "uniform draws made before the sampler's first success. Every attempt still "
             "trains the sampler and "
-            "advances the training clock; skills without a sampler are always "
-            "conditioned.",
+            "advances the training clock (unless --pomdp-clock-on-conditioned-only); "
+            "skills without a sampler are always conditioned.",
+        )
+        parser.add_argument(
+            "--pomdp-clock-on-conditioned-only",
+            action="store_true",
+            help="A try --pomdp-competence-evidence keeps out of competence also leaves "
+            "the learning curve's training clock alone, in the observed update and in "
+            "the planner's forecast. Off (default): every try advances the clock.",
         )
         parser.add_argument("--pomdp-grid-competence-bins", type=int, default=25)
         parser.add_argument("--pomdp-grid-learning-rate-bins", type=int, default=16)
@@ -1002,6 +1009,7 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_competence_model=args.pomdp_competence_model,
                 pomdp_inference_engine=args.pomdp_inference_engine,
                 pomdp_competence_evidence=CompetenceEvidence(args.pomdp_competence_evidence),
+                pomdp_clock_on_conditioned_only=args.pomdp_clock_on_conditioned_only,
                 pomdp_grid_competence_bins=args.pomdp_grid_competence_bins,
                 pomdp_grid_learning_rate_bins=args.pomdp_grid_learning_rate_bins,
                 pomdp_competence_process_noise_std=args.pomdp_competence_process_noise_std,
