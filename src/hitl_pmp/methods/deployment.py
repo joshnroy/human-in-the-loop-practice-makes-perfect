@@ -31,7 +31,7 @@ from hitl_pmp.planning.grounding import SkillGrounder
 class DeploymentPolicy(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    kind: Literal["shared_ees", "dp_mdp", "tossing_canonical"] = "shared_ees"
+    kind: Literal["shared_ees", "dp_mdp", "tossing_canonical", "reward_greedy"] = "shared_ees"
     source_method: str = "ees"
     horizon: int = Field(default=4, ge=0)
     max_states: int = Field(default=4096, ge=1)
@@ -44,6 +44,20 @@ class DeploymentPolicy(BaseModel):
         return LinearSkillCompetenceModel(
             alpha=prior.alpha if prior is not None else method.prior_alpha,
             beta=prior.beta if prior is not None else method.prior_beta,
+            cycle_observations=history.cycle_observations if history is not None else [[]],
+        ).get_current_competence()
+
+    def recent_competence(self, *, method: EesMethod, ground: GroundSkill) -> float:
+        """The recent-window posterior mean of the snapshot's outcome counts, from this
+        policy's own prior for the skill where it names one rather than EES's
+        optimistic Beta(10, 1), under which a route never tried looks nearly perfect."""
+        prior = self.dp_priors.get(ground.skill.name)
+        history = method._competence_models.get(ground)
+        return OptimisticSkillCompetenceModel(
+            alpha=prior.alpha if prior is not None else method.prior_alpha,
+            beta=prior.beta if prior is not None else method.prior_beta,
+            window_size=method.competence_window_size,
+            recency_size=method.competence_recency_size,
             cycle_observations=history.cycle_observations if history is not None else [[]],
         ).get_current_competence()
 
@@ -104,6 +118,7 @@ class _DeploymentEpisode:
                     skills=self.method.skills(),
                     objects=self.method.objects(),
                     max_states=self.spec.max_states,
+                    goal_rewards=self.method.skill_provider.goal_rewards(),
                 )
                 _, policy = mdp.solve(
                     competences={
@@ -129,6 +144,37 @@ class _DeploymentEpisode:
                 | added
             )
             self.forbidden = ground.delete_effects - added
+        elif self.spec.kind == "reward_greedy":
+            if self.remaining <= 0:
+                return self.stop(reason="deployment horizon")
+            # One attempt of the skill that reaches the goal with the largest reward
+            # times competence (`RewardedRoutesPracticeDomain`'s deployed policy).
+            rewards = self.method.skill_provider.goal_rewards()
+            routes = [
+                (
+                    DpTaskModel.goal_reward(atoms=after, goal_rewards=rewards)
+                    * self.spec.recent_competence(method=self.method, ground=g),
+                    g,
+                )
+                for g in SkillGrounder.applicable_ground_skills(
+                    skills=self.method.skills(), objects=self.method.objects(), true_atoms=atoms
+                )
+                if g.preconditions <= atoms
+                and self.task.goal.atoms <= (after := DpTaskModel.successor(atoms=atoms, ground=g))
+            ]
+            if not routes:
+                return self.stop(reason="no route reaches the goal")
+            # Ties go to the first skill by name, so the choice never depends on order.
+            _, ground = min(
+                routes,
+                key=lambda route: (
+                    -route[0],
+                    route[1].skill.name,
+                    tuple(o.name for o in route[1].objects),
+                ),
+            )
+            self.remaining -= 1
+            self.finished = self.remaining <= 0
         else:
             if self.remaining <= 0:
                 return self.stop(reason="deployment horizon")

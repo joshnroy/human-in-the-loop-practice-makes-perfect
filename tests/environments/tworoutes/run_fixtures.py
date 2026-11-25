@@ -9,7 +9,7 @@ from hitl_pmp.cli import Cli
 
 class TwoRoutesRun:
     @staticmethod
-    def costs(*, directory: Path, human_cost: float = 1.0) -> Path:
+    def costs(*, directory: Path, human_cost: float = 1.0, objective_lambda: float = 0.002) -> Path:
         path = directory / "costs.json"
         path.write_text(
             json.dumps({
@@ -17,6 +17,7 @@ class TwoRoutesRun:
                 "human_skills": {
                     "human_reset_b": {"cost": {"value": human_cost}, "duration": {"value": 1}}
                 },
+                "objective_lambda": objective_lambda,
             })
         )
         return path

@@ -127,6 +127,18 @@ class SkillProvider(BaseModel, abc.ABC):
         del ground_skill, action
         return {}
 
+    def goal_rewards(self) -> dict[str, float]:
+        """What reaching a task's goal is worth, by the name of a predicate that holds
+        in the goal state: a goal state holding several priced predicates is worth the
+        largest. Empty by default, which means every goal state is worth 1 -- a task is
+        solved or it is not. A domain overrides it when its goal can be reached in
+        ways that are not equally good (Two Routes: `ViaA`, `ViaB`).
+
+        Read by a method that values deployment (DP's task MDP, the belief-space
+        practice domain) and by analysis; EES plans for success alone and never reads
+        it."""
+        return {}
+
     def human_cube_bin_reset_skill(self) -> GroundSkill | None:
         """A domain-specific ground skill for `HumanCubeBinResetRequested`: offered
         to `EesMethod`'s planner as a mid-plan step. Its price is the practice-cost

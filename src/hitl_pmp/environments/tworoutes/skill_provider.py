@@ -42,6 +42,9 @@ class TwoRoutesSkillProvider(SkillProvider):
         del params, state
         return self.env.action_for(skill=ground_skill.skill.name)
 
+    def goal_rewards(self) -> dict[str, float]:
+        return {"ViaA": self.env.route_a_reward, "ViaB": self.env.route_b_reward}
+
     def human_cube_bin_reset_skill(self) -> GroundSkill | None:
         if not self.offer_human_reset:
             return None
