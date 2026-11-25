@@ -609,3 +609,28 @@ def test_the_learning_rate_floor_must_be_positive():
             dp_budget=10.0,
             dp_min_learning_rate=0.0,
         )
+
+
+def test_a_period_schedule_re_solves_for_the_episodes_that_are_left(*, monkeypatch):
+    method, pick, _back, _cube = _two_skill_setup(monkeypatch=monkeypatch, budget=5)
+    method.dp_budget_unit = "episodes"
+    assert method.dp_allocation_schedule == "period"
+    budgets = []
+    original = DpAllocator.allocate
+
+    def counting(**kwargs):
+        budgets.append(kwargs["budget"])
+        return original(**kwargs)
+
+    monkeypatch.setattr(DpAllocator, "allocate", staticmethod(counting))
+    method.choose_practice_target()
+    for _ in range(2):
+        _execute(method=method, ground=pick)
+    method.choose_practice_target()  # the same session: no new solve
+    method._practice_periods += 1  # noqa: SLF001 -- what get_practice_policy does
+    method.choose_practice_target()
+    _execute(method=method, ground=pick)
+    method._practice_periods += 1  # noqa: SLF001
+    method.choose_practice_target()
+    assert budgets == [5, 3, 2]
+    assert sum(method.dp_allocation().values()) <= 2
