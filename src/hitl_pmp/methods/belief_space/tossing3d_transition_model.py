@@ -255,6 +255,7 @@ def transition_outcomes(
     failure_effect_counts: tuple[FailureEffectCount, ...] = (),
     competence_evidence: CompetenceEvidence = CompetenceEvidence.NON_EPSILON,
     domain: PracticeDomain = TOSSING3D_DOMAIN,
+    clock_on_conditioned_only: bool = False,
 ) -> tuple[TransitionBranch, ...]:
     assert action in ground_skills
     assert action.preconditions <= environment_state.true_atoms
@@ -315,6 +316,7 @@ def transition_outcomes(
         failure_effect_counts=failure_effect_counts,
         competence_evidence=competence_evidence,
         domain=domain,
+        clock_on_conditioned_only=clock_on_conditioned_only,
     )
 
 
@@ -369,12 +371,21 @@ def binary_outcomes(
                 was_random_exploration=False,
             )
         )
+        # A skill the robot would not yet count: neither belief nor clock moves, and
+        # only its first success makes the next pick count.
+        uncounted = ground_skill.skill.name in state.uncounted_skills
         next_state = skill_belief_model(ground_skill=ground_skill, domain=domain).observe_outcome(
             state=transition_belief_state(state=state, added_cost=cost),
             success=success,
             was_random_exploration=False,
             resample=False,
+            condition_competence=False if uncounted else None,
+            clock_on_conditioned_only=uncounted,
         )
+        if uncounted and success:
+            next_state = next_state.model_copy(
+                update={"uncounted_skills": state.uncounted_skills - {ground_skill.skill.name}}
+            )
         outcomes.extend(
             (branch_probability * effect_probability, next_state, next_true_atoms)
             for effect_probability, next_true_atoms in effect_outcomes
@@ -411,6 +422,7 @@ def toss_outcomes(
     failure_effect_counts: tuple[FailureEffectCount, ...] = (),
     competence_evidence: CompetenceEvidence = CompetenceEvidence.NON_EPSILON,
     domain: PracticeDomain = TOSSING3D_DOMAIN,
+    clock_on_conditioned_only: bool = False,
 ) -> tuple[TransitionBranch, ...]:
     """Branch on the greedy/epsilon draw, then on S/F.
 
@@ -442,11 +454,12 @@ def toss_outcomes(
             if probability <= 0.0:
                 continue
             belief = state.skill_beliefs[belief_name]
-            if (
+            admitted = (
                 competence_evidence.admits(consultation=SamplerConsultation.EPSILON_RANDOM)
                 if is_random
                 else greedy_draw_admitted(evidence=competence_evidence, training=training)
-            ):
+            )
+            if admitted:
                 belief = condition_skill_belief(belief=belief, success=success)
             effect_outcomes = (
                 (
@@ -473,7 +486,11 @@ def toss_outcomes(
             )
             next_state = skill_belief_model(
                 ground_skill=ground_skill, domain=domain
-            ).observe_training_example(state=next_state, success=success)
+            ).observe_training_example(
+                state=next_state,
+                success=success,
+                advance_clock=admitted or not clock_on_conditioned_only,
+            )
             branches.extend(
                 (probability * effect_probability, next_state, next_true_atoms)
                 for effect_probability, next_true_atoms in effect_outcomes
