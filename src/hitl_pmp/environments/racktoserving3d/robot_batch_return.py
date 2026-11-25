@@ -43,8 +43,11 @@ from hitl_pmp.environments.sweepoffshelf3d.scripted_skills import SkillFailed
 
 from .food import SNAP_INTO_FOOD, RackFoodController, WeldedFoodSkills
 from .layout import RackLayout
+from .welded_food import WeldedFood
 
 Slot = tuple[float, float, float]
+# Control steps a dumpling let go of mid-carry is given to settle (`let_go`).
+LET_GO_SETTLE_STEPS = 40
 
 
 class RackRobotBatchReturn:
@@ -267,12 +270,38 @@ class RackRobotBatchReturn:
         with the arm carried as it was: every move brought the hand within the
         planner's margin of the plate, and BlockedStart escapes only a start already
         inside it. So the hand is first lifted along the escape's own checked line,
-        then the base is driven with the arm as it is, or else tucked first. Whatever
-        the hand holds stays in it: nothing is put down or hidden."""
+        then the base is driven with the arm as it is, or else tucked first.
+
+        A dumpling in the hand stays there if the robot can back off carrying it. In
+        that run it could not: snapped into the hand low over the rack, it already
+        overlapped a rack support, so every motion carrying it was refused. Then the
+        hand lets go of it where it is (`let_go`) and backs off empty."""
+        backend = self.backend
+        food_name = next((n for n in backend.cube_names if backend.held(name=n)), None)
+        try:
+            self.retreat(food_name=food_name)
+        except SkillFailed:
+            if food_name is None:
+                raise
+            self.let_go(name=food_name)
+            self.retreat(food_name=None)
+
+    def let_go(self, *, name: str) -> None:
+        """Open the hand on the welded dumpling where it is and let it settle: no pose
+        is written, physics puts it wherever it falls."""
+        controllers, shelf = self.controllers, self.controllers.shelf
+        with controllers.feedback():
+            WeldedFood.release(backend=self.backend)
+            controllers.held_food = shelf.held_cube = None
+            shelf.grip = 0.0
+            RackFoodController(controllers=controllers).restore_gripper_force()
+            shelf.hold(count=LET_GO_SETTLE_STEPS, label=f"robot_return_let_go_{name}")
+
+    def retreat(self, *, food_name: str | None) -> None:
+        """Lift the hand clear, drive to a standard stance, and tuck an empty arm."""
         from .tool import ESCAPE_UP_M, BlockedStart
 
         controllers, backend = self.controllers, self.backend
-        food_name = next((n for n in backend.cube_names if backend.held(name=n)), None)
         holding_scraper = backend.held(name="wiper_0")
         motion: Any = controllers.tool
         if food_name is not None:
