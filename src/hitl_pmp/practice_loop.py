@@ -588,6 +588,10 @@ class PracticeLoop:
                 # finished, playable clip from this point on, and evaluation manages
                 # its own file (and its own substep-recording scope) independently.
                 period_recorder.end_practice()
+            # The period's last action has no next policy call to be scored on. A
+            # period that ended on a reset or on the Method's own stop has nothing
+            # left in flight, and this is then a no-op.
+            method.observe_session_end(state=state)
             # Before this cycle's evaluation, so the sweep actually measures what
             # the Method just learned rather than lagging a cycle behind.
             method.end_cycle()
