@@ -895,6 +895,10 @@ class Tossing3DPomdpMethod(EesMethod):
             name = ground_skill.skill.name
             if ground_skill.skill.param_dim == 0 or name in self.pomdp_domain.sampler_skills:
                 continue
+            curve = self.curve_controlled_sampler
+            if curve is not None and curve.controls(name=name):
+                # The oracle's next pick is informed and counts, whatever the fit.
+                continue
             if (
                 self.pomdp_domain.belief_name(skill_name=name)
                 not in self._pomdp_state.skill_beliefs
