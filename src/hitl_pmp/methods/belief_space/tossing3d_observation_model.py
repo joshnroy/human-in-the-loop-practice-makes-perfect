@@ -238,6 +238,7 @@ def make_default_tossing3d_belief(
     seed_offsets = {
         name: index for index, name in enumerate(dict.fromkeys((*domain.prior_seed_order, *names)))
     }
+    overrides = {name: (alpha, beta) for name, alpha, beta in domain.competence_prior_overrides}
     known_curves = {name: (start, rate) for name, start, rate in domain.known_competence_curves}
     known_rates = dict(domain.known_learning_rates)
     if unknown := sorted((set(known_curves) | set(known_rates)) - set(names)):
@@ -245,6 +246,13 @@ def make_default_tossing3d_belief(
     for name in dict.fromkeys(names):
         index = seed_offsets[name]
         config = inference_config or InferenceConfig()
+        if name in overrides:
+            config = config.model_copy(
+                update={
+                    "initial_competence_alpha": overrides[name][0],
+                    "initial_competence_beta": overrides[name][1],
+                }
+            )
         if name in known_curves:
             start, rate = known_curves[name]
             beliefs[name] = WeightedHypothesisBelief(

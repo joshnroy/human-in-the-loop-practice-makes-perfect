@@ -476,6 +476,29 @@ class Tossing3DPomdpCli(EesCli):
     }
 
     @staticmethod
+    def with_prior_means(*, domain: PracticeDomain, means: Mapping[str, float]) -> PracticeDomain:
+        """The domain with each named skill starting from the Beta of mean m whose
+        smaller parameter is 1 -- Beta(1, (1 - m) / m) below a half, Beta(m / (1 - m), 1)
+        above -- the family the domains' own Beta(1, 3) is in (m = 0.25); every other
+        skill keeps the shared prior. A name the domain holds no belief for is an error."""
+        if not means:
+            return domain
+        known = {name for name, _ in domain.belief_sources}
+        unknown = sorted(set(means) - known)
+        if unknown:
+            raise ValueError(f"no belief for {unknown}; the domain infers {sorted(known)}")
+        if any(not 0 < mean < 1 for mean in means.values()):
+            raise ValueError("a competence prior mean must lie strictly between 0 and 1")
+        return domain.model_copy(
+            update={
+                "competence_prior_overrides": tuple(
+                    (name, max(1.0, mean / (1 - mean)), max(1.0, (1 - mean) / mean))
+                    for name, mean in means.items()
+                )
+            }
+        )
+
+    @staticmethod
     def with_known_curves(
         *,
         domain: PracticeDomain,
@@ -654,6 +677,15 @@ class Tossing3DPomdpCli(EesCli):
             "coefficient. Omit to use hard-budget G with B=20 instead.",
         )
         parser.add_argument(
+            "--pomdp-competence-prior-for",
+            action=DpCli.SkillValues,
+            default={},
+            metavar="SKILL=MEAN",
+            help="One skill's own starting competence belief: the Beta of this mean whose "
+            "smaller parameter is 1, e.g. 0.9 is Beta(9, 1) and 0.25 is Beta(1, 3) "
+            "(repeatable, one per skill); skills not named keep the shared prior.",
+        )
+        parser.add_argument(
             "--pomdp-plan-beyond-session",
             action=argparse.BooleanOptionalAction,
             default=False,
@@ -825,13 +857,16 @@ class Tossing3DPomdpCli(EesCli):
                 pomdp_domain=Tossing3DPomdpCli.with_known_curves(
                     curves=EesCli.known_curves(args=args),
                     rates=EesCli.known_rates(args=args),
-                    domain=Tossing3DPomdpCli.with_competence_prior(
-                        domain=(
-                            domain
-                            if isinstance(domain, PracticeDomain)
-                            else domain(ctx.skill_provider)
+                    domain=Tossing3DPomdpCli.with_prior_means(
+                        means=args.pomdp_competence_prior_for,
+                        domain=Tossing3DPomdpCli.with_competence_prior(
+                            domain=(
+                                domain
+                                if isinstance(domain, PracticeDomain)
+                                else domain(ctx.skill_provider)
+                            ),
+                            prior=competence_prior,
                         ),
-                        prior=competence_prior,
                     ),
                 ),
                 decision_log=(
