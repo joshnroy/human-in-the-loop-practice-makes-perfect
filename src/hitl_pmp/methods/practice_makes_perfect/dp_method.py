@@ -304,6 +304,10 @@ class DpMethod(EesMethod):
         )
         self.skill_provider.set_execution_trains(trains=not self._dp_setup_dispatch)
 
+    def execution_trains_skill(self) -> bool:
+        """A setup run trains nothing (`record_action_cost`)."""
+        return not self._dp_setup_dispatch
+
     def learns_from_human_outcome(self, *, ground_skill: GroundSkill) -> bool:
         """A human reset on the way to the practice target is setup too: like a robot
         setup run, its outcome leaves DP's estimate of it where it was."""
