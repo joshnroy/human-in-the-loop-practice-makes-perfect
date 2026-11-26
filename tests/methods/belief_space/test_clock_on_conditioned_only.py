@@ -30,7 +30,10 @@ E = CompetenceEvidence
 SWEEP5 = "sweep5"
 
 
-def _serving(*, clock_on_conditioned_only: bool) -> Tossing3DPomdpMethod:
+def _serving(*, clock_on_conditioned_only: bool, reset: bool = True) -> Tossing3DPomdpMethod:
+    """`reset` runs the simulator's hard reset, which needs MuJoCo's GL backend; a test
+    that also trains a torch sampler must not use it (see
+    tests/environments/racktoserving3d/test_clock_on_conditioned_only_serving.py)."""
     env = RackServingToyEnvironment()
     provider = RackServingSkillProvider(env=env)
     method = Tossing3DPomdpMethod(
@@ -44,7 +47,8 @@ def _serving(*, clock_on_conditioned_only: bool) -> Tossing3DPomdpMethod:
         competence_after_first_success=True,
         pomdp_clock_on_conditioned_only=clock_on_conditioned_only,
     )
-    env.hard_reset()
+    if reset:
+        env.hard_reset()
     return method
 
 
@@ -102,34 +106,6 @@ def test_the_flag_is_off_by_default() -> None:
     assert parser.parse_args([]).pomdp_clock_on_conditioned_only is False
     args = parser.parse_args(["--pomdp-clock-on-conditioned-only"])
     assert args.pomdp_clock_on_conditioned_only is True
-
-
-def test_an_excluded_try_moves_neither_the_belief_nor_the_clock() -> None:
-    method = _serving(clock_on_conditioned_only=True)
-    before = method.pomdp_state
-    # sweep5's first try: no success yet, so a uniform pick, kept out of competence.
-    for _ in range(3):
-        _try(method=method, name=SWEEP5, consultation=C.UNINFORMATIVE, success=False)
-    assert method.pomdp_state.pending_examples.get(SWEEP5, 0) == 0
-    assert method.pomdp_state.skill_beliefs[SWEEP5] == before.skill_beliefs[SWEEP5]
-    method.end_cycle()
-    assert _belief(method=method, name=SWEEP5).total_training_examples == 0
-
-
-def test_a_conditioned_try_advances_both_as_before() -> None:
-    method = _serving(clock_on_conditioned_only=True)
-    _try(method=method, name=SWEEP5, consultation=C.INFORMED, success=True)
-    assert method.pomdp_state.pending_examples[SWEEP5] == 1
-    assert _belief(method=method, name=SWEEP5).cycle_successes == 1
-    method.end_cycle()
-    assert _belief(method=method, name=SWEEP5).total_training_examples == 1
-
-
-def test_without_the_flag_an_excluded_try_still_advances_the_clock() -> None:
-    method = _serving(clock_on_conditioned_only=False)
-    _try(method=method, name=SWEEP5, consultation=C.UNINFORMATIVE, success=False)
-    assert method.pomdp_state.pending_examples[SWEEP5] == 1
-    assert _belief(method=method, name=SWEEP5).cycle_failures == 0
 
 
 @pytest.mark.parametrize("clock_on_conditioned_only", [False, True])
