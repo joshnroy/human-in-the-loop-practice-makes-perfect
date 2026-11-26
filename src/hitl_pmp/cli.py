@@ -66,6 +66,8 @@ ENVIRONMENTS: dict[str, type[EnvironmentCli]] = {
     "ballring": BallRingCli,
     "kitchen_recycling3d": KitchenRecyclingCli,
     "lightswitch": LightSwitchCli,
+    # Serving: the 3D scene behind exactly the chained toy's interface (`tworoutes
+    # --both-resets --chained-route-b`); only success comes from physics.
     "racktoserving3d": RackServingCli,
     "sweepoffshelf3d": SweepOffShelf3DCli,
     "tossing3d": Tossing3DCli,

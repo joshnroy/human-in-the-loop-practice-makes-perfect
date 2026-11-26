@@ -12,9 +12,6 @@ from hitl_pmp.methods.belief_space.practice_domain import (
     TOSSING3D_DOMAIN,
     PracticeDomain,
 )
-from hitl_pmp.methods.belief_space.rack_serving_domain import (
-    RACK_SERVING_DOMAIN,
-)
 from hitl_pmp.methods.belief_space.rewarded_routes_domain import RewardedRoutesPracticeDomain
 from hitl_pmp.methods.belief_space.skill_plans_domain import SkillPlansPracticeDomain
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
@@ -532,9 +529,13 @@ class Tossing3DPomdpCli(EesCli):
         "SweepOffShelf3DCli": SWEEP_OFF_SHELF_DOMAIN,
         # The kitchen is Tossing3D re-flavoured: the same skills, so the same domain.
         "KitchenRecyclingCli": TOSSING3D_DOMAIN,
-        "RackServingCli": RACK_SERVING_DOMAIN,
         # Built from the provider: the routes and their rewards are the domain's flags.
         "TwoRoutesCli": lambda provider: RewardedRoutesPracticeDomain.from_provider(
+            provider=provider
+        ),
+        # Serving is the chained toy's interface over the 3D scene: the toy's own
+        # domain, read the same way.
+        "RackServingCli": lambda provider: RewardedRoutesPracticeDomain.from_provider(
             provider=provider
         ),
     }

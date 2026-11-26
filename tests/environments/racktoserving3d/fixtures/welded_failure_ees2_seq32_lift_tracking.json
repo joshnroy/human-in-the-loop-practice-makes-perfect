@@ -1,0 +1,192 @@
+{
+ "source": "ees2 seq 32 (PickFood(robot, cube_2, rack_0, box_0)): No collision-free food grasp: No planned reach to the food pre-grasp (stance blocked: 1572, Scraper motion would collide, cost 0.00597: [('rack_0_wire_y_0', 'robo: 1, hover: 150, Scraper motion would collide, cost 0.00596: [('rack_0_wire_y_0', 'robo: 1, Scraper motion would collide, cost 0.00105: [('cupboard_1_counter', 'r: 1, Scraper motion would collide, cost 0.00704: [('rack_0_wire_x_17', 'rob: 4, Scraper motion would collide, cost 0.00695: [('rack_0_wire_x_17', 'rob: 3, Scraper motion would collide, cost 0.00697: [('rack_0_wire_x_17', 'rob: 3, Scraper motion would collide, cost 0.00700: [('rack_0_wire_x_17', 'rob: 2, Scraper motion would collide, cost 0.00451: [('rack_0_wire_y_0', 'robo: 1, Scraper motion would collide, cost 0.00703: [('rack_0_wire_x_17', 'rob: 2, Scraper motion would collide, cost 0.00694: [('rack_0_wire_x_17', 'rob: 1, Scraper motion would collide, cost 0.00707: [('rack_0_wire_x_17', 'rob: 3, Scraper motion would collide, cost 0.00509: [('rack_0_wire_y_0', 'robo: 1, Scraper motion would collide, cost 0.00705: [('rack_0_wire_x_17', 'rob: 1, Scraper motion would collide, cost 0.00637: [('rack_0_wire_y_0', 'robo: 1, Scraper motion would collide, cost 0.00702: [('rack_0_wire_x_17', 'rob: 1, Scraper motion would collide, cost 0.00687: [('rack_0_wire_x_17', 'rob: 1, Scraper motion would collide, cost 0.00730: [('rack_0_wire_x_17', 'rob: 2, Scraper motion would collide, cost 0.00734: [('rack_0_wire_x_17', 'rob: 2, Scraper motion would collide, cost 0.00722: [('rack_0_wire_x_17', 'rob: 3, Scraper motion would collide, cost 0.00724: [('rack_0_wire_x_17', 'rob: 3, Scraper motion would collide, cost 0.00723: [('rack_0_wire_x_17', 'rob: 2, Scraper motion would collide, cost 0.00726: [('rack_0_wire_x_17', 'rob: 4, Scraper motion would collide, cost 0.00719: [('rack_0_wire_x_17', 'rob: 1, Scraper motion would collide, cost 0.00717: [('rack_0_wire_x_17', 'rob: 1, Scraper motion would collide, cost 0.00877: [('rack_0_wire_x_17', 'rob: 1, Scraper motion would collide, cost 0.00910: [('rack_0_wire_x_17', 'rob: 1, Scraper motion would collide, cost 0.00698: [('rack_0_wire_x_17', 'rob: 2, Scraper motion would collide, cost 0.00708: [('rack_0_wire_x_17', 'rob: 1, Scraper motion would collide, cost 0.00713: [('rack_0_wire_x_17', 'rob: 1, Scraper motion would collide, cost 0.00688: [('rack_0_wire_x_17', 'rob: 1, Scraper motion would collide, cost 0.00721: [('rack_0_wire_x_17', 'rob: 1, Scraper motion would collide, cost 0.00720: [('rack_0_wire_x_17', 'rob: 1, Scraper motion would collide, cost 0.00716: [('rack_0_wire_x_17', 'rob: 1, Scraper motion would collide, cost 0.00725: [('rack_0_wire_x_17', 'rob: 1, Scraper motion would collide, cost 0.00613: [('rack_0_wire_x_15', 'rob: 3, Scraper motion would collide, cost 0.00610: [('rack_0_wire_x_15', 'rob: 1, Scraper motion would collide, cost 0.00614: [('rack_0_wire_x_15', 'rob: 2, Scraper motion would collide, cost 0.00611: [('rack_0_wire_x_15', 'rob: 1, Scraper motion would collide, cost 0.00609: [('rack_0_wire_x_15', 'rob: 1, Scraper motion would collide, cost 0.00608: [('rack_0_wire_x_15', 'rob: 1, Scraper motion would collide, cost 0.00612: [('rack_0_wire_x_15', 'rob: 1, Scraper motion would collide, cost 0.00615: [('rack_0_wire_x_15', 'rob: 2, Scraper motion would collide, cost 0.00616: [('rack_0_wire_x_15', 'rob: 2, Scraper motion would collide, cost 0.00622: [('rack_0_wire_x_15', 'rob: 1, Scraper motion would collide, cost 0.00621: [('rack_0_wire_x_15', 'rob: 1, Scraper motion would collide, cost 0.00620: [('rack_0_wire_x_15', 'rob: 2, Scraper motion would collide, cost 0.00618: [('rack_0_wire_x_15', 'rob: 1, Scraper motion would collide, cost 0.00617: [('rack_0_wire_x_15', 'rob: 2, Scraper motion would collide, cost 0.00541: [('rack_0_wire_x_15', 'rob: 1)",
+ "target": "cube_2",
+ "config": {
+  "surface_kind": "wire",
+  "mode": "training",
+  "sweep_skill": true,
+  "start_layout": "scattered",
+  "gathered_fraction": 0.25,
+  "counter_height": 0.9,
+  "rack_height": 0.025,
+  "rack_mass": 0.5,
+  "tray_thickness": 0.012,
+  "gap": 0.01,
+  "human_interruption_cost": 5.0,
+  "rack_width": 0.375,
+  "rack_depth": 0.255,
+  "rack_center_x": 1.5,
+  "rack_center_y": 0.0,
+  "rack_wire_radius": 0.0015,
+  "rack_wire_spacing": 0.015,
+  "rack_leg_width": 0.012,
+  "rack_friction": [
+   0.6,
+   0.005,
+   0.003
+  ],
+  "support_contact_dimension": 6,
+  "concept_web_width": 0.008,
+  "concept_pitch": 0.025,
+  "concept_thickness": 0.003,
+  "serving_target": "corelle_plate",
+  "plate_radius": 0.13,
+  "tray_width": 0.375,
+  "tray_depth": 0.3,
+  "tray_mass": 1.0,
+  "platter_width": 0.45,
+  "platter_depth": 0.3,
+  "platter_base_thickness": 0.006,
+  "platter_lip_height": 0.012,
+  "platter_lip_wall": 0.008,
+  "platter_mass": 1.5,
+  "corelle_diameter": 0.26034999999999997,
+  "corelle_height": 0.019049999999999997,
+  "corelle_well_radius": 0.095,
+  "corelle_glass_thickness": 0.003,
+  "corelle_foot_height": 0.004,
+  "corelle_foot_radius": 0.08,
+  "corelle_foot_width": 0.006,
+  "corelle_mass": 0.4,
+  "corelle_rim_segments": 48,
+  "tray_friction": [
+   0.6,
+   0.005,
+   0.003
+  ],
+  "counter_x_min": 0.98,
+  "counter_x_max": 1.7,
+  "counter_width": 1.0,
+  "tool_rest_y": -0.34,
+  "counter_thickness": 0.04,
+  "counter_leg_width": 0.05,
+  "counter_friction": [
+   0.7,
+   0.005,
+   0.0001
+  ],
+  "dumpling_mass": 0.02,
+  "dumpling_friction": [
+   0.45,
+   0.005,
+   0.003
+  ],
+  "dumpling_contact_dimension": 6,
+  "dumpling_collision": "hull",
+  "food_grip_command": 1.0,
+  "food_grip_force": 20.0,
+  "gripper_contact_dimension": 4,
+  "scraper_width": 0.25,
+  "scraper_blade_height": 0.12,
+  "scraper_blade_thickness": 0.001,
+  "scraper_handle_width": 0.018,
+  "scraper_handle_height": 0.02,
+  "scraper_mass": 0.275,
+  "scraper_tilt_degrees": 45.0,
+  "scraper_friction": [
+   0.4,
+   0.005,
+   0.0001
+  ],
+  "scraper_blade_friction": [
+   0.25,
+   0.005,
+   0.0001
+  ]
+ },
+ "grip": 0.0,
+ "robot_joints": {
+  "robot_joint_x": 0.6015814363324602,
+  "robot_joint_y": -0.4405574705734569,
+  "robot_joint_th": -0.24999999987999558,
+  "robot_joint_1": -1.3203238260902392,
+  "robot_joint_2": -0.472161094768749,
+  "robot_joint_3": 2.220786330406507,
+  "robot_joint_4": -1.871439290832321,
+  "robot_joint_5": 1.2028614249717329,
+  "robot_joint_6": -1.903811292153309,
+  "robot_joint_7": 1.5702345131298572,
+  "robot_right_driver_joint": 0.0026066614663096724,
+  "robot_right_coupler_joint": 0.0001593924939036765,
+  "robot_right_spring_link_joint": 0.0030510848025192697,
+  "robot_right_follower_joint": -0.0034611850679590428,
+  "robot_left_driver_joint": 0.0025986154012058913,
+  "robot_left_coupler_joint": 0.0001332189117070557,
+  "robot_left_spring_link_joint": 0.002974381134171547,
+  "robot_left_follower_joint": -0.0033696516177624896
+ },
+ "free_bodies": {
+  "cube_0": [
+   1.2808153043680321,
+   -0.008908491652521625,
+   0.9172594058200079,
+   0.5115281424781178,
+   0.01351041723321306,
+   -0.8584250126540593,
+   -0.035537666340809314
+  ],
+  "cube_1": [
+   1.312128589236764,
+   0.014096061968217695,
+   0.9172383471255081,
+   -0.21005091890938585,
+   0.7293457554938132,
+   0.26627022992408816,
+   0.5941662604563261
+  ],
+  "cube_2": [
+   1.328710953034475,
+   0.027972943867867153,
+   0.9200666695399421,
+   -0.1439340467936645,
+   -0.9485295064606999,
+   -0.24984104320829523,
+   0.13097411452501587
+  ],
+  "cube_3": [
+   1.3115338748947638,
+   -0.03207015730833941,
+   0.9174617250837982,
+   -0.14854218641260342,
+   -0.7795136900009032,
+   -0.20457013685888115,
+   0.5731009379354377
+  ],
+  "cube_4": [
+   1.362038961319309,
+   -0.12213145534180693,
+   0.9120100768960534,
+   0.8593933341373851,
+   0.01758081143243743,
+   0.5101532317961562,
+   -0.029625873785285948
+  ],
+  "wiper_0": [
+   1.0609742110856584,
+   -0.34004805790096027,
+   0.9004995659911793,
+   0.4999467087498045,
+   -0.49996766160489836,
+   -0.5000532873647295,
+   0.5000323345097727
+  ],
+  "rack_0": [
+   1.5,
+   0.0,
+   0.8999999761581421,
+   1.0,
+   0.0,
+   0.0,
+   0.0
+  ],
+  "box_0": [
+   1.2323249578475952,
+   0.0,
+   0.8999999761581421,
+   1.0,
+   0.0,
+   0.0,
+   0.0
+  ]
+ }
+}

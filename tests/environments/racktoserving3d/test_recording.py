@@ -11,8 +11,8 @@ import pytest
 from hitl_pmp.cli import Cli
 from hitl_pmp.environments.racktoserving3d.cli import RackServingCli
 from hitl_pmp.environments.racktoserving3d.recording import RackServingReplayRenderer
-from hitl_pmp.environments.racktoserving3d.skills import SKILL_IDS
 from hitl_pmp.environments.racktoserving3d.step_protocol import RackServingStepProtocol
+from hitl_pmp.environments.racktoserving3d.toy_interface import TOY_SKILL_IDS
 from hitl_pmp.environments.sweepoffshelf3d.backend import SweepOffShelf3DBackend
 from hitl_pmp.recording.run_record.reader import RunRecordReader
 from hitl_pmp.recording.run_record.types import ActionEntry, Phase, RecordingHeader, TickEntry
@@ -68,7 +68,7 @@ def test_each_scope_records_motion_only_where_asked(
 
 def test_the_cycle_runner_refuses_motion_recording(*, tmp_path: Path) -> None:
     args = _args(tmp_path=tmp_path, record_motion="all")
-    with pytest.raises(ValueError, match="--record-motion"):
+    with pytest.raises(ValueError, match="only under --practice-step-budget"):
         RackServingCli.run_method(
             args=args,
             method_factory=lambda context: None,
@@ -101,11 +101,10 @@ def _record_one_skill(*, tmp_path: Path, record_motion: str) -> tuple[Path, int]
         )
         problem.hard_reset()
         writer.begin_segment(phase=Phase.EVALUATION, checkpoint=0, task_index=0)
-        problem.take_action(action=np.array([float(SKILL_IDS["PickScraper"]), 0.0, 0.0, 0.0, 0.0]))
+        # sweep3 picks the scraper up itself, then sweeps.
+        problem.take_action(action=np.array([float(TOY_SKILL_IDS["sweep3"]), 0.0, 0.0, 0.0, 0.1]))
         steps = problem.env.last_controller_steps()
-        writer.robot_action(
-            label="PickScraper(robot, wiper_0)", start_step=0, end_step=steps, success=True
-        )
+        writer.robot_action(label="sweep3(robot)", start_step=0, end_step=steps, success=True)
         writer.end_segment(success=False, outcome="step_budget", steps=steps)
         writer.close()
     finally:
@@ -133,7 +132,7 @@ def test_motion_ticks_carry_the_arm_and_every_free_body(*, motion_recording) -> 
     ticks = [e for e in entries if isinstance(e, TickEntry) and e.seq == action.seq]
     assert steps > 10
     assert action.num_ticks == len(ticks) >= steps // motion["stride"]
-    assert (action.skill, action.objects) == ("PickScraper", ["robot", "wiper_0"])
+    assert (action.skill, action.objects) == ("sweep3", ["robot"])
     arm = np.array([t.state["robot_joints"][3:10] for t in ticks])
     assert np.ptp(arm, axis=0).max() > 0.05, "the arm never moved"
     for name in MOVABLES:

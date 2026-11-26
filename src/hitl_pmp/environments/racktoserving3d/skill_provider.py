@@ -1,4 +1,6 @@
-"""Robot action encoding and explicitly separate, training-only human offerings."""
+"""Serving's skill provider: the chained toy's (`TwoRoutesSkillProvider` under
+`chained_route_b`) over the 3D scene. The same skills, predicates, failure effects and
+rewards, renamed; the continuous parameters are the split controllers' own."""
 
 from typing import ClassVar
 
@@ -9,164 +11,132 @@ from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Skill
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.core.problem.tasks.types import Goal, Predicate
 
-from .environment import RackServingEnvironment
 from .objects import RackServing3DObjects as Objects
-from .predicates import RackServing3DAtoms, RackServing3DPredicates
-from .semantics import HUMAN_BATCH_RETURN, HUMAN_TOOL_RECOVERY
-from .skills import GATHER_AND_SWEEP_BOUNDS, SKILL_IDS
-from .skills import RackServing3DSkills as Skills
+from .skills import SWEEP_BOUNDS
+from .toy_environment import RackServingToyEnvironment
+from .toy_interface import (
+    GATHER,
+    HUMAN_RESET,
+    SWEEP3,
+    SWEEP5,
+    TOY_SKILL_IDS,
+    ServingToyPredicates,
+    ServingToySkills,
+)
 
 
 class RackServingSkillProvider(SkillProvider):
-    env: RackServingEnvironment
+    env: RackServingToyEnvironment
     offer_human_reset: bool = True
 
     def skills(self) -> tuple[Skill, ...]:
-        return Skills.robot_skills()
+        return ServingToySkills.chained()
+
+    def human_skill(self) -> Skill:
+        return ServingToySkills.human_reset()
 
     def predicates(self) -> tuple[Predicate, ...]:
-        return RackServing3DPredicates.all()
+        return ServingToyPredicates.all()
 
     def types(self) -> tuple[Type, ...]:
-        return Objects.all_types()
+        return (Objects.robot_type,)
 
     def objects(self) -> tuple[Object, ...]:
-        return Objects.all_objects()
+        return (Objects.robot,)
+
+    def ground(self, *, name: str) -> GroundSkill:
+        skill = next(s for s in (*self.skills(), self.human_skill()) if s.name == name)
+        return GroundSkill(skill=skill, objects=(Objects.robot,))
+
+    def bounds(self, *, name: str) -> tuple[tuple[float, float], ...]:
+        gather_and_sweep = self.env.config.gather_and_sweep_bounds()
+        return {
+            SWEEP3: SWEEP_BOUNDS,
+            GATHER: gather_and_sweep[:2],
+            SWEEP5: gather_and_sweep[2:],
+        }.get(name, ())
 
     def sample_params(self, *, ground_skill: GroundSkill, rng: np.random.Generator) -> np.ndarray:
-        if ground_skill.skill != Skills.GATHER_AND_SWEEP:
-            return np.zeros(0)
-        return np.array([rng.uniform(lower, upper) for lower, upper in GATHER_AND_SWEEP_BOUNDS])
+        bounds = self.bounds(name=ground_skill.skill.name)
+        return np.array([rng.uniform(lower, upper) for lower, upper in bounds])
 
     def compute_action(
         self, *, ground_skill: GroundSkill, params: np.ndarray, state: State
     ) -> Action:
         del state
-        return RackServingActions.encode(ground_skill=ground_skill, params=params)
-
-    def human_cube_bin_reset_skills(self) -> tuple[GroundSkill, ...]:
-        if not self.offer_human_reset or self.env.config.mode == "deployment":
-            return ()
-        batch, tool = Skills.human_skills(mode=self.env.config.mode)
-        return (
-            GroundSkill(
-                skill=batch, objects=(Objects.robot, Objects.rack, Objects.tray, *Objects.food)
-            ),
-            GroundSkill(skill=tool, objects=(Objects.robot, Objects.scraper)),
+        return RackServingActions.encode(
+            name=ground_skill.skill.name,
+            params=params,
+            bounds=self.bounds(name=ground_skill.skill.name),
         )
 
+    def hand_selected_feature_transform(
+        self, *, ground_skill: GroundSkill, state: State, params: np.ndarray
+    ) -> list[float] | None:
+        """The learned sampler reads the parameters alone, as the launch line's
+        `--sampler-features parameters` has it: the toy's state is one robot."""
+        del state
+        if ground_skill.skill.param_dim == 0:
+            return None
+        return [1.0, *(float(value) for value in params)]
+
+    def failure_kept_predicates(self) -> dict[str, frozenset[str]]:
+        return {
+            SWEEP3: frozenset({"NeedsReset", "AfterSweep3"}),
+            GATHER: frozenset({"NeedsReset", "AfterGather"}),
+            SWEEP5: frozenset({"AfterSweep5"}),
+        }
+
+    def goal_rewards(self) -> dict[str, float]:
+        return {"ServedThree": self.env.sweep3_reward, "ServedFive": self.env.sweep5_reward}
+
     def human_cube_bin_reset_skill(self) -> GroundSkill | None:
-        resets = self.human_cube_bin_reset_skills()
-        return resets[0] if resets else None
+        if not self.offer_human_reset or self.env.config.mode == "deployment":
+            return None
+        return self.ground(name=HUMAN_RESET)
 
     def movables_reset_destination(self, *, ground_skill: GroundSkill) -> str | None:
-        name = ground_skill.skill.name
-        if name not in (HUMAN_BATCH_RETURN, HUMAN_TOOL_RECOVERY):
-            return None
-        if self.env.config.mode == "deployment":
-            raise PermissionError("human interventions are training-only")
-        if not self.offer_human_reset:
-            raise PermissionError("human interventions are disabled")
-        return name
+        return ground_skill.skill.name
 
 
 class RackServingActions:
-    """Encode [robot skill ID, food index, squeeze s m, gather delta m, sweep depth d m]."""
+    """[toy skill ID, 0, s, delta, d]: the rack's action layout, so its recording,
+    replay and interruption paths read it unchanged."""
 
     @staticmethod
-    def encode(*, ground_skill: GroundSkill, params: np.ndarray) -> Action:
-        skill = ground_skill.skill
-        if skill.name in (HUMAN_BATCH_RETURN, HUMAN_TOOL_RECOVERY):
-            raise PermissionError("human interventions are not robot actions")
-        if skill not in Skills.robot_skills():
-            raise ValueError(f"unknown rack-serving robot skill: {skill.name}")
+    def encode(*, name: str, params: np.ndarray, bounds: tuple[tuple[float, float], ...]) -> Action:
+        if name not in TOY_SKILL_IDS:
+            raise ValueError(f"not a robot skill of the toy: {name}")
         params = np.asarray(params, dtype=float)
-        if params.shape != (skill.param_dim,) or not np.isfinite(params).all():
-            raise ValueError(f"{skill.name} requires {skill.param_dim} finite parameters")
+        if params.shape != (len(bounds),) or not np.isfinite(params).all():
+            raise ValueError(f"{name} requires {len(bounds)} finite parameters")
+        if any(not low <= v <= high for v, (low, high) in zip(params, bounds, strict=True)):
+            raise ValueError(f"{name} parameters are outside the declared bounds")
         continuous = np.zeros(3)
-        if skill == Skills.GATHER_AND_SWEEP:
-            if any(
-                not lower <= value <= upper
-                for value, (lower, upper) in zip(params, GATHER_AND_SWEEP_BOUNDS, strict=True)
-            ):
-                raise ValueError("GatherAndSweep s/delta/d are outside the declared bounds")
-            continuous = params
-        food_index = 0
-        if skill in (Skills.PICK_FOOD, Skills.PLACE_FOOD_ON_TRAY, Skills.RETURN_FOOD_TO_RACK):
-            food_index = Objects.food.index(ground_skill.objects[1])
-        return np.array([SKILL_IDS[skill.name], food_index, *continuous], dtype=float)
+        if name == GATHER:
+            continuous[0:2] = params
+        elif name in (SWEEP3, SWEEP5):
+            continuous[2] = params[0]
+        return np.array([TOY_SKILL_IDS[name], 0.0, *continuous], dtype=float)
 
 
 class RackServingOracle(OraclePolicyProvider):
-    """Nominal sweep-first baseline, with autonomous pick/place cleanup.
+    """sweep3 at its nominal d, once: an episode is one attempt (the toy's oracle
+    takes one route too)."""
 
-    The sweep parameters are a starting policy, not a calibrated success claim.
-    No human operation or simulator write is hidden in this oracle.
-    """
-
-    env: RackServingEnvironment
-    # (s, delta, d): the driven-blade grid's best single setting (5/20 layouts fully
-    # served, 2026-11-03; a 3 cm gather stop, then written delta = 0.015 under food
-    # width minus delta), not a calibrated success claim.
-    NOMINAL_GATHER_AND_SWEEP: ClassVar[np.ndarray] = np.array([0.07, 0.030, 0.10])
+    env: RackServingToyEnvironment
+    # The driven-blade grid's best single setting (2026-11-03): gather's (s, delta)
+    # and either sweep's d. A starting policy, not a calibrated success claim.
+    NOMINAL_GATHER: ClassVar[tuple[float, float]] = (0.07, 0.030)
+    NOMINAL_D: ClassVar[float] = 0.10
 
     def get_labeled_action(self, *, state: State, goal: Goal) -> LabeledAction:
-        def holds(*, name: str, objects: tuple[Object, ...] = ()) -> bool:
-            return RackServing3DAtoms.holds(state=state, name=name, objects=objects)
-
-        if goal.is_satisfied(state=state):
-            return LabeledAction(action=self.env.noop_action(), label="no-op")
-        params = np.zeros(0)
-        held_food = next(
-            (
-                food
-                for food in Objects.food
-                if holds(name="HoldingFood", objects=(Objects.robot, food))
-            ),
-            None,
-        )
-        on_rack = [
-            food for food in Objects.food if holds(name="OnRack", objects=(food, Objects.rack))
-        ]
-        holding_scraper = holds(name="HoldingScraper", objects=(Objects.robot, Objects.scraper))
-        if held_food is not None:
-            ground = GroundSkill(
-                skill=Skills.PLACE_FOOD_ON_TRAY, objects=(Objects.robot, held_food, Objects.tray)
-            )
-        elif on_rack and holding_scraper:
-            ground = GroundSkill(
-                skill=Skills.GATHER_AND_SWEEP,
-                objects=(Objects.robot, Objects.scraper, Objects.rack, Objects.tray, *Objects.food),
-            )
-            params = RackServingOracle.NOMINAL_GATHER_AND_SWEEP
-        elif holding_scraper:
-            ground = GroundSkill(
-                skill=Skills.RETURN_SCRAPER, objects=(Objects.robot, Objects.scraper)
-            )
-        elif holds(name="HandEmpty", objects=(Objects.robot,)):
-            if on_rack and holds(name="ScraperHome", objects=(Objects.scraper,)):
-                ground = GroundSkill(
-                    skill=Skills.PICK_SCRAPER, objects=(Objects.robot, Objects.scraper)
-                )
-            else:
-                food = next(
-                    (
-                        food
-                        for food in Objects.food
-                        if holds(name="FoodAvailable", objects=(food,))
-                        and not holds(name="OnTray", objects=(food, Objects.tray))
-                    ),
-                    None,
-                )
-                if food is None:
-                    return LabeledAction(action=self.env.noop_action(), label="no-op")
-                ground = GroundSkill(
-                    skill=Skills.PICK_FOOD,
-                    objects=(Objects.robot, food, Objects.rack, Objects.tray),
-                )
-        else:
+        del goal
+        if ("FullRack", (Objects.robot.name,)) not in getattr(state, "abstract_atoms", ()):
             return LabeledAction(action=self.env.noop_action(), label="no-op")
         return LabeledAction(
-            action=RackServingActions.encode(ground_skill=ground, params=params),
-            label=ground.skill.name,
+            action=RackServingActions.encode(
+                name=SWEEP3, params=np.array([self.NOMINAL_D]), bounds=SWEEP_BOUNDS
+            ),
+            label=SWEEP3,
         )
