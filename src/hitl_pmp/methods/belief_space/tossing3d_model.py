@@ -666,7 +666,7 @@ class Tossing3DPracticeModel(BaseModel):
             clock_on_conditioned_only=self.clock_on_conditioned_only,
         )
         reset = self.forced_start_reset
-        if reset is None or action.skill.param_dim == 0:
+        if reset is None or not reset.follows(skill=action.skill):
             return branches
         # One step cost for skill and reset together, added to the parent's cost once:
         # the searches carry `summed_cost + step cost` and assert it equals the
