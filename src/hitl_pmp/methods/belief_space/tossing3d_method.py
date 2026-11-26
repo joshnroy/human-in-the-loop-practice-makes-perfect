@@ -614,7 +614,12 @@ class Tossing3DPomdpMethod(EesMethod):
         self._pending_consultation = (skill_name, consultation)
 
     def observe_outcome(
-        self, *, ground_skill: GroundSkill, success: bool, was_random_exploration: bool = False
+        self,
+        *,
+        ground_skill: GroundSkill,
+        success: bool,
+        was_random_exploration: bool = False,
+        was_uninformative: bool = False,
     ) -> None:
         admitted = not self.excluded_before_first_success(
             ground_skill=ground_skill, success=success
@@ -623,6 +628,7 @@ class Tossing3DPomdpMethod(EesMethod):
             ground_skill=ground_skill,
             success=success,
             was_random_exploration=was_random_exploration,
+            was_uninformative=was_uninformative,
         )
         pending, self._pending_consultation = self._pending_consultation, None
         consultation = None
@@ -630,6 +636,8 @@ class Tossing3DPomdpMethod(EesMethod):
             skill_name, consultation = pending
             assert skill_name == ground_skill.skill.name, (skill_name, ground_skill.skill.name)
             assert (consultation is SamplerConsultation.EPSILON_RANDOM) == was_random_exploration
+        sampler = self._samplers.get(ground_skill.skill.name)
+        sampler_has_success = sampler is not None and sampler.fitted_with_success
         self._pomdp_state = self._pomdp_model.observe_outcome(
             state=self._pomdp_state,
             ground_skill=ground_skill,
@@ -638,6 +646,7 @@ class Tossing3DPomdpMethod(EesMethod):
             observed_cost=None,
             consultation=consultation,
             admitted=admitted,
+            sampler_has_success=sampler_has_success,
         )
         self.record_diagnostic(
             event="outcome",
@@ -649,7 +658,10 @@ class Tossing3DPomdpMethod(EesMethod):
             competence_conditioned=(
                 not was_random_exploration
                 if consultation is None
-                else admitted and self.pomdp_competence_evidence.admits(consultation=consultation)
+                else admitted
+                and self.pomdp_competence_evidence.admits(
+                    consultation=consultation, sampler_has_success=sampler_has_success
+                )
             ),
             belief=self._pomdp_state.model_dump(mode="json"),
             beliefs=self.belief_diagnostics(),

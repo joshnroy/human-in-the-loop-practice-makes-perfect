@@ -267,6 +267,14 @@ class EesCli:
             "predicators' settings.py default; the paper's launch configs override it "
             "to 100000, which trains the classifier to interpolation on Ball-Ring.",
         )
+        parser.add_argument(
+            "--competence-from-informed-only",
+            action="store_true",
+            help="Learn each skill's competence only from the sampler's informed picks: "
+            "a uniform draw made before the sampler's first success still counts as a "
+            "try but its outcome is not observed; one from a fit that has seen a success "
+            "counts. Off reproduces every earlier run.",
+        )
         # Each default is the EesMethod field's; see that field for why it is what it
         # is. Only --reproduce-predicators-practice-target-history defaults on.
         parser.add_argument(
@@ -535,6 +543,7 @@ class EesCli:
             competence_after_first_success=args.competence_after_first_success,
             refit_samplers_every_attempt=args.refit_samplers_every_attempt,
             sampler_max_train_iters=args.sampler_max_train_iters,
+            competence_from_informed_only=args.competence_from_informed_only,
             goal_pursuit_horizon=args.goal_pursuit_horizon,
             goal_pursuit_init_cycles=args.goal_pursuit_init_cycles,
             goal_pursuit_interval=args.goal_pursuit_interval,
@@ -766,8 +775,10 @@ class Tossing3DPomdpCli(EesCli):
             choices=[evidence.value for evidence in CompetenceEvidence],
             default=Tossing3DPomdpMethod.model_fields["pomdp_competence_evidence"].default.value,
             help="Which toss practice outcomes condition competence: all attempts, "
-            "all but epsilon-greedy random picks (default), or only the classifier's "
-            "informed argmax picks. Every attempt still trains the sampler and "
+            "all but epsilon-greedy random picks (default), only the classifier's "
+            "informed argmax picks, or sampler_succeeded: all but epsilon picks and "
+            "uniform draws made before the sampler's first success. Every attempt still "
+            "trains the sampler and "
             "advances the training clock; skills without a sampler are always "
             "conditioned.",
         )
@@ -953,6 +964,7 @@ class Tossing3DPomdpCli(EesCli):
                 competence_after_first_success=args.competence_after_first_success,
                 refit_samplers_every_attempt=args.refit_samplers_every_attempt,
                 sampler_max_train_iters=args.sampler_max_train_iters,
+                competence_from_informed_only=args.competence_from_informed_only,
                 goal_pursuit_horizon=args.goal_pursuit_horizon,
                 goal_pursuit_init_cycles=args.goal_pursuit_init_cycles,
                 goal_pursuit_interval=args.goal_pursuit_interval,
