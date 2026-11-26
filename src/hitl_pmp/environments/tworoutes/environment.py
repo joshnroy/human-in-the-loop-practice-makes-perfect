@@ -64,6 +64,9 @@ class TwoRoutesEnvironment(Environment):
     route_b2_rate: float = Field(default=0.05, ge=0.0)
     seed: int = 0
     learns: bool = True
+    # False for one execution that only sets up another skill's practice (DP): it runs
+    # the skill as it is, without counting a training attempt. Reset after every action.
+    execution_trains: bool = True
     attempts: dict[str, int] = Field(default_factory=lambda: {ROUTE_A: 0, ROUTE_B: 0})
     # One line per robot invocation, written by a practice environment.
     attempts_log: Path | None = None
@@ -163,7 +166,7 @@ class TwoRoutesEnvironment(Environment):
                 self.set_state(state=self.build_state(ready=True))
             else:
                 succeeded = bool(self._rng.random() < self.success_probability(skill=skill))
-                if self.learns:
+                if self.learns and self.execution_trains:
                     self.attempts[skill] += 1
                 suffix = skill[-1].lower()
                 if self.chained_route_b and skill in (ROUTE_B, ROUTE_B2):
@@ -184,6 +187,7 @@ class TwoRoutesEnvironment(Environment):
             if self._after is not None:
                 self._after()
         finally:
+            self.execution_trains = True
             self.log_attempts()
         return self.get_current_state()
 

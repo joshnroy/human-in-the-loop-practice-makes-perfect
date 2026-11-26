@@ -127,6 +127,13 @@ class SkillProvider(BaseModel, abc.ABC):
         del ground_skill, action
         return {}
 
+    def set_execution_trains(self, *, trains: bool) -> None:
+        """Whether the next robot execution trains the skill it runs. A method with a
+        practice target (DP) runs other skills only as setup on the way to it, and a
+        setup run does not train them. Nothing by default: a domain whose learning is
+        not scripted has nothing to switch."""
+        del trains
+
     def failure_kept_predicates(self) -> dict[str, frozenset[str]]:
         """Skill name -> the predicates of its success effects that a failed execution
         also adds, for a skill whose failure is known in advance (Two Routes: either
