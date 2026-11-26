@@ -65,6 +65,11 @@ class TwoRoutesEnvironment(Environment):
     # What one step of the robot's own reset costs (`TwoRoutesCosts.robot_step`); every
     # other robot step -- a practice try, a STOP -- is free.
     robot_reset_price: float = Field(default=0.0, ge=0.0)
+    # How often each reset works; a failed one leaves the robot where it was. Below 1 a
+    # reset draws from the outcome stream; at 1 it draws nothing, so runs made before
+    # these existed replay exactly.
+    robot_reset_competence: float = Field(default=1.0, ge=0.0, le=1.0)
+    human_reset_competence: float = Field(default=1.0, ge=0.0, le=1.0)
     seed: int = 0
     learns: bool = True
     # False for one execution that only sets up another skill's practice (DP): it runs
@@ -166,7 +171,10 @@ class TwoRoutesEnvironment(Environment):
                         self._after()
                     if self._before is not None:
                         self._before()
-                self.set_state(state=self.build_state(ready=True))
+                if self.reset_works(competence=self.robot_reset_competence):
+                    self.set_state(state=self.build_state(ready=True))
+                else:
+                    self.last_error = f"{skill}: attempt failed"
             else:
                 succeeded = bool(self._rng.random() < self.success_probability(skill=skill))
                 if self.learns and self.execution_trains:
@@ -236,13 +244,18 @@ class TwoRoutesEnvironment(Environment):
         self.attempts = attempts
 
     def reset_movables(self, *, destination: str | None = None) -> bool:
-        """The human's reset: back to ready, after a Route B attempt only."""
+        """The human's reset: back to ready, after a Route B attempt only. The human always
+        takes the request (True); the reset itself works with `human_reset_competence`."""
         if destination != HUMAN_RESET_B or not self.flag(
             name="after" if self.both_resets else "after_b"
         ):
             return False
-        self.set_state(state=self.build_state(ready=True))
+        if self.reset_works(competence=self.human_reset_competence):
+            self.set_state(state=self.build_state(ready=True))
         return True
+
+    def reset_works(self, *, competence: float) -> bool:
+        return competence >= 1.0 or bool(self._rng.random() < competence)
 
     def get_valid_actions(self) -> list[Action]:
         skip = {RESET_A if self.both_resets else ROBOT_RESET}
