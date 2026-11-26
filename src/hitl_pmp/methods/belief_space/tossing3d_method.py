@@ -526,12 +526,17 @@ class Tossing3DPomdpMethod(EesMethod):
 
     def model_forced_start_reset(self, *, start_atoms: frozenset[GroundAtom]) -> None:
         """Make the planner reset-aware (Josh, 2026-10-19): under the always-ask
-        wrapper the search model follows every skill with continuous parameters by the
-        forced reset to `start_atoms`, at the price the real one is charged. Read once,
+        wrapper the search model follows every skill with continuous parameters (only the
+        wrapper's trigger skills, when it names some) by the forced reset to
+        `start_atoms`, at the price the real one is charged. Read once,
         from the first practice session's scene: every sampled start abstracts to the
         same atoms, and a reset that lands elsewhere is reported, not adopted."""
         assert self.always_ask_reset is not None
-        reset = ForcedStartReset(start_atoms=start_atoms, cost=self.start_reset_cost())
+        reset = ForcedStartReset(
+            start_atoms=start_atoms,
+            cost=self.start_reset_cost(),
+            trigger_skills=self.always_ask_reset.trigger_skills,
+        )
         self._pomdp_model = self._pomdp_model.model_copy(update={"forced_start_reset": reset})
         self.record_diagnostic(
             event="forced_reset_model",
