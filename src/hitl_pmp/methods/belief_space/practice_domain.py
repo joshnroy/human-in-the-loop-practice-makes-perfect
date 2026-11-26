@@ -74,6 +74,10 @@ class PracticeDomain(BaseModel, abc.ABC):
     # (belief name, start, rate): perfect information. That skill's competence after n
     # tries is min(1, start + rate * n), believed with certainty, so no outcome moves it.
     known_competence_curves: tuple[tuple[str, float, float], ...] = ()
+    # A skill's competence rises right after each try, not at the end of a cycle (Two
+    # Routes' chained Route B): a forecast try then succeeds with the competence the
+    # tries before it already bought. Off: tries refit only at a cycle's end.
+    competence_advances_every_try: bool = False
     # (belief name, rate): that skill's learning rate is known; its competence is not.
     known_learning_rates: tuple[tuple[str, float], ...] = ()
     # (belief name, competence mean, competence strength, rate mean, rate sd): that skill's

@@ -25,6 +25,8 @@ class TwoRoutesCli:
             ("--route-a-rate", "route_a_rate", "Route A's gain per practice attempt"),
             ("--route-b-start", "route_b_start", "Route B's success probability untrained"),
             ("--route-b-rate", "route_b_rate", "Route B's gain per practice attempt"),
+            ("--route-b2-start", "route_b2_start", "Route B2's success probability untrained"),
+            ("--route-b2-rate", "route_b2_rate", "Route B2's gain per practice attempt"),
             ("--competence-cap", "competence_cap", "The most either route's probability reaches"),
             ("--route-a-reward", "route_a_reward", "What finishing by Route A is worth"),
             ("--route-b-reward", "route_b_reward", "What finishing by Route B is worth"),
@@ -43,6 +45,12 @@ class TwoRoutesCli:
             action=argparse.BooleanOptionalAction,
             default=True,
             help="Under --both-resets, --no-robot-reset leaves only the human's reset.",
+        )
+        parser.add_argument(
+            "--chained-route-b",
+            action="store_true",
+            help="Under --both-resets, Route B is two learned skills in a row (RouteB "
+            "then RouteB2); a failure at either step ends the attempt.",
         )
         parser.add_argument(
             "--robot-reset-steps",
@@ -65,6 +73,9 @@ class TwoRoutesCli:
             both_resets=args.both_resets,
             robot_reset_steps=args.robot_reset_steps,
             robot_reset=args.robot_reset,
+            chained_route_b=args.chained_route_b,
+            route_b2_start=args.route_b2_start,
+            route_b2_rate=args.route_b2_rate,
             route_a_reward=args.route_a_reward,
             route_b_reward=args.route_b_reward,
             seed=args.seed + (0 if practice else args.test_env_seed_offset),
@@ -87,6 +98,7 @@ class TwoRoutesCli:
                 offer_human_reset=args.human_reset,
                 both_resets=args.both_resets,
                 robot_reset=args.robot_reset,
+                chained_route_b=args.chained_route_b,
             ),
             test_task_goals=(problem.tasks.goal(),),
         )
