@@ -3,7 +3,7 @@ import abc
 import numpy as np
 from pydantic import BaseModel, ConfigDict
 
-from hitl_pmp.core.method.types import GroundSkill, LabeledAction, Skill
+from hitl_pmp.core.method.types import GroundSkill, KnownOutcomeRegions, LabeledAction, Skill
 from hitl_pmp.core.problem.environment.environment import Environment
 from hitl_pmp.core.problem.environment.types import Action, Object, State, Type
 from hitl_pmp.core.problem.tasks.types import Goal, Predicate
@@ -98,6 +98,12 @@ class SkillProvider(BaseModel, abc.ABC):
         means no proof of infeasibility, not a prediction of skill success.
         """
         return None
+
+    def known_outcome_regions(self) -> dict[str, KnownOutcomeRegions]:
+        """Skill name -> its measured success and failure parameter regions, for the
+        `--curve-controlled-sampler` oracle control. Empty by default: a domain whose
+        regions were never measured offers none."""
+        return {}
 
     def hand_selected_feature_transform(
         self, *, ground_skill: GroundSkill, state: State, params: np.ndarray
