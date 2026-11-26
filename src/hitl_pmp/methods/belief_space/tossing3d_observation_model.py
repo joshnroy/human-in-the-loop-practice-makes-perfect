@@ -122,9 +122,12 @@ class SkillBeliefModel:
         observed_cost: float | None = None,
         resample: bool = True,
         condition_competence: bool | None = None,
+        clock_on_conditioned_only: bool = False,
     ) -> Tossing3DBeliefState:
         """`condition_competence` is the `CompetenceEvidence` decision for this
-        attempt; left as None it falls back to excluding epsilon-random attempts."""
+        attempt; left as None it falls back to excluding epsilon-random attempts.
+        `clock_on_conditioned_only`: an attempt kept out of competence does not count
+        on the training clock either."""
         assert resample or observed_cost is None, "imagined updates do not observe execution costs"
         if self.skill is None:
             return state
@@ -153,7 +156,9 @@ class SkillBeliefModel:
         elif condition_competence:
             belief = condition_skill_belief(belief=belief, success=success)
         skill_beliefs[skill_name] = belief
-        if self.example_source == PracticeExampleSource.OUTCOME:
+        if self.example_source == PracticeExampleSource.OUTCOME and (
+            condition_competence or not clock_on_conditioned_only
+        ):
             # The notebook's m: every attempt is a data point, success or failure.
             pending_examples[skill_name] = pending_examples.get(skill_name, 0) + 1
         return state.model_copy(
@@ -161,14 +166,15 @@ class SkillBeliefModel:
         )
 
     def observe_training_example(
-        self, *, state: Tossing3DBeliefState, success: bool
+        self, *, state: Tossing3DBeliefState, success: bool, advance_clock: bool = True
     ) -> Tossing3DBeliefState:
         if self.skill is None or self.example_source != PracticeExampleSource.SAMPLER:
             return state
         pending_examples = dict(state.pending_examples)
         skill_name = self.belief_name
         assert skill_name is not None
-        pending_examples[skill_name] = pending_examples.get(skill_name, 0) + 1
+        if advance_clock:
+            pending_examples[skill_name] = pending_examples.get(skill_name, 0) + 1
         training = dict(state.sampler_training)
         # Training rows belong to the acting skill's parameter sampler.
         sampler_name = self.skill.name

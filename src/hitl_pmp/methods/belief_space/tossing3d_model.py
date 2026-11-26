@@ -89,6 +89,10 @@ class Tossing3DPracticeModel(BaseModel):
     random_toss_competence: float = Field(default=0.25, ge=0.0, le=1.0)
     exploration_epsilon: float = Field(default=0.5, ge=0.0, le=1.0)
     competence_evidence: CompetenceEvidence = CompetenceEvidence.NON_EPSILON
+    # `Tossing3DPomdpMethod.pomdp_clock_on_conditioned_only`: a try kept out of
+    # competence leaves the training clock alone too. Dumped only when on, so every
+    # other run's decision log is byte-identical.
+    clock_on_conditioned_only: bool = Field(default=False, exclude_if=lambda on: not on)
     # None: the domain's own deployment horizon.
     deployment_horizon: int | None = Field(default=None, ge=0)
     linear_cost_lambda: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
@@ -411,6 +415,7 @@ class Tossing3DPracticeModel(BaseModel):
             success=success,
             was_random_exploration=was_random_exploration,
             observed_cost=observed_cost,
+            clock_on_conditioned_only=self.clock_on_conditioned_only,
             condition_competence=(
                 False
                 if not admitted
@@ -423,11 +428,18 @@ class Tossing3DPracticeModel(BaseModel):
         )
 
     def observe_training_example(
-        self, *, state: Tossing3DBeliefState, skill_name: str, success: bool
+        self,
+        *,
+        state: Tossing3DBeliefState,
+        skill_name: str,
+        success: bool,
+        advance_clock: bool = True,
     ) -> Tossing3DBeliefState:
-        """Apply any learning-curve update associated with a sampler example."""
+        """Apply any learning-curve update associated with a sampler example.
+        `advance_clock=False` keeps the row as sampler data without counting it on the
+        training clock (`clock_on_conditioned_only`, for a try kept out of competence)."""
         return self._skill_belief_models_by_name[skill_name].observe_training_example(
-            state=state, success=success
+            state=state, success=success, advance_clock=advance_clock
         )
 
     def get_valid_actions(self, *, environment_state: Tossing3DSearchState) -> list[GroundSkill]:
@@ -547,6 +559,7 @@ class Tossing3DPracticeModel(BaseModel):
                 ),
                 tuple(sorted(belief_state.pending_examples.items())),
                 tuple(sorted(belief_state.sampler_training.items())),
+                tuple(sorted(belief_state.uncounted_skills)),
                 self.cost_key(cost=belief_state.accumulated_cost),
                 horizon,
             )
@@ -565,6 +578,7 @@ class Tossing3DPracticeModel(BaseModel):
             ),
             tuple(sorted(belief_state.pending_examples.items())),
             tuple(sorted(belief_state.sampler_training.items())),
+            tuple(sorted(belief_state.uncounted_skills)),
             self.cost_key(cost=belief_state.accumulated_cost),
             horizon,
         )
@@ -649,6 +663,7 @@ class Tossing3DPracticeModel(BaseModel):
             failure_effect_counts=self.failure_effect_counts,
             competence_evidence=self.competence_evidence,
             domain=self._domain,
+            clock_on_conditioned_only=self.clock_on_conditioned_only,
         )
         reset = self.forced_start_reset
         if reset is None or action.skill.param_dim == 0:
@@ -730,6 +745,7 @@ class Tossing3DPracticeModel(BaseModel):
             ),
             tuple(sorted(state.pending_examples.items())),
             tuple(sorted(state.sampler_training.items())),
+            tuple(sorted(state.uncounted_skills)),
             state.accumulated_cost,
             cost,
         )

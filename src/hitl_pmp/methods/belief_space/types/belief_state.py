@@ -65,3 +65,8 @@ class Tossing3DBeliefState(BaseModel):
         default_factory=dict
     )
     accumulated_cost: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
+    # `pomdp_clock_on_conditioned_only`: skills with no sampler of their own in the
+    # domain whose next pick the evidence rule would keep out (no success yet). A
+    # forecast try of one moves neither its belief nor its clock; a forecast success
+    # clears the mark. Empty, and so absent from dumps, without the flag.
+    uncounted_skills: frozenset[str] = Field(default=frozenset(), exclude_if=lambda s: not s)
