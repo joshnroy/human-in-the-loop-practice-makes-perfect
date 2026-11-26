@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator
 
 from hitl_pmp.core.method.method import (
     HumanCubeBinResetRequested,
@@ -177,6 +177,9 @@ class EesMethod(Method):
     # Beta(10, 1), the paper's stated initial-cycle prior.
     prior_alpha: float = 10.0
     prior_beta: float = 1.0
+    # Skill name -> its own Beta(alpha, beta) competence prior, robot and human skills
+    # alike (`--ees-competence-from-skill-prior`); unnamed skills keep the shared prior.
+    skill_competence_priors: dict[str, tuple[float, float]] = Field(default_factory=dict)
     # CFG.skill_competence_model_optimistic_{window,recency}_size. predicators'
     # settings.py default is 5 (Light Switch uses it); the paper's own
     # active_sampler_learning.yaml overrides both to 2 for the simulated Ball-Ring,
@@ -458,10 +461,26 @@ class EesMethod(Method):
 
     # ------------------------------------------------------- estimate (competence)
 
-    def _new_competence_model(self) -> OptimisticSkillCompetenceModel:
+    @field_validator("skill_competence_priors")
+    @classmethod
+    def _proper_betas(  # noqa: PLR0917 -- pydantic's signature
+        cls, value: dict[str, tuple[float, float]]
+    ) -> dict[str, tuple[float, float]]:
+        if bad := sorted(n for n, (a, b) in value.items() if not (a > 0 and b > 0)):
+            raise ValueError(f"skill_competence_priors needs alpha, beta > 0, not for {bad}")
+        return value
+
+    def competence_prior(self, *, ground_skill: GroundSkill) -> tuple[float, float]:
+        """The skill's own Beta prior if one is named, else the shared one."""
+        return self.skill_competence_priors.get(
+            ground_skill.skill.name, (self.prior_alpha, self.prior_beta)
+        )
+
+    def _new_competence_model(self, *, ground_skill: GroundSkill) -> OptimisticSkillCompetenceModel:
+        alpha, beta = self.competence_prior(ground_skill=ground_skill)
         return OptimisticSkillCompetenceModel(
-            alpha=self.prior_alpha,
-            beta=self.prior_beta,
+            alpha=alpha,
+            beta=beta,
             window_size=self.competence_window_size,
             recency_size=self.competence_recency_size,
         )
@@ -472,7 +491,9 @@ class EesMethod(Method):
         """The human skill's competence: the same model
         and prior as a robot skill's, held apart from the practice candidates."""
         if ground_skill not in self._human_competence_models:
-            self._human_competence_models[ground_skill] = self._new_competence_model()
+            self._human_competence_models[ground_skill] = self._new_competence_model(
+                ground_skill=ground_skill
+            )
         return self._human_competence_models[ground_skill]
 
     def human_skill_competence(self, *, ground_skill: GroundSkill) -> float:
@@ -502,7 +523,9 @@ class EesMethod(Method):
         way, which matters because the number of *possible* groundings is
         quadratic in grid_size while the number ever tried stays small."""
         if ground_skill not in self._competence_models:
-            self._competence_models[ground_skill] = self._new_competence_model()
+            self._competence_models[ground_skill] = self._new_competence_model(
+                ground_skill=ground_skill
+            )
         return self._competence_models[ground_skill]
 
     def forecast_competence_gain(self, *, ground_skill: GroundSkill) -> float:
@@ -699,6 +722,11 @@ class EesMethod(Method):
         free nor pessimistically impossible."""
         return -math.log(self.prior_alpha / (self.prior_alpha + self.prior_beta))
 
+    def prior_cost(self, *, ground_skill: GroundSkill) -> float:
+        """`-log` of this skill's own prior mean: `default_cost` unless it has one."""
+        alpha, beta = self.competence_prior(ground_skill=ground_skill)
+        return -math.log(alpha / (alpha + beta))
+
     def skill_costs(self) -> dict[GroundSkill, float]:
         """`-log(competence)` per ground skill: summing these over a plan and
         minimizing is exactly maximizing the product of competences."""
@@ -768,6 +796,17 @@ class EesMethod(Method):
         """The sole place `plan_to` asks the planner for something; each call counts as
         a real ask (`planning_outcomes` cares about FastDownward invocations)."""
         self._planning_attempts += 1
+        if self.skill_competence_priors:
+            # The planner prices an absent ground skill at one shared default; a skill
+            # with its own prior is priced from that prior instead.
+            ground_skill_costs = {
+                **{
+                    ground: self.prior_cost(ground_skill=ground)
+                    for ground in self.all_practice_groundings()
+                    if ground.skill.name in self.skill_competence_priors
+                },
+                **ground_skill_costs,
+            }
         try:
             return FastDownwardPlanner.plan(
                 skills=skills,
@@ -1086,7 +1125,8 @@ class EesMethod(Method):
 
         plans = self.planning_progress_plans(costs=costs)
         base_score = -sum(
-            sum(costs.get(step, self.default_cost()) for step in plan) for plan in plans
+            sum(costs.get(step, self.prior_cost(ground_skill=step)) for step in plan)
+            for plan in plans
         )
         if self.preview_test_goals:
             # Approved deviation: the tasks actually scored (see `preview_test_goals`).
