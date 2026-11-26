@@ -2136,3 +2136,46 @@ def test_without_the_flag_a_failed_goal_plan_falls_through_to_practice() -> None
     method, trace = _unreachable_goal_episode(flag=False)
     assert not any(random_mode for _label, random_mode in trace)
     assert method.selections >= 1
+
+
+def test_competence_after_first_success_drops_failures_before_the_first_success() -> None:
+    env = LightSwitchEnvironment(grid_size=4)
+    method = EesMethod(
+        env=env,
+        skill_provider=LightSwitchSkillProvider(env=env),
+        seed=0,
+        competence_after_first_success=True,
+    )
+    skill = _turn_on_light(env=env)
+    assert skill.skill.param_dim > 0
+    model = method.competence_model(ground_skill=skill)
+    method.observe_outcome(ground_skill=skill, success=False)
+    method.observe_outcome(ground_skill=skill, success=False)
+    assert model.num_observations == 0
+    method.observe_outcome(ground_skill=skill, success=True)
+    method.observe_outcome(ground_skill=skill, success=False)
+    assert model.num_observations == 2
+
+
+def test_without_the_flag_every_non_random_failure_is_competence_evidence() -> None:
+    method, env = _build()
+    skill = _turn_on_light(env=env)
+    model = method.competence_model(ground_skill=skill)
+    method.observe_outcome(ground_skill=skill, success=False)
+    assert model.num_observations == 1
+
+
+def test_refit_samplers_every_attempt_fits_the_sampler_as_each_outcome_arrives() -> None:
+    env = LightSwitchEnvironment(grid_size=4)
+    for refit in (False, True):
+        method = EesMethod(
+            env=env,
+            skill_provider=LightSwitchSkillProvider(env=env),
+            seed=0,
+            refit_samplers_every_attempt=refit,
+            sampler_max_train_iters=1,
+        )
+        method.observe_sampler_outcome(
+            skill_name="TurnOnLight", param_dim=1, sampler_input=[1.0, 0.5], success=True
+        )
+        assert method.sampler(skill_name="TurnOnLight", param_dim=1).is_fitted is refit

@@ -162,6 +162,13 @@ class EesMethod(Method):
     # CFG.active_sampler_learning_exploration_epsilon -- the paper: "epsilon-greedy
     # with epsilon = 0.5".
     exploration_epsilon: float = 0.5
+    # A sampler-driven skill's outcomes condition its competence only from its first
+    # success on (Josh, 2026-11-18): before any success the sampler is uniform search,
+    # whose failure rate says nothing about the skill the robot will deploy.
+    competence_after_first_success: bool = False
+    # Refit a skill's sampler after each of its attempts, rather than only at the end
+    # of a session (Josh, 2026-11-18), so practice inside one long session improves.
+    refit_samplers_every_attempt: bool = False
     # CFG.active_sampler_learning_num_samples
     num_candidates: int = Field(default=100, gt=0)
     # Keep the original iid proposal distribution, conditioning only on the
@@ -343,6 +350,8 @@ class EesMethod(Method):
     # `reproduce_predicators_practice_target_history` is on; competence always reads
     # its own random-excluding history in `_competence_models` instead.
     _all_attempt_outcomes: dict[GroundSkill, list[bool]] = PrivateAttr()
+    # Names of the skills that have succeeded at least once in practice.
+    _succeeded_skills: set[str] = PrivateAttr(default_factory=set)
     _samplers: dict[str, LearnedSkillSampler] = PrivateAttr()
     # (init_atoms, goal) for each task EES has been handed, newest last.
     _seen_tasks: list[tuple[frozenset[GroundAtom], frozenset[GroundAtom]]] = PrivateAttr()
@@ -558,6 +567,8 @@ class EesMethod(Method):
         is on.
         """
         self._all_attempt_outcomes.setdefault(ground_skill, []).append(success)
+        if self.before_first_success(ground_skill=ground_skill, success=success):
+            return
         model = self.competence_model(ground_skill=ground_skill)
         if self.reproduce_predicators_double_observe:
             model.observe(success=success)
@@ -566,6 +577,24 @@ class EesMethod(Method):
             return
         if not was_random_exploration:
             model.observe(success=success)
+
+    def before_first_success(self, *, ground_skill: GroundSkill, success: bool) -> bool:
+        """Note this outcome, and whether `competence_after_first_success` keeps it out
+        of competence: a failure of a skill with parameters that has never succeeded.
+        The first success itself is evidence."""
+        excluded = self.excluded_before_first_success(ground_skill=ground_skill, success=success)
+        if success:
+            self._succeeded_skills.add(ground_skill.skill.name)
+        return excluded
+
+    def excluded_before_first_success(self, *, ground_skill: GroundSkill, success: bool) -> bool:
+        """`before_first_success`'s answer, without noting the outcome."""
+        return (
+            self.competence_after_first_success
+            and ground_skill.skill.param_dim > 0
+            and not success
+            and ground_skill.skill.name not in self._succeeded_skills
+        )
 
     def total_observations(self) -> int:
         return sum(model.num_observations for model in self._competence_models.values())
@@ -1308,9 +1337,10 @@ class EesMethod(Method):
     def observe_sampler_outcome(
         self, *, skill_name: str, param_dim: int, sampler_input: list[float], success: bool
     ) -> None:
-        self.sampler(skill_name=skill_name, param_dim=param_dim).observe(
-            sampler_input=sampler_input, success=success
-        )
+        sampler = self.sampler(skill_name=skill_name, param_dim=param_dim)
+        sampler.observe(sampler_input=sampler_input, success=success)
+        if self.refit_samplers_every_attempt:
+            sampler.fit()
 
     # ---------------------------------------------------------------- lifecycle
 

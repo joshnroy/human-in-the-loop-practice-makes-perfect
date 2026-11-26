@@ -232,6 +232,18 @@ class EesCli:
             "(the paper uses 0.5).",
         )
         parser.add_argument(
+            "--competence-after-first-success",
+            action="store_true",
+            help="A skill with parameters conditions competence on its outcomes only from "
+            "its first practice success on; failures before it are uniform search.",
+        )
+        parser.add_argument(
+            "--refit-samplers-every-attempt",
+            action="store_true",
+            help="Refit a skill's learned sampler after each of its practice attempts, "
+            "not only at the end of a practice session.",
+        )
+        parser.add_argument(
             "--sampler-max-train-iters",
             type=int,
             default=EesMethod.model_fields["sampler_max_train_iters"].default,
@@ -489,6 +501,8 @@ class EesCli:
             ),
             draw_recorder=draw_recorder,
             exploration_epsilon=args.exploration_epsilon,
+            competence_after_first_success=args.competence_after_first_success,
+            refit_samplers_every_attempt=args.refit_samplers_every_attempt,
             sampler_max_train_iters=args.sampler_max_train_iters,
             goal_pursuit_horizon=args.goal_pursuit_horizon,
             goal_pursuit_init_cycles=args.goal_pursuit_init_cycles,
@@ -767,11 +781,12 @@ class Tossing3DPomdpCli(EesCli):
             "--pomdp-plan-beyond-session",
             action=argparse.BooleanOptionalAction,
             default=False,
-            help="determinized_astar only: a plan may run past the end of the practice "
-            "session. It is bounded by the practice budget that is left (steps, and "
-            "tries under --practice-episode-budget) and by --pomdp-max-search-iterations "
-            "instead of by the session's remaining actions. The search models no "
-            "learning update at the session boundary: an approximation.",
+            help="A plan may run past the end of the practice session. It is bounded by "
+            "the practice budget that is left (steps, and tries under "
+            "--practice-episode-budget) and by --pomdp-max-search-iterations "
+            "(determinized_astar) or --pomdp-search-depth (expectimax) instead of by the "
+            "session's remaining actions. The search models no learning update at the "
+            "session boundary: an approximation.",
         )
         parser.add_argument(
             "--pomdp-learn-skill-costs",
@@ -826,11 +841,6 @@ class Tossing3DPomdpCli(EesCli):
                 "--pomdp-search-depth is an expectimax flag: --pomdp-solver "
                 "determinized_astar is bounded by --pomdp-max-search-iterations and the "
                 "session's remaining actions, never a search depth"
-            )
-        if args.pomdp_plan_beyond_session and args.pomdp_solver != "determinized_astar":
-            raise ValueError(
-                "--pomdp-plan-beyond-session is a determinized_astar flag: expectimax is "
-                "bounded by its search depth"
             )
         domain = Tossing3DPomdpCli.DOMAINS.get(env_cli.__name__)
         if env_cli.__name__ in {"FrozenPourCli", "KitchenCli"}:
@@ -903,6 +913,8 @@ class Tossing3DPomdpCli(EesCli):
                 ),
                 deploy_curve_priors=EesCli.deploy_curve_priors(args=args),
                 exploration_epsilon=args.exploration_epsilon,
+                competence_after_first_success=args.competence_after_first_success,
+                refit_samplers_every_attempt=args.refit_samplers_every_attempt,
                 sampler_max_train_iters=args.sampler_max_train_iters,
                 goal_pursuit_horizon=args.goal_pursuit_horizon,
                 goal_pursuit_init_cycles=args.goal_pursuit_init_cycles,
@@ -1039,14 +1051,16 @@ class DpCli(EesCli):
             "--dp-budget",
             type=lambda value: EesCli.positive_float(value=value),
             required=True,
-            help="DP budget B in the explicit --dp-budget-unit: cost or target-skill episodes.",
+            help="DP budget B in --dp-budget-unit: cost, target episodes or executions.",
         )
         parser.add_argument(
             "--dp-budget-unit",
-            choices=["cost", "episodes"],
+            choices=["cost", "episodes", "executions"],
             default=fields["dp_budget_unit"].default,
             help="Cost includes robot steps and human resets; episodes count completed target "
-            "rollouts, successful or failed, excluding setup executions and human resets.",
+            "rollouts, successful or failed, excluding setup executions and human resets; "
+            "executions count every completed robot try-skill run (--practice-try-skills), "
+            "setup included, human resets excluded.",
         )
         parser.add_argument(
             "--dp-allocation-schedule",
