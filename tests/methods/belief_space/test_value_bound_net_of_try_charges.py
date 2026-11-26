@@ -25,7 +25,13 @@ from hitl_pmp.methods.belief_space.rewarded_routes_domain import RewardedRoutesP
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.belief_space.types.failure_effects import FailureEffectCount
 
-CURVES = (("RouteA", 0.5, 0.25), ("RouteB", 0.1, 0.05), ("human_reset_b", 1.0, 0.0))
+# Every skill's true curve, the resets' included (they always work).
+CURVES = (
+    ("RouteA", 0.5, 0.25),
+    ("RouteB", 0.1, 0.05),
+    ("human_reset_b", 1.0, 0.0),
+    ("ResetA", 1.0, 0.0),
+)
 
 
 def _method(*, decision_log: Path) -> Tossing3DPomdpMethod:

@@ -74,6 +74,13 @@ class RewardedRoutesPracticeDomain(PracticeDomain):
         chained = tuple(dict.fromkeys(n for _, before in prerequisites for n in before))
         route_names = {name for name, _ in routes} | set(chained)
         humans = tuple(dict.fromkeys(g.skill.name for g in provider.human_cube_bin_reset_skills()))
+        # Every other robot skill (a reset) is learned too: nothing is assumed to work.
+        # Appended after the rest, so the route skills' prior seeds do not move.
+        others = tuple(
+            skill.name
+            for skill in provider.skills()
+            if skill.name not in route_names and skill.name not in humans
+        )
         return RewardedRoutesPracticeDomain(
             route_rewards=routes,
             route_prerequisites=prerequisites,
@@ -85,13 +92,10 @@ class RewardedRoutesPracticeDomain(PracticeDomain):
             deployment_horizon=1 + max((len(before) for _, before in prerequisites), default=0),
             belief_sources=tuple(
                 (name, PracticeExampleSource.OUTCOME)
-                for name in (*(name for name, _ in routes), *chained, *humans)
-            ),
-            deterministic_skills=frozenset(
-                skill.name for skill in provider.skills() if skill.name not in route_names
+                for name in (*(name for name, _ in routes), *chained, *humans, *others)
             ),
             human_skill_names=frozenset(humans),
-            failure_effect_skills=frozenset((*route_names, *humans)),
+            failure_effect_skills=frozenset((*route_names, *humans, *others)),
             failure_kept_predicates=tuple(sorted(provider.failure_kept_predicates().items())),
         )
 
