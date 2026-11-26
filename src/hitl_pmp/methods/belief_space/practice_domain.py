@@ -60,6 +60,9 @@ class PracticeDomain(BaseModel, abc.ABC):
     deterministic_skills: frozenset[str] = frozenset()
     # Skills whose failed executions teach the empirical failure-effect model.
     failure_effect_skills: frozenset[str] = frozenset()
+    # (skill name, predicates): a failure known in advance -- it applies the success's
+    # deletes and those of its adds (`SkillProvider.failure_kept_predicates`).
+    failure_kept_predicates: tuple[tuple[str, frozenset[str]], ...] = ()
     # The human's skills this domain models. A method that does not offer one (the
     # always-ask wrapper, `--no-human-reset`) drops it: `PracticeDomainWithoutSkills`.
     human_skill_names: frozenset[str] = frozenset()
