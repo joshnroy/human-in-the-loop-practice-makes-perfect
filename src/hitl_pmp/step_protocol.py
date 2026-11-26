@@ -708,7 +708,8 @@ class DeploymentSnapshot:
                         beta=ab[1],
                         initial_learning_rate=0.0,
                     )
-                    for name, _ in domain.route_rewards
+                    for route, _ in domain.route_rewards
+                    for name in domain.route_chain(name=route)
                 }
                 policy = DeploymentPolicy(
                     kind="reward_greedy",
