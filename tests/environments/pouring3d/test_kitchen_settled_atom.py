@@ -140,3 +140,32 @@ def test_a_dumpling_that_slid_is_not_settled_even_when_momentarily_slow():
         assert ("Settled", (other,)) in atoms
     finally:
         env.close()
+
+
+def test_every_dumpling_is_settled_right_after_a_human_reset():
+    """pouring-fixed-20261108-76f41dc9c, every p = 1.0 row: the human reset teleports the
+    dumplings into the jug in zero sim time, the rest window still held their earlier
+    positions, so none was Settled, PickPitcher never applied and the planner asked the
+    human ~200 times in a row. A respawn starts a new history."""
+    import mujoco
+
+    from hitl_pmp.environments.pouring3d.kitchen.environment import (
+        HUMAN_RESET,
+        KitchenEnvironment,
+    )
+
+    env = KitchenEnvironment(requested_count=1)
+    try:
+        c = env.controller()
+        c.pause(phase="observe rest", seconds=2.1)
+        # Spilled to the floor: the pour-back carries it back into the jug.
+        c.scene.get_object(c.scene.cube_names[0]).set_pose([0.35, 0.2, 0.002], [1, 0, 0, 0])
+        mujoco.mj_forward(c.model, c.data)
+        c.pause(phase="observe spill", seconds=2.1)
+        assert c.scene.cube_locations()[0] == "floor"
+        assert env.reset_movables(destination=HUMAN_RESET), env.last_info
+        atoms = env.observe().abstract_atoms
+        assert all(("Settled", (name,)) in atoms for name in c.scene.cube_names), atoms
+        assert _pick_pitcher_applicable(env=env)
+    finally:
+        env.close()
