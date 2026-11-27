@@ -660,7 +660,15 @@ class Tossing3DPomdpCli(EesCli):
                     ("PickPitcher", f"Pour{k}", "PlacePitcherAtHome") for k in counts
                 ),
                 belief_sources=(
-                    *((name, PracticeExampleSource.OUTCOME) for name in support),
+                    *(
+                        (
+                            name,
+                            PracticeExampleSource.NO_TRAINING
+                            if name == reset_name
+                            else PracticeExampleSource.OUTCOME,
+                        )
+                        for name in support
+                    ),
                     *((name, PracticeExampleSource.SAMPLER) for name in pours),
                 ),
                 initial_competence_alpha=1.0,

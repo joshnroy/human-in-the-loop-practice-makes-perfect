@@ -6,6 +6,7 @@ import pytest
 from hitl_pmp.cli import Cli
 from hitl_pmp.core.practice_costs import PracticeAccounting, PracticeCosts
 from hitl_pmp.methods.belief_space.skill_plans_domain import POURING_KITCHEN_SKILL_STEPS
+from hitl_pmp.methods.belief_space.types.practice_example_source import PracticeExampleSource
 from scripts.kitchen_launch import STAGES, KitchenLaunch
 
 
@@ -189,6 +190,11 @@ def test_latest_method_factories_accept_every_pouring_arm(*, tmp_path, monkeypat
             assert method.skill_cost_prior_steps == 500
             assert method.pomdp_domain.sampler_skills == {"Pour1", "Pour2", "Pour3"}
             assert method.pomdp_domain.human_skill_names == {"human_bulk_pour_back"}
+            # The human's attempts condition its competence; they never train it.
+            assert (
+                dict(method.pomdp_domain.belief_sources)["human_bulk_pour_back"]
+                == PracticeExampleSource.NO_TRAINING
+            )
             assert "PickShrimpFromSurface" in dict(method.pomdp_domain.belief_sources)
             # Prices evaluation cost once accounting sets lambda and the step price.
             assert method.pomdp_domain.skill_steps == POURING_KITCHEN_SKILL_STEPS
