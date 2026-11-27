@@ -197,6 +197,7 @@ class KitchenLaunch:
         repo: Path = REPO,
         evaluation_workers: int = 1,
         human_reset_success_probabilities: tuple[float, ...] | None = None,
+        arms: tuple[str, ...] = ARMS,
     ) -> list[SweepRun]:
         """Every arm x seed. Given `human_reset_success_probabilities`, every p x arm x
         seed instead: each run adds `--human-reset-success-probability p` and writes
@@ -205,9 +206,9 @@ class KitchenLaunch:
         # A sweep runs seed-major, then p, then arm (Josh, 2026-11-06): Della starts array
         # rows in order, so every p of seed 0 runs first. Without one, the stage's order.
         order = (
-            [(p, arm, seed) for seed in seeds for p in sweep for arm in ARMS]
+            [(p, arm, seed) for seed in seeds for p in sweep for arm in arms]
             if human_reset_success_probabilities
-            else [(None, arm, seed) for arm in ARMS for seed in seeds]
+            else [(None, arm, seed) for arm in arms for seed in seeds]
         )
         return [
             run
@@ -290,6 +291,7 @@ class KitchenLaunch:
         repo: Path = REPO,
         evaluation_workers: int = 1,
         human_reset_success_probabilities: tuple[float, ...] | None = None,
+        arms: tuple[str, ...] = ARMS,
     ) -> None:
         identity = KitchenLaunch.identity()
         root = results_root.resolve()
@@ -300,6 +302,7 @@ class KitchenLaunch:
             repo=repo,
             evaluation_workers=evaluation_workers,
             human_reset_success_probabilities=human_reset_success_probabilities,
+            arms=arms,
         )
         data = {
             "status": "planned",
@@ -312,6 +315,7 @@ class KitchenLaunch:
                 if human_reset_success_probabilities
                 else {}
             ),
+            **({"arms": list(arms)} if arms != ARMS else {}),
             "results_root": str(root),
             "working_directory": str(repo),
             "cost_sha256": hashlib.sha256(COSTS.read_bytes()).hexdigest(),
@@ -343,6 +347,7 @@ class KitchenLaunch:
         evaluation_workers: int | None = None,
         constraint: str = DELLA_CONSTRAINT,
         human_reset_success_probabilities: tuple[float, ...] | None = None,
+        arms: tuple[str, ...] = ARMS,
     ) -> Path:
         """Freeze the committed HEAD for `<DELLA>/code/<sha>`; Della results stay on Della.
 
@@ -369,8 +374,9 @@ class KitchenLaunch:
             repo=code,
             evaluation_workers=workers,
             human_reset_success_probabilities=human_reset_success_probabilities,
+            arms=arms,
         )
-        rows = len(ARMS) * len(seeds) * len(human_reset_success_probabilities or (None,))
+        rows = len(arms) * len(seeds) * len(human_reset_success_probabilities or (None,))
         sbatch = out / "array.sbatch"
         node = f"#SBATCH --constraint={constraint}\n" if constraint else ""
         sbatch.write_text(f"""#!/usr/bin/env bash
@@ -442,6 +448,7 @@ exec {code}/scripts/with_env.sh python -m scripts.kitchen_launch run \\
                 data.get("human_reset_success_probabilities", ())
             )
             or None,
+            arms=tuple(data.get("arms", ARMS)),
         )
         # Array siblings may already be running, so their outputs exist; only the
         # rows this worker will execute must still be fresh (validated below).
@@ -514,7 +521,15 @@ exec {code}/scripts/with_env.sh python -m scripts.kitchen_launch run \\
             help="Sweep the human pour-back's true competence: every p x arm x seed, each "
             "under human-reset-p<p>/ (default: no sweep; the stage's runs unchanged)",
         )
+        parser.add_argument(
+            "--arms",
+            choices=ARMS,
+            nargs="+",
+            default=list(ARMS),
+            help="Plan only these arms, in the launcher's arm order (default: every arm)",
+        )
         args = parser.parse_args()
+        arms = tuple(arm for arm in ARMS if arm in args.arms)
         sweep = (
             tuple(args.human_reset_success_probabilities)
             if args.human_reset_success_probabilities
@@ -527,6 +542,7 @@ exec {code}/scripts/with_env.sh python -m scripts.kitchen_launch run \\
                     results_root=Path("/unused"),
                     seeds=tuple(args.seeds),
                     human_reset_success_probabilities=sweep,
+                    arms=arms,
                 )
             )
             for row in rows:
@@ -543,6 +559,7 @@ exec {code}/scripts/with_env.sh python -m scripts.kitchen_launch run \\
                 results_root=args.results_root,
                 evaluation_workers=args.evaluation_workers or 1,
                 human_reset_success_probabilities=sweep,
+                arms=arms,
             )
             print(f"Planned the runs in {args.out}; nothing submitted")
             return 0
@@ -559,6 +576,7 @@ exec {code}/scripts/with_env.sh python -m scripts.kitchen_launch run \\
                 evaluation_workers=args.evaluation_workers,
                 constraint=args.constraint,
                 human_reset_success_probabilities=sweep,
+                arms=arms,
             )
             print(f"Planned; nothing copied or submitted. sbatch {sbatch} <Della manifest>")
             return 0
