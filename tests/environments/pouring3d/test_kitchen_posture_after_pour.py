@@ -68,6 +68,8 @@ def test_the_lift_off_a_released_jug_spins_it_only_under_the_pours_attractor(
     env = KitchenEnvironment(requested_count=1)
     try:
         c = env.controller()
+        # Preserve the historical unanchored positive control for wrist-induced spin.
+        c.scene.release_pitcher_home()
         c.data.qpos[:] = state["qpos"]
         c.data.qvel[:] = state["qvel"]
         c.data.time = state["time"]

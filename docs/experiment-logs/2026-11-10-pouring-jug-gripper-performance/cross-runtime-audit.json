@@ -1,0 +1,39 @@
+{
+  "case": {
+    "seed": 0,
+    "requested": 2,
+    "rate": 1.0,
+    "setup": "fresh"
+  },
+  "same_source_identity": true,
+  "same_harness": true,
+  "same_initial_physical_snapshot": true,
+  "same_pick_info": true,
+  "local_delivered": 3,
+  "della_delivered": 2,
+  "jug_position_difference_after_pick_m": [
+    4.848495294473842e-06,
+    -8.944349579653732e-06,
+    1.7982897513535434e-05
+  ],
+  "before_ramp_max_absolute_difference": {
+    "qpos": 0.0392736057494292,
+    "qvel": 0.47121134248317215,
+    "ctrl": 0.0018843871206026819
+  },
+  "della_thread_limits": {
+    "OMP_NUM_THREADS": "1",
+    "OPENBLAS_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1",
+    "NUMEXPR_NUM_THREADS": "1",
+    "BLIS_NUM_THREADS": "1"
+  },
+  "local_thread_limits": {
+    "OMP_NUM_THREADS": null,
+    "OPENBLAS_NUM_THREADS": null,
+    "MKL_NUM_THREADS": null,
+    "NUMEXPR_NUM_THREADS": null,
+    "BLIS_NUM_THREADS": null
+  },
+  "interpretation": "Cross-runtime trajectory sensitivity is observed; the cause has not been isolated. Local pilots are not pooled with Della cases."
+}
