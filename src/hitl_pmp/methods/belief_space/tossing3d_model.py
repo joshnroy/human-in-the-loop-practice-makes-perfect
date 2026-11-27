@@ -94,6 +94,10 @@ class Tossing3DPracticeModel(BaseModel):
     # STOP is a skill with competence 1 and this price (one robot step under step
     # accounting, 0 otherwise): every stopping value is taken after paying it.
     stop_cost: float = Field(default=0.0, ge=0.0, allow_inf_nan=False)
+    # The run's price of one robot step. Under the linear objective a domain that models
+    # deployment cost charges it at this price and the same lambda (practice_domain.py);
+    # 0 charges none. Excluded from dumps so arms without it log exactly as before.
+    robot_step_price: float = Field(default=0.0, ge=0.0, allow_inf_nan=False, exclude=True)
     failure_effect_counts: tuple[FailureEffectCount, ...] = Field(default=(), exclude=True)
     # (symbolic state, ground action) pairs whose parameter pool starved this
     # session (see EesMethod.record_starved_parameter_pool). Masked in
@@ -128,6 +132,8 @@ class Tossing3DPracticeModel(BaseModel):
     _skill_belief_models: dict[GroundSkill, SkillBeliefModel] = PrivateAttr(default_factory=dict)
     _skill_belief_models_by_name: dict[str, SkillBeliefModel] = PrivateAttr(default_factory=dict)
     _domain: PracticeDomain = PrivateAttr()
+    # ((lambda, step price), the domain carrying them) of the last valuation.
+    _priced_domain: tuple[tuple[float, float], PracticeDomain] | None = PrivateAttr(default=None)
 
     def model_post_init(self, __context: object) -> None:
         self._rng = np.random.default_rng(self.seed)
@@ -223,14 +229,31 @@ class Tossing3DPracticeModel(BaseModel):
             for row in parameters
         ]
 
+    def valued_domain(self) -> PracticeDomain:
+        """The domain that values deployment: with this model's lambda and robot-step
+        price when both are set under the linear objective, else the plain domain."""
+        weights = (self.linear_cost_lambda or 0.0, self.robot_step_price)
+        if 0.0 in weights:
+            return self._domain
+        cached = self._priced_domain
+        if cached is None or cached[0] != weights:
+            cached = (
+                weights,
+                self._domain.model_copy(
+                    update={"deployment_cost_lambda": weights[0], "robot_step_price": weights[1]}
+                ),
+            )
+            self._priced_domain = cached
+        return cached[1]
+
     def evaluate_policy(self, *, sampled_theta: Any) -> float:
-        return self._domain.evaluate_theta(theta=sampled_theta)
+        return self.valued_domain().evaluate_theta(theta=sampled_theta)
 
     def sample_policy_values_from_belief(
         self, *, belief_state: Tossing3DBeliefState, num_samples: int
     ) -> np.ndarray:
         projected = refit_belief_state(state=belief_state)
-        return self._domain.sample_policy_values(
+        return self.valued_domain().sample_policy_values(
             beliefs=projected.skill_beliefs, rng=self._rng, count=num_samples
         )
 
@@ -253,7 +276,8 @@ class Tossing3DPracticeModel(BaseModel):
         """
         assert num_samples >= 1
         projected = refit_belief_state(state=belief_state)
-        policy_value = self._domain.expected_policy_value(beliefs=projected.skill_beliefs)
+        # Net of lambda * E[deployment cost] when the domain models it (practice_domain.py).
+        policy_value = self.valued_domain().expected_policy_value(beliefs=projected.skill_beliefs)
         return self.G(policy_value=policy_value, summed_cost=summed_cost)
 
     def observe_outcome(
