@@ -29,6 +29,10 @@ import logging
 from pydantic import BaseModel, Field, PrivateAttr
 
 from hitl_pmp.core.method.types import GroundSkill
+from hitl_pmp.core.problem.human.types import (
+    SAMPLED_START_RESET_DESTINATION,
+    SAMPLED_START_RESET_SKILL_NAME,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +49,14 @@ class AlwaysAskReset(BaseModel):
 
     # An explicit price, used only when no practice-cost file prices the reset by name.
     cost: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
+    # The human reset forced, by the name it is charged under: the full reset by
+    # default; a domain that cannot re-sample its scene mid-practice names its own
+    # (pouring's human_bulk_pour_back, Josh 2026-11-20), requested under that name.
+    skill: str = SAMPLED_START_RESET_SKILL_NAME
+    # Rule 3, the reset after a STOP-only session. Off for Pouring's always-ask arm (Josh
+    # 2026-11-20, as Tossing v13h): that reset is the full sampled-start one, which the
+    # kitchen refuses mid-practice.
+    stop_only_session: bool = True
 
     _owed: bool = PrivateAttr(default=False)
     _skill_attempts: int = PrivateAttr(default=0)
@@ -52,6 +64,12 @@ class AlwaysAskReset(BaseModel):
     _stranded_run: int = PrivateAttr(default=0)
     _longest_stranded_run: int = PrivateAttr(default=0)
     _events: list[dict[str, object]] = PrivateAttr(default_factory=list)
+
+    def destination(self) -> str:
+        """The reset destination the forced reset is requested under."""
+        if self.skill == SAMPLED_START_RESET_SKILL_NAME:
+            return SAMPLED_START_RESET_DESTINATION
+        return self.skill
 
     @staticmethod
     def triggers(*, ground_skill: GroundSkill) -> bool:

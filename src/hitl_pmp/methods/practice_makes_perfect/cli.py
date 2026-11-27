@@ -7,6 +7,7 @@ from typing import Any, get_args
 from hitl_pmp.cli_protocols import EnvironmentCli
 from hitl_pmp.core.method.skill_provider import SkillProvider
 from hitl_pmp.core.practice_costs import SkillStepCosts
+from hitl_pmp.core.problem.human.types import SAMPLED_START_RESET_SKILL_NAME
 from hitl_pmp.methods.belief_space.practice_domain import (
     SWEEP_OFF_SHELF_DOMAIN,
     TOSSING3D_DOMAIN,
@@ -117,7 +118,18 @@ class EesCli:
     def always_ask_reset(*, args: argparse.Namespace) -> AlwaysAskReset | None:
         if not args.always_ask_reset:
             return None
-        return AlwaysAskReset(cost=args.always_ask_reset_cost)
+        skill = getattr(args, "always_ask_reset_skill", SAMPLED_START_RESET_SKILL_NAME)
+        stop_only_session = getattr(args, "always_ask_stop_only_session_reset", True)
+        if stop_only_session and skill != SAMPLED_START_RESET_SKILL_NAME:
+            raise ValueError(
+                "the always-ask reset after a STOP-only session is the full sampled-start "
+                f"reset, not {skill!r}: pass --no-always-ask-stop-only-session-reset"
+            )
+        return AlwaysAskReset(
+            cost=args.always_ask_reset_cost,
+            skill=skill,
+            stop_only_session=stop_only_session,
+        )
 
     @staticmethod
     def add_arguments(*, parser: argparse.ArgumentParser) -> None:
@@ -311,6 +323,22 @@ class EesCli:
             "every skill with continuous parameters, success or failure, and whenever the "
             "goal is unreachable without a human. The planner still chooses every robot "
             "action. Off by default.",
+        )
+        parser.add_argument(
+            "--always-ask-reset-skill",
+            default=SAMPLED_START_RESET_SKILL_NAME,
+            help="The human reset --always-ask-reset forces, by its cost-file name: the "
+            "full reset to a sampled start (default), or a domain's own human reset for a "
+            "domain that cannot re-sample its scene mid-practice (pouring: "
+            "human_bulk_pour_back).",
+        )
+        parser.add_argument(
+            "--always-ask-stop-only-session-reset",
+            action=argparse.BooleanOptionalAction,
+            default=True,
+            help="--always-ask-reset's rule 3: force the full reset after a practice "
+            "session that was only a STOP (default on). --no-... turns it off, as "
+            "Pouring's always-ask arm runs.",
         )
         parser.add_argument(
             "--always-ask-reset-cost",

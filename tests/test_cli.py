@@ -458,3 +458,34 @@ def test_the_observation_weight_default_itself_stays_point_one() -> None:
 def test_a_method_without_the_observation_weight_is_not_asked_for_it() -> None:
     argv = ["--env", "tossing3d", "--method", "ees", *TOSSING3D_STEP]
     Cli.require_explicit_observation_weight(argv=argv, args=Cli.parse_args(argv=argv))
+
+
+def test_always_ask_reset_skill_names_the_reset_the_wrapper_forces() -> None:
+    from hitl_pmp.methods.practice_makes_perfect.cli import EesCli
+
+    base = ["--env", "tossing3d", "--method", "pomdp", "--always-ask-reset", *TOSSING3D_STEP]
+    default = Cli.parse_args(argv=base)
+    assert EesCli.always_ask_reset(args=default).skill == "reset_to_sampled_start"
+    named = Cli.parse_args(
+        argv=[
+            *base,
+            "--always-ask-reset-skill",
+            "human_bulk_pour_back",
+            "--no-always-ask-stop-only-session-reset",
+        ]
+    )
+    rule = EesCli.always_ask_reset(args=named)
+    assert rule.skill == "human_bulk_pour_back"
+    assert not rule.stop_only_session
+
+
+def test_the_stop_only_session_reset_is_on_by_default_and_refuses_a_named_reset() -> None:
+    """Rule 3's reset is the full sampled-start one, so naming a domain's own reset
+    requires turning rule 3 off rather than silently forcing the wrong reset."""
+    from hitl_pmp.methods.practice_makes_perfect.cli import EesCli
+
+    base = ["--env", "tossing3d", "--method", "pomdp", "--always-ask-reset", *TOSSING3D_STEP]
+    assert EesCli.always_ask_reset(args=Cli.parse_args(argv=base)).stop_only_session
+    named = Cli.parse_args(argv=[*base, "--always-ask-reset-skill", "human_bulk_pour_back"])
+    with pytest.raises(ValueError, match="no-always-ask-stop-only-session-reset"):
+        EesCli.always_ask_reset(args=named)
