@@ -125,11 +125,19 @@ class KitchenEnvironment(FrozenPourEnvironment):
         on = c.scene.cooking_observed()
         state.data[O.hob] = np.array([float(on), float(not on)])
         atoms = set(state.abstract_atoms)
-        # Settled by the rest test the drop's settle wait and ready() use: KinDER's speed
-        # rule alone misses a dumpling rocking in place, and without that Settled no skill
-        # (PickPitcher, or the reset once every piece is in the jug) is applicable.
-        if c.ready_settled():
-            atoms |= {("Settled", (name,)) for name in c.scene.cube_names if name != c.held}
+        # Settled is judged per dumpling by where its centre has been over the rest
+        # window: a dumpling rocking in place (spin above KinDER's 0.25 rad/s speed rule,
+        # centre still) is settled, and the held one, which moves with the hand, judges
+        # nobody else. KinDER's per-piece speed rule stands only until the window is
+        # covered, after construction or a reset.
+        resting = c.scene.payload_resting()
+        if resting is not None:
+            atoms -= {("Settled", (name,)) for name in c.scene.cube_names}
+            atoms |= {
+                ("Settled", (name,))
+                for name, rests in zip(c.scene.cube_names, resting, strict=True)
+                if rests and name != c.held
+            }
         atoms |= KitchenPickPlannable.atoms(controller=c, refusals=self._pick_refusals)
         state.abstract_atoms = KitchenPredicates.translate(atoms=frozenset(atoms))
         return state
