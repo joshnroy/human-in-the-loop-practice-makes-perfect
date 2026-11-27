@@ -199,6 +199,56 @@ def apply_success_effects(
     return SuccessEffectsCache.of(true_atoms=true_atoms, ground_skill=ground_skill, effects=effects)
 
 
+def success_effect_outcomes(
+    *,
+    true_atoms: frozenset[GroundAtom],
+    ground_skill: GroundSkill,
+    effects: SkillEffects,
+) -> tuple[tuple[float, frozenset[GroundAtom]], ...]:
+    """What a success leaves, with its chance given that the skill succeeded: one
+    state for most skills, one per declared alternative, equally likely, otherwise."""
+    after = apply_success_effects(true_atoms=true_atoms, ground_skill=ground_skill, effects=effects)
+    if not ground_skill.skill.success_alternatives:
+        return ((1.0, after),)
+    return SuccessAlternativesCache.of(ground_skill=ground_skill, after=after)
+
+
+class SuccessAlternativesCache:
+    """A success's alternatives applied to its plain success state, memoised like
+    `SuccessEffectsCache`: the ground skill by identity, the atoms by value."""
+
+    MAX_ENTRIES: ClassVar[int] = 16384
+    _memo: ClassVar[
+        BoundedMemo[
+            tuple[int, frozenset[GroundAtom]],
+            tuple[GroundSkill, tuple[tuple[float, frozenset[GroundAtom]], ...]],
+        ]
+    ] = BoundedMemo(max_entries=MAX_ENTRIES)
+
+    @staticmethod
+    def of(
+        *, ground_skill: GroundSkill, after: frozenset[GroundAtom]
+    ) -> tuple[tuple[float, frozenset[GroundAtom]], ...]:
+        key = (id(ground_skill), after)
+        entry = SuccessAlternativesCache._memo.get(key=key)
+        if entry is not None and entry[0] is ground_skill:
+            return entry[1]
+        alternatives = ground_skill.success_alternatives
+        result = tuple(
+            (
+                1.0 / len(alternatives),
+                frozenset((after - alternative.delete_effects) | alternative.add_effects),
+            )
+            for alternative in alternatives
+        )
+        SuccessAlternativesCache._memo.put(key=key, value=(ground_skill, result))
+        return result
+
+    @staticmethod
+    def clear() -> None:
+        SuccessAlternativesCache._memo.clear()
+
+
 def compute_success_effects(
     *,
     true_atoms: frozenset[GroundAtom],
@@ -267,18 +317,14 @@ def transition_outcomes(
         # completion will, so search forecasts the same m it will observe.
         pending = dict(state.pending_examples)
         pending[action.skill.name] = pending.get(action.skill.name, 0) + 1
-        return (
-            (
-                1.0,
-                transition_belief_state(state=state, added_cost=cost).model_copy(
-                    update={"pending_examples": pending}
-                ),
-                apply_success_effects(
-                    true_atoms=environment_state.true_atoms,
-                    ground_skill=action,
-                    effects=effects,
-                ),
-            ),
+        next_state = transition_belief_state(state=state, added_cost=cost).model_copy(
+            update={"pending_examples": pending}
+        )
+        return tuple(
+            (probability, next_state, next_true_atoms)
+            for probability, next_true_atoms in success_effect_outcomes(
+                true_atoms=environment_state.true_atoms, ground_skill=action, effects=effects
+            )
         )
     if name not in domain.sampler_skills:
         belief_name = domain.belief_name(skill_name=action.skill.name)
@@ -323,13 +369,8 @@ def binary_outcomes(
         if branch_probability <= 0.0:
             continue
         effect_outcomes = (
-            (
-                (
-                    1.0,
-                    apply_success_effects(
-                        true_atoms=true_atoms, ground_skill=ground_skill, effects=effects
-                    ),
-                ),
+            success_effect_outcomes(
+                true_atoms=true_atoms, ground_skill=ground_skill, effects=effects
             )
             if success
             else EmpiricalFailureEffects.outcomes(
@@ -407,13 +448,8 @@ def toss_outcomes(
             ):
                 belief = condition_skill_belief(belief=belief, success=success)
             effect_outcomes = (
-                (
-                    (
-                        1.0,
-                        apply_success_effects(
-                            true_atoms=true_atoms, ground_skill=ground_skill, effects=effects
-                        ),
-                    ),
+                success_effect_outcomes(
+                    true_atoms=true_atoms, ground_skill=ground_skill, effects=effects
                 )
                 if success
                 else EmpiricalFailureEffects.outcomes(

@@ -15,7 +15,10 @@ from hitl_pmp.methods.belief_space.practice_domain import (
 from hitl_pmp.methods.belief_space.rack_serving_domain import (
     RACK_SERVING_DOMAIN,
 )
-from hitl_pmp.methods.belief_space.skill_plans_domain import SkillPlansPracticeDomain
+from hitl_pmp.methods.belief_space.skill_plans_domain import (
+    POURING_KITCHEN_SKILL_STEPS,
+    SkillPlansPracticeDomain,
+)
 from hitl_pmp.methods.belief_space.tossing3d_method import Tossing3DPomdpMethod
 from hitl_pmp.methods.belief_space.types.competence_evidence import CompetenceEvidence
 from hitl_pmp.methods.belief_space.types.determinized import DeterminizedVariant, DrawScope
@@ -657,7 +660,15 @@ class Tossing3DPomdpCli(EesCli):
                     ("PickPitcher", f"Pour{k}", "PlacePitcherAtHome") for k in counts
                 ),
                 belief_sources=(
-                    *((name, PracticeExampleSource.OUTCOME) for name in support),
+                    *(
+                        (
+                            name,
+                            PracticeExampleSource.NO_TRAINING
+                            if name == reset_name
+                            else PracticeExampleSource.OUTCOME,
+                        )
+                        for name in support
+                    ),
                     *((name, PracticeExampleSource.SAMPLER) for name in pours),
                 ),
                 initial_competence_alpha=1.0,
@@ -667,6 +678,8 @@ class Tossing3DPomdpCli(EesCli):
                 deterministic_skills=frozenset() if kitchen else frozenset({"Wait"}),
                 human_skill_names=frozenset({reset_name}),
                 failure_effect_skills=frozenset((*support, *pours)),
+                # Measured on the kitchen only; pouring3d keeps a P(solve)-only value.
+                skill_steps=POURING_KITCHEN_SKILL_STEPS if kitchen else {},
             )
         if domain is None:
             raise ValueError(
