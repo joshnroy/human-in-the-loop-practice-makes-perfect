@@ -137,6 +137,9 @@ def test_an_infeasible_tuck_refuses_the_whole_pick_and_moves_nothing(*, monkeypa
     )
     env = _stranded()
     c = env.controller()
+    # The stranded joint 5 (-220 deg) is past half a turn from neutral, so the pick's
+    # own unwind runs first (`test_kitchen_joint_windup`); the refused plan moves nothing.
+    c.unwind_continuous_joints(threshold=np.pi)
     steps = c.steps
     env.take_action(action=PICK_PITCHER)
     assert env.last_info["success"] is False
