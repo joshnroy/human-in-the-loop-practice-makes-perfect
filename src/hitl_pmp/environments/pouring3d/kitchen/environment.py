@@ -34,7 +34,7 @@ class KitchenEnvironment(FrozenPourEnvironment):
     # seasoned cast iron, a judgement in 0.3-0.5, not a measurement.
     skillet_mu: float = Field(default=0.4, ge=0, allow_inf_nan=False)
     deployment: bool = False
-    human_interruption_cost: float = Field(default=5, gt=0, allow_inf_nan=False)
+    human_interruption_cost: float = Field(default=5, ge=0, allow_inf_nan=False)
     # p: the human's true competence at the pour-back (SweepOffShelf3D's
     # `reset_cubes_success_probability`, #433). Each attempt fully succeeds with
     # probability p and otherwise changes nothing; it is charged either way.
