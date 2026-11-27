@@ -103,22 +103,54 @@ def test_p_zero_never_changes_the_state_but_is_charged_and_scored_a_failure():
         human = KitchenSkillProvider(env=env).human_cube_bin_reset_skill()
         assert human is not None
         before = env.observe().abstract_atoms
-        qpos, qvel = c.data.qpos.copy(), c.data.qvel.copy()
         for attempt in range(1, 4):
+            start = float(c.data.time)
             # Attempted, so the human oracle does not raise: the outcome is the failure.
             assert env.reset_movables(destination=HUMAN_RESET)
             assert not env.last_info["success"]
             assert env.human_interventions == attempt
             assert env.interruption_cost_total == 5 * attempt
-            np.testing.assert_array_equal(qpos, c.data.qpos)
-            np.testing.assert_array_equal(qvel, c.data.qvel)
+            # The attempt takes the human its duration; the world does not pause for it.
+            assert float(c.data.time) == pytest.approx(start + 1 / c.frequency)
+            assert c.scene.cube_locations()[0] == "floor"
             after = env.observe().abstract_atoms
-            assert after == before
+
+            # The human moved nothing; only whether a piece has come to rest may change.
+            def placed(*, atoms):
+                return {a for a in atoms if a[0] != "Settled"}
+
+            assert placed(atoms=after) == placed(atoms=before)
             # How the methods score a human skill (`observe_help_granted`): a success
             # exactly when its promised effects hold afterwards.
             promised = {
                 (a.predicate.name, tuple(o.name for o in a.objects)) for a in human.add_effects
             }
             assert not promised <= after
+    finally:
+        env.close()
+
+
+def test_the_cli_reads_the_human_attempts_duration_from_the_costs_file():
+    parser = argparse.ArgumentParser()
+    KitchenCli.add_arguments(parser=parser)
+    args = parser.parse_args([])
+    args.seed = 0
+    args.practice_cost_config = CostFixtures.BY_ENV["pouring3d_kitchen"]
+    env = KitchenCli.build_problem(args=args).env
+    assert env.human_reset_ticks == 1
+
+
+@needs_kinder
+@pytest.mark.xdist_group("kitchen_human_reset_success_probability")
+def test_a_failed_attempt_lets_the_scene_run_for_the_attempts_duration():
+    """Curtis seed 1, p = 0.1 (pouring-hrsweep-evalcost-20261108): 21 failed attempts in
+    a row left the sim clock at one instant, so a dumpling caught mid-rock stayed
+    caught. A failed attempt now steps the scene for the human's duration."""
+    env = _spilled(human_reset_success_probability=0.0, human_reset_ticks=5)
+    try:
+        c = env.controller()
+        start = float(c.data.time)
+        assert env.reset_movables(destination=HUMAN_RESET)
+        assert float(c.data.time) == pytest.approx(start + 5 / c.frequency)
     finally:
         env.close()

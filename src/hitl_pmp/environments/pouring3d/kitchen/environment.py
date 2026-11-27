@@ -39,6 +39,8 @@ class KitchenEnvironment(FrozenPourEnvironment):
     # `reset_cubes_success_probability`, #433). Each attempt fully succeeds with
     # probability p and otherwise changes nothing; it is charged either way.
     human_reset_success_probability: float = Field(default=1.0, ge=0.0, le=1.0)
+    # Control ticks one attempt takes the human: the costs file's duration for it.
+    human_reset_ticks: int = Field(default=1, ge=1)
     # Seeds the human's own draws; the run seed, so a run is fixed by `--seed`.
     human_seed: int = 0
     human_interventions: int = 0
@@ -206,8 +208,11 @@ class KitchenEnvironment(FrozenPourEnvironment):
         self.last_info = {"skill": HUMAN_RESET, "success": False, "error": None}
         c = self.controller()
         if not self.human_reset_succeeds():
-            # Attempted and failed: nothing moves. True, so the human oracle reports an
-            # outcome rather than a refusal; the methods score it from the state.
+            # Attempted and failed: the human moves nothing, but the attempt takes their
+            # duration and the scene runs through it (the robot holds still), so a
+            # dumpling caught mid-rock is not frozen there. True, so the human oracle
+            # reports an outcome rather than a refusal; the methods score it from the state.
+            c.pause(phase="human attempt", seconds=self.human_reset_ticks / c.frequency)
             self._steps += 1
             self.last_info.update(
                 human_interventions=1,
