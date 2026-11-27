@@ -864,6 +864,44 @@ class KitchenController(PotstickerController):
             sim.close()
         self.follow_base_path(path=clear.plans[clear.BASE_MOTION], phase=clear.BASE_MOTION)
 
+    # Where the base stands to drop a dumpling into the jug, as the scripted carry did.
+    SHRIMP_DROP_BASE_X: ClassVar[float] = 0.20
+
+    def carry_held_shrimp_to_pitcher(self, *, name: str, pitcher: np.ndarray) -> Rotation:
+        """Plan the held dumpling's carry to a hover above the jug (PyBullet) and follow
+        it, as the jug's own carries are planned. The scripted carry kept the grasp
+        orientation and tracked it with local IK, which pins the wrist at its limit; the
+        weld makes any orientation safe, so the planner may turn the hand."""
+        from .planning.parameterized_skills import DropShrimpController
+        from .planning.utils import KitchenPyBulletSim
+
+        hand, rotation = self.hand_pose()
+        point, _ = self.body_pose(name=name)
+        hover = pitcher + [0, 0, self.scene.get_object("pitcher").height + 0.07]
+        sim = KitchenPyBulletSim.from_controller(controller=self)
+        try:
+            planner = DropShrimpController(sim=sim)
+            planner.reset(
+                x=self.scene._get_object_centric_state(),
+                arm=self.data.qpos[self.arm_q].copy(),
+                base=self.data.qpos[self.base_q].copy(),
+                base_target=np.array([self.SHRIMP_DROP_BASE_X, pitcher[1], 0.0]),
+                name=name,
+                hand_rotation=rotation,
+                payload_in_hand=rotation.inv().apply(point - hand),
+                hover=hover,
+            )
+        finally:
+            sim.close()
+        self.follow_arm_path(path=planner.plans[planner.TUCK], phase=planner.TUCK, grip=1)
+        self.follow_base_path(path=planner.plans[planner.BASE_MOTION], phase=planner.BASE_MOTION)
+        self.follow_arm_path(
+            path=planner.plans[planner.MOVE_ARM_TO_HOVER], phase=planner.MOVE_ARM_TO_HOVER, grip=1
+        )
+        self.last_q = self.data.qpos[self.arm_q].copy()
+        self.base_target = self.data.qpos[self.base_q].copy()
+        return self.hand_pose()[1]
+
     def active_obstacle_pairs(self) -> list[tuple[int, int]]:
         pairs = super().active_obstacle_pairs()
         if self.held is None and self.phase == "withdraw empty gripper above pitcher":
