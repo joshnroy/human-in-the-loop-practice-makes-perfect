@@ -405,6 +405,7 @@ class NativePouringController(BaseModel):
         self.pause(phase="close fingers on pitcher handle", seconds=3, grip=1)
         if len(self.finger_contacts(name="pitcher", handle_only=True)) != 2:
             raise ValueError("Pitcher handle grasp lacks handle contact on both fingers")
+        self.pitcher_grasp_acquired()
         self.move(
             phase="lift pitcher by handle",
             position=handle + [0, 0, self.pitcher_lift_height],
@@ -421,6 +422,9 @@ class NativePouringController(BaseModel):
         hand, orientation = self.hand_pose()
         self.hand_offset = actual_rotation.inv().apply(hand - position)
         self.rotation_offset = actual_rotation.inv() * orientation
+
+    def pitcher_grasp_acquired(self) -> None:
+        """The physical handle grasp was verified; subclasses may release support."""
 
     def move_pitcher(
         self,
