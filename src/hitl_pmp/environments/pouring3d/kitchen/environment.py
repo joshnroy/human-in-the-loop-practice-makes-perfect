@@ -35,10 +35,17 @@ class KitchenEnvironment(FrozenPourEnvironment):
     skillet_mu: float = Field(default=0.4, ge=0, allow_inf_nan=False)
     deployment: bool = False
     human_interruption_cost: float = Field(default=5, gt=0, allow_inf_nan=False)
+    # p: the human's true competence at the pour-back (SweepOffShelf3D's
+    # `reset_cubes_success_probability`, #433). Each attempt fully succeeds with
+    # probability p and otherwise changes nothing; it is charged either way.
+    human_reset_success_probability: float = Field(default=1.0, ge=0.0, le=1.0)
+    # Seeds the human's own draws; the run seed, so a run is fixed by `--seed`.
+    human_seed: int = 0
     human_interventions: int = 0
     interruption_cost_total: float = 0
     episode_boundaries: list[dict[str, Any]] = Field(default_factory=list)
     _started: bool = PrivateAttr(default=False)
+    _human_rng: np.random.Generator | None = PrivateAttr(default=None)
     # Planning refusals of dispatched dumpling picks, by dumpling name; kept for the
     # life of this instance (see `pick_plannable.py`).
     _pick_refusals: dict[str, PickRefusal] = PrivateAttr(default_factory=dict)
@@ -190,6 +197,17 @@ class KitchenEnvironment(FrozenPourEnvironment):
         self.interruption_cost_total += self.human_interruption_cost
         self.last_info = {"skill": HUMAN_RESET, "success": False, "error": None}
         c = self.controller()
+        if not self.human_reset_succeeds():
+            # Attempted and failed: nothing moves. True, so the human oracle reports an
+            # outcome rather than a refusal; the methods score it from the state.
+            self._steps += 1
+            self.last_info.update(
+                human_interventions=1,
+                interruption_cost=self.human_interruption_cost,
+                human_reset_failed=True,
+            )
+            self.current_state = self.observe()
+            return True
         food_only = (
             c.held is None
             and c.vessel_home(name="pitcher")
@@ -206,6 +224,17 @@ class KitchenEnvironment(FrozenPourEnvironment):
             interruption_cost=self.human_interruption_cost,
         )
         return result
+
+    # A fixed tag mixed into the human's seed, so its stream is not the one a method
+    # seeded with the same run seed draws from.
+    HUMAN_RNG_STREAM: ClassVar[int] = 0x68756D616E
+
+    def human_reset_succeeds(self) -> bool:
+        """One draw of the human's own seeded generator: True with probability p.
+        Drawn on every attempt, so p = 1 consumes draws but never fails."""
+        if self._human_rng is None:
+            self._human_rng = np.random.default_rng([self.human_seed, self.HUMAN_RNG_STREAM])
+        return bool(self._human_rng.random() < self.human_reset_success_probability)
 
     def reset_from_any_state(self) -> bool:
         """The human reset from a state the food-only pour-back does not cover (Josh,

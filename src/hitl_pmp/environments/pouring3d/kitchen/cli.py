@@ -35,11 +35,26 @@ class KitchenCli:
             default=list(KitchenSkillProvider.model_fields["ramp_rate_bounds"].default),
             help="The closed-loop Pour's learned tilt ramp rate, deg/s; default %(default)s",
         )
+        parser.add_argument(
+            "--human-reset-success-probability",
+            type=KitchenCli.probability,
+            default=KitchenEnvironment.model_fields["human_reset_success_probability"].default,
+            help="p: the human's true competence at the pour-back. Each attempt restores "
+            "the scene with probability p and otherwise changes nothing; it is charged "
+            "either way. Drawn from its own generator, seeded by --seed.",
+        )
         parser.set_defaults(
             practice_reset_policy=PracticeResetPolicy.NEVER,
             surface_mu=KitchenEnvironment.model_fields["surface_mu"].default,
             **dict.fromkeys(OPEN_LOOP_POUR_FLAGS),
         )
+
+    @staticmethod
+    def probability(value: str) -> float:  # noqa: PLR0917  (argparse calls type= positionally)
+        p = float(value)
+        if not 0.0 <= p <= 1.0:
+            raise argparse.ArgumentTypeError(f"a probability must lie in [0, 1], got {p}")
+        return p
 
     @staticmethod
     def human_interruption_cost(*, args: argparse.Namespace) -> float:
@@ -66,6 +81,8 @@ class KitchenCli:
             geometry=geometry,
             deployment=deployment,
             human_interruption_cost=KitchenCli.human_interruption_cost(args=args),
+            human_reset_success_probability=getattr(args, "human_reset_success_probability", 1.0),
+            human_seed=args.seed,
         )
         tasks = KitchenTasks(
             env=env,
