@@ -137,6 +137,11 @@ class Tossing3DPracticeModel(BaseModel):
 
     def model_post_init(self, __context: object) -> None:
         self._rng = np.random.default_rng(self.seed)
+        if self.object_symmetry and any(
+            skill.skill.success_alternatives for skill in self.ground_skills
+        ):
+            # `InterchangeableObjects.signature` compares skills without them.
+            raise ValueError("object symmetry does not model success alternatives")
         relevant_atoms = sorted(
             {
                 atom
@@ -154,6 +159,11 @@ class Tossing3DPracticeModel(BaseModel):
                         atom
                         for effect in skill.conditional_ignore_effects
                         for atom in effect.conditions
+                    ),
+                    *(
+                        atom
+                        for alternative in skill.success_alternatives
+                        for atom in (*alternative.add_effects, *alternative.delete_effects)
                     ),
                 )
             },
@@ -173,6 +183,11 @@ class Tossing3DPracticeModel(BaseModel):
                         atom
                         for effect in skill.conditional_add_effects
                         for atom in effect.add_effects
+                    ),
+                    *(
+                        atom
+                        for alternative in skill.success_alternatives
+                        for atom in (*alternative.add_effects, *alternative.delete_effects)
                     ),
                 )
             )
