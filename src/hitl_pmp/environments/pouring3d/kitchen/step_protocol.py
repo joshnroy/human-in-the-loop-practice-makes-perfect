@@ -2,6 +2,7 @@
 
 import argparse
 from pathlib import Path
+from typing import Any
 
 from hitl_pmp.core.method.skill_provider import DomainContext
 from hitl_pmp.core.problem.problem import Problem
@@ -11,12 +12,40 @@ from hitl_pmp.recording.run_record.types import RecordingHeader
 from hitl_pmp.recording.run_record.writer import RunRecordWriter
 
 from .cli import KitchenCli
+from .config import KitchenGeometry
 from .environment import HUMAN_RESET, KitchenEnvironment
 from .skill_provider import KitchenSkillProvider
 from .tasks import KitchenProblem
 
 
 class KitchenStepProtocol(FrozenPourStepProtocol):
+    simulation_checkpoints = True
+
+    @staticmethod
+    def resolve_configuration(*, args: argparse.Namespace) -> None:
+        """Freeze the geometry file's contents in a checkpointing run's arguments, so a
+        resume is refused when the file changed. A run that neither checkpoints nor
+        resumes records exactly the arguments it always did."""
+        if not getattr(args, "checkpoint_cycles", False) and getattr(args, "resume", None) is None:
+            return
+        path = getattr(args, "kitchen_geometry", None)
+        geometry = (
+            KitchenGeometry()
+            if path is None
+            else KitchenGeometry.model_validate_json(path.read_text())
+        )
+        args.kitchen_geometry_resolved = geometry.model_dump_json()
+
+    @staticmethod
+    def checkpoint_practice_environment(*, problem: Problem) -> Any:
+        assert isinstance(problem.env, KitchenEnvironment)
+        return problem.env.simulation_checkpoint()
+
+    @staticmethod
+    def restore_checkpoint_environment(*, problem: Problem, checkpoint: Any) -> None:
+        assert isinstance(problem.env, KitchenEnvironment)
+        problem.env.restore_simulation_checkpoint(checkpoint=checkpoint)
+
     @staticmethod
     def build_practice_problem(*, args: argparse.Namespace) -> KitchenProblem:
         return KitchenCli.build_problem(args=args)

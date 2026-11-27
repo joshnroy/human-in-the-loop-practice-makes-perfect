@@ -192,3 +192,19 @@ def test_placement_from_the_recorded_stall_now_plans_and_places(*, stall):
     assert stall.last_info["controller_steps"] > 0
     assert stall.last_info["success"] is True, stall.last_info
     assert Stall.plannable(env=stall)
+
+
+def test_a_simulation_checkpoint_keeps_the_refusal(*, stall, monkeypatch):
+    """A resumed practice process must not re-dispatch a placement already refused."""
+    import pickle
+
+    Stall.fake_place(monkeypatch=monkeypatch, error=REFUSAL)
+    stall.take_action(action=PLACE)
+    assert not Stall.plannable(env=stall)
+    checkpoint = pickle.loads(pickle.dumps(stall.simulation_checkpoint()))
+    resumed = KitchenEnvironment(requested_count=RECORDED["requested"])
+    try:
+        resumed.restore_simulation_checkpoint(checkpoint=checkpoint)
+        assert not Stall.plannable(env=resumed)
+    finally:
+        resumed.close()
