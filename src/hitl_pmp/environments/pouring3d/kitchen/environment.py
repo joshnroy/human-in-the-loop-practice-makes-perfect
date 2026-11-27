@@ -211,6 +211,7 @@ class KitchenEnvironment(FrozenPourEnvironment):
         food_only = (
             c.held is None
             and c.vessel_home(name="pitcher")
+            and c.vessel_home(name="tray")
             and c.scene.cube_locations() != ["pitcher"] * self.payload_count
         )
         if food_only:
@@ -223,7 +224,10 @@ class KitchenEnvironment(FrozenPourEnvironment):
             human_interventions=1,
             interruption_cost=self.human_interruption_cost,
         )
-        return result
+        # Attempted either way, as a failed draw is: a pour-back that does not reach
+        # `ready()` is an outcome the methods score from the state, not a refusal for
+        # the oracle to end the run on.
+        return True
 
     # A fixed tag mixed into the human's seed, so its stream is not the one a method
     # seeded with the same run seed draws from.
@@ -240,10 +244,16 @@ class KitchenEnvironment(FrozenPourEnvironment):
         """The human reset from a state the food-only pour-back does not cover (Josh,
         2026-11-06): the human takes the jug or a dumpling from the hand and stands the
         jug at home, and returns the dumplings to it if any is out or the jug moved. The
-        skillet is welded to the stove, so it is never displaced. What is already in
-        place is not touched, so from the fully reset state this changes nothing. Same
-        price, same success test (`ready()`) and zero robot ticks."""
+        skillet is welded to the stove, so physics never displaces it, but MuJoCo's own
+        divergence guard can: `mj_resetData` sends it to the world origin and turns the
+        weld off, so the human stands it home and it is welded again. What is already
+        in place is not touched, so from the fully reset state this changes nothing.
+        Same price, same success test (`ready()`) and zero robot ticks."""
         c = self.controller()
+        weld = c.model.equality(c.scene.SKILLET_WELD).id
+        if not c.vessel_home(name="tray") or not c.data.eq_active[weld]:
+            c.human_stands_vessel_home(name="tray")
+            c.scene.weld_skillet()
         jug_moved = c.held is not None or not c.vessel_home(name="pitcher")
         if jug_moved:
             c.human_takes_jug_home()
