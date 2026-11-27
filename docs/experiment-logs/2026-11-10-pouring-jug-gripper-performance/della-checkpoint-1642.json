@@ -1,0 +1,108 @@
+{
+  "matched_cases": 9,
+  "matched_case_ids": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    11
+  ],
+  "total_cases": 30,
+  "fresh_initial_snapshot_exact_matches": 9,
+  "matched_fresh_cases": 9,
+  "variants": {
+    "baseline": {
+      "identity": {
+        "main": "fb217820056873797918e23651c7e06633c3eeeb",
+        "kindergarden": "c85dbbc50ddac6eb59e8b5e00d7cc942cdd691fe",
+        "kinder-baselines": "032b42634a015c7f710667b3a791836fa839f6ff"
+      },
+      "completed": 14,
+      "matched": 9,
+      "setup_success": 9,
+      "pour_attempted": 9,
+      "by_setup": {
+        "fresh": {
+          "initializations": 9,
+          "setup_success": 9,
+          "pour_attempted": 9,
+          "pour_success": 8,
+          "pour_and_place_success": 8,
+          "spilled_trials": 0,
+          "locations_after_pour": {
+            "pitcher": 10,
+            "tray": 17
+          }
+        },
+        "robot": {
+          "initializations": 0,
+          "setup_success": 0,
+          "pour_attempted": 0,
+          "pour_success": 0,
+          "pour_and_place_success": 0,
+          "spilled_trials": 0,
+          "locations_after_pour": {}
+        }
+      },
+      "pour_success": 8,
+      "pour_and_place_success": 8,
+      "placement_failures": 0,
+      "pour_controller_errors": {},
+      "unsettled_pour_outcomes": 0,
+      "failed_stages": {},
+      "max_endpoint_grasp_rotation_deg": 3.1028571524257145,
+      "max_endpoint_grasp_translation_m": 0.0065743780099612745
+    },
+    "candidate": {
+      "identity": {
+        "main": "c669e6e229c6a78c27cb5b2ed89c7f1dd5f7c8f1",
+        "kindergarden": "c85dbbc50ddac6eb59e8b5e00d7cc942cdd691fe",
+        "kinder-baselines": "032b42634a015c7f710667b3a791836fa839f6ff"
+      },
+      "completed": 9,
+      "matched": 9,
+      "setup_success": 9,
+      "pour_attempted": 9,
+      "by_setup": {
+        "fresh": {
+          "initializations": 9,
+          "setup_success": 9,
+          "pour_attempted": 9,
+          "pour_success": 8,
+          "pour_and_place_success": 8,
+          "spilled_trials": 0,
+          "locations_after_pour": {
+            "pitcher": 10,
+            "tray": 17
+          }
+        },
+        "robot": {
+          "initializations": 0,
+          "setup_success": 0,
+          "pour_attempted": 0,
+          "pour_success": 0,
+          "pour_and_place_success": 0,
+          "spilled_trials": 0,
+          "locations_after_pour": {}
+        }
+      },
+      "pour_success": 8,
+      "pour_and_place_success": 8,
+      "placement_failures": 0,
+      "pour_controller_errors": {},
+      "unsettled_pour_outcomes": 0,
+      "failed_stages": {},
+      "max_endpoint_grasp_rotation_deg": 1.6030775624841773,
+      "max_endpoint_grasp_translation_m": 0.000248212334297831
+    }
+  },
+  "discordant_pairs": {
+    "candidate_only_pour_success": [],
+    "baseline_only_pour_success": []
+  },
+  "snapshot_as_of": "2026-11-10 16:42 EST"
+}

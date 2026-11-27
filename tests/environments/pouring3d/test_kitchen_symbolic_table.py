@@ -54,6 +54,7 @@ def test_the_predicates_are_the_table():
         "Split2": (),
         "Split3": (),
         "PickPlannable": ("pour_robot", "shrimp"),
+        "PlacePlannable": ("pour_robot", "pitcher"),
         # The fallback's constant chain over the dumpling parameters.
         "PayloadOrder": ("shrimp", "shrimp"),
     }
@@ -88,7 +89,7 @@ TABLE = {
     },
     "PlacePitcherAtHome": (
         ("r", "p"),
-        {("HoldingPitcher", ("r", "p"))},
+        {("HoldingPitcher", ("r", "p")), ("PlacePlannable", ("r", "p"))},
         {("HandEmpty", ("r",)), ("PitcherHome", ("p",))},
         {("HoldingPitcher", ("r", "p"))},
         set(),
@@ -120,7 +121,12 @@ TABLE = {
     HUMAN_RESET: (
         ("r", "p", "t", *EACH),
         CHAIN,
-        {("HandEmpty", ("r",)), ("PitcherHome", ("p",)), *_each(name="InPitcher", rest=("p",))}
+        {
+            ("HandEmpty", ("r",)),
+            ("PitcherHome", ("p",)),
+            ("PlacePlannable", ("r", "p")),
+            *_each(name="InPitcher", rest=("p",)),
+        }
         | _each(name="Settled"),
         {("HoldingPitcher", ("r", "p")), *(("HoldingShrimp", ("r", s)) for s in EACH)}
         | _each(name="InTray", rest=("t",))
@@ -167,6 +173,7 @@ START: Atoms = frozenset({
     *(("InPitcher", (f"potsticker_{i}", "pitcher")) for i in range(3)),
     *(("Settled", (f"potsticker_{i}",)) for i in range(3)),
     *(("PickPlannable", ("robot", f"potsticker_{i}")) for i in range(3)),
+    ("PlacePlannable", ("robot", "pitcher")),
     ("PayloadOrder", ("potsticker_0", "potsticker_1")),
     ("PayloadOrder", ("potsticker_1", "potsticker_2")),
 })

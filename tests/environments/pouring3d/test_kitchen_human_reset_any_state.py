@@ -53,6 +53,7 @@ def _rebuild_holding_jug(*, env: KitchenEnvironment) -> None:
     c.data.time = state["time"]
     mujoco.mj_forward(c.model, c.data)
     # The recording carries MuJoCo state only; the run held the jug, closed, here.
+    c.pitcher_grasp_acquired()
     c.held, c.grip = "pitcher", 1.0
     c.last_q = c.data.qpos[c.arm_q].copy()
     c.base_target = c.data.qpos[c.base_q].copy()
@@ -112,6 +113,7 @@ def test_from_a_state_the_food_only_reset_covered_it_restores_the_pour_start():
     assert _successor(ground=human, atoms=LEGACY_STATE) == frozenset({
         ("HandEmpty", ("robot",)),
         ("PitcherHome", ("pitcher",)),
+        ("PlacePlannable", ("robot", "pitcher")),
         *(("InPitcher", (f"potsticker_{i}", "pitcher")) for i in range(3)),
         *(("Settled", (f"potsticker_{i}",)) for i in range(3)),
         ("PayloadOrder", ("potsticker_0", "potsticker_1")),

@@ -154,7 +154,14 @@ def test_deployment_plan_is_pick_pour_put_down():
     from hitl_pmp.planning.fast_downward import FastDownwardPlanner
 
     provider = KitchenSkillProvider(env=KitchenEnvironment(deployment=True, requested_count=3))
-    initial = provider.ground(name="PickPitcher").preconditions
+    # A fresh scene has no placement refusal, so PlacePlannable holds from the start.
+    placeable = {
+        a
+        for a in provider.ground(name="PlacePitcherAtHome").preconditions
+        if a.predicate.name == "PlacePlannable"
+    }
+    assert placeable
+    initial = provider.ground(name="PickPitcher").preconditions | placeable
     plan = FastDownwardPlanner.plan(
         skills=provider.skills(),
         objects=provider.objects(),
