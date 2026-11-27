@@ -133,38 +133,34 @@ def test_no_kitchen_predicate_or_precondition_mentions_the_cooking_lifecycle():
 
 
 @pytest.mark.parametrize("deployment", [False, True])
-def test_a_test_task_goal_is_the_split_and_jug_home_goal_atom(*, deployment):
+def test_a_test_task_goal_is_the_split_with_the_hand_empty_and_the_jug_home(*, deployment):
     env = KitchenEnvironment(deployment=deployment, requested_count=2)
     tasks = KitchenTasks(env=env, requested_counts=(1, 2, 3))
-    requests = env.objects().requests()
-    assert tasks.goal().atoms == frozenset({
-        GroundAtom(predicate=P.get(name="Goal"), objects=(requests[1],))
-    })
-    assert [g.atoms for g in tasks.test_task_goals()] == [
-        frozenset({GroundAtom(predicate=P.get(name="Goal"), objects=(r,))}) for r in requests
-    ]
+    o = env.objects()
+
+    def goal(*, n: int) -> frozenset[GroundAtom]:
+        return frozenset({
+            GroundAtom(predicate=P.get(name=f"Split{n}"), objects=()),
+            GroundAtom(predicate=P.get(name="HandEmpty"), objects=(o.robot,)),
+            GroundAtom(predicate=P.get(name="PitcherHome"), objects=(o.pitcher,)),
+        })
+
+    assert tasks.goal().atoms == goal(n=2)
+    assert [g.atoms for g in tasks.test_task_goals()] == [goal(n=n) for n in (1, 2, 3)]
 
 
 def test_deployment_plan_is_pick_pour_put_down():
     from hitl_pmp.planning.fast_downward import FastDownwardPlanner
 
     provider = KitchenSkillProvider(env=KitchenEnvironment(deployment=True, requested_count=3))
-    o = provider.env.objects()
-
-    def atom(name, *objects):  # noqa: PLR0917
-        return GroundAtom(predicate=P.get(name=name), objects=objects)
-
-    initial = provider.ground(name="PickPitcher").preconditions | frozenset({
-        atom("ActiveRequest", o.requests()[2]),
-        *(atom(f"Count{n}", obj) for n, obj in enumerate(o.requests(), 1)),
-    })
+    initial = provider.ground(name="PickPitcher").preconditions
     plan = FastDownwardPlanner.plan(
         skills=provider.skills(),
         objects=provider.objects(),
         predicates=provider.predicates(),
         types=provider.types(),
         init_atoms=initial,
-        goal=frozenset({atom("Goal", o.requests()[2])}),
+        goal=KitchenTasks(env=provider.env).goal().atoms,
     )
     assert [g.skill.name for g in plan] == ["PickPitcher", "Pour3", "PlacePitcherAtHome"]
 
@@ -180,8 +176,12 @@ def test_cli_builds_separate_training_and_deployment_modes():
     deploy = KitchenCli.build_problem(args=args, deployment=True)
     assert not practice.env.deployment
     assert deploy.env.deployment
-    assert next(iter(deploy.tasks.goal().atoms)).predicate.name == "Goal"
-    assert next(iter(practice.tasks.goal().atoms)).predicate.name == "Goal"
+    for problem in (deploy, practice):
+        assert {a.predicate.name for a in problem.tasks.goal().atoms} == {
+            f"Split{problem.env.requested_count}",
+            "HandEmpty",
+            "PitcherHome",
+        }
 
 
 def test_kitchen_recording_uses_its_own_lazy_renderer():

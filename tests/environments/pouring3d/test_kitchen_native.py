@@ -74,18 +74,18 @@ def test_partial_spill_failure_and_costed_human_reset_preserve_robot_and_vessels
         piece.set_velocity([0.0] * 3, [0.0] * 3)
         mujoco.mj_forward(c.model, c.data)
         # A split is judged settled by position over a window: watch the placed piece
-        # come to rest (it tumbles about 2 cm first) before reading SplitCorrect.
+        # come to rest (it tumbles about 2 cm first) before reading Split1.
         for _ in range(12):
             c.pause(phase="observe rest", seconds=1.0)
             if c.outcome_settled():
                 break
         atoms = env.observe().abstract_atoms
         assert ("InTray", ("potsticker_0", "tray")) in atoms
-        assert ("SplitCorrect", ("request_1",)) in atoms
-        assert ("SplitCorrect", ("request_3",)) not in atoms
+        assert ("Split1", ()) in atoms
+        assert ("Split3", ()) not in atoms
         piece.set_pose([0.35, 0.2, 0.002], [1, 0, 0, 0])
         mujoco.mj_forward(c.model, c.data)
-        assert ("NoSpills", ()) not in env.observe().abstract_atoms
+        assert ("OnFloor", ("potsticker_0",)) in env.observe().abstract_atoms
         before = c.data.qpos.copy()
         env.take_action(action=np.array([1, 0, 3, 1.0, 0, 0]))
         assert not env.last_info["success"]

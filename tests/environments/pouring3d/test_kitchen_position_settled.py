@@ -54,14 +54,14 @@ def test_construction_is_unchanged_and_an_unobserved_outcome_is_not_settled():
         piece.set_velocity([0.0] * 3, [0.0] * 3)
         mujoco.mj_forward(c.model, c.data)
         assert not c.outcome_settled()
-        assert ("SplitCorrect", ("request_1",)) not in env.observe().abstract_atoms
+        assert ("Split1", ()) not in env.observe().abstract_atoms
         # Placed flat on the pan it tumbles about 2 cm and comes to rest after ~7 s.
         for _ in range(12):
             c.pause(phase="observe rest", seconds=1.0)
             if c.outcome_settled():
                 break
         assert c.outcome_settled()
-        assert ("SplitCorrect", ("request_1",)) in env.observe().abstract_atoms
+        assert ("Split1", ()) in env.observe().abstract_atoms
     finally:
         env.close()
 

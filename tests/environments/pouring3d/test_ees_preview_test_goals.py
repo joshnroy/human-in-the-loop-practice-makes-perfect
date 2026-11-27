@@ -142,10 +142,8 @@ def test_cli_flag_passes_the_kitchen_test_goals_to_ees(*, flag, expected, monkey
     (method,) = built
     assert len(method.preview_test_goals) == expected
     if expected:
-        assert [goal[0][1][0] for goal in method.preview_test_goals] == [
-            "request_1",
-            "request_2",
-            "request_3",
+        assert [{name for name, _ in goal} for goal in method.preview_test_goals] == [
+            {"HandEmpty", "PitcherHome", f"Split{n}"} for n in (1, 2, 3)
         ]
 
 
