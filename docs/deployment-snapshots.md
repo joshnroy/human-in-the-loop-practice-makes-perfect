@@ -47,3 +47,21 @@ pauses after one additional cycle, yielding practice2 and eval2. Removing that
 operational stop flag continues normally. Completed evaluations and learning
 updates are not repeated; an interruption inside a later cycle restarts from
 the last complete checkpoint. Unsupported simulation backends reject resume.
+
+### The pouring kitchen
+
+`--env pouring3d_kitchen` checkpoints the same way, with the same flags. Its
+evaluations keep running in their worker processes (`--evaluation-workers`,
+`--evaluation-task-rng per-task`): they never touch the practice scene, and a
+checkpoint waits for the ones still running. Beyond the MuJoCo integration state,
+its checkpoint carries what the kitchen keeps elsewhere: the weld targets written
+into the model (the hand's grasp of the jug or a dumpling, the skillet's and the
+parked jug's stands), the inverse-kinematics scratch data, every data attribute of
+the native controller, the KinDER scene, its robot and reward counter, the
+dumplings' rest window, the pick refusals, and the human's own generator.
+
+MuJoCo's derived quantities lag one step behind after `mj_step`, and the kitchen's
+controllers read them. A restore can only recompute them at the checkpointed
+instant, so taking a checkpoint puts the live scene through the same restore. A
+checkpointing run therefore matches its own resumed continuation, not a run of the
+same seed launched without `--checkpoint-cycles`.

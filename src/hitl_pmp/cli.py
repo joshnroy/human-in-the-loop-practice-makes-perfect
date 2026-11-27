@@ -171,7 +171,8 @@ class Cli:
             default=False,
             help="Write <output-dir>/checkpoint.pickle at the end of every practice cycle "
             "(step protocol), so an interrupted run can be resumed with --resume. On by "
-            "default for --env tossing3d_real; simulated Tossing and kitchen recycling opt in.",
+            "default for --env tossing3d_real; simulated Tossing, kitchen recycling and the "
+            "pouring kitchen opt in.",
         )
         parser.add_argument(
             "--stop-after-cycles",
