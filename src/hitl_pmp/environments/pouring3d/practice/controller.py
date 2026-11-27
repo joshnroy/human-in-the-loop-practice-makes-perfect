@@ -245,7 +245,7 @@ class PracticePourController(FeedbackPourController):
             )
             fit_error = float(np.linalg.norm(residual(fit.x)))
             best_error = min(best_error, fit_error)
-            if fit_error > 0.008:
+            if fit_error > self.IK_TOLERANCE_M:
                 continue
             reachable += 1
             goal = fit.x.copy()
