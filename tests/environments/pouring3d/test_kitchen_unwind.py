@@ -6,7 +6,6 @@ import pytest
 
 from hitl_pmp.environments.pouring3d.kitchen.environment import KitchenEnvironment
 from hitl_pmp.environments.pouring3d.kitchen.native import KitchenController
-from hitl_pmp.environments.pouring3d.potsticker_controller import PotstickerController
 
 pytestmark = pytest.mark.xdist_group("kitchen_unwind")
 
@@ -57,7 +56,7 @@ def test_the_continuous_joints_are_the_ones_unwound():
         # The planned pick reads the grasp pose first, right after unwinding.
         (KitchenController, "pitcher_grasp_pose", lambda c: c.pick_pitcher()),
         (
-            PotstickerController,
+            KitchenController,
             "pick_payload_with_retry",
             lambda c: c.pick_shrimp(index=2, location="tray"),
         ),

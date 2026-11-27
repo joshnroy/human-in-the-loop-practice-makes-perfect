@@ -10,13 +10,13 @@ import pytest
 from hitl_pmp.core.problem.tasks.types import GroundAtom
 from hitl_pmp.environments.pouring3d.kitchen.config import KitchenGeometry
 from hitl_pmp.environments.pouring3d.kitchen.environment import HUMAN_RESET, KitchenEnvironment
+from hitl_pmp.environments.pouring3d.kitchen.native import KitchenController
 from hitl_pmp.environments.pouring3d.kitchen.pick_plannable import (
     PICK_PLANNABLE,
     KitchenPickPlannable,
 )
 from hitl_pmp.environments.pouring3d.kitchen.predicates import KitchenPredicates as P
 from hitl_pmp.environments.pouring3d.kitchen.skill_provider import KitchenSkillProvider
-from hitl_pmp.environments.pouring3d.potsticker_controller import PotstickerController
 
 pytestmark = pytest.mark.xdist_group("kitchen_pick_plannable")
 
@@ -24,8 +24,9 @@ DUMPLING = 2
 PICK = 3  # PickShrimpFromTray in practice.skills.SKILL_NAMES
 REFUSAL = "No feasible continuation from prepared arm postures"
 PICK_ACTION = np.array([PICK, DUMPLING, 1, 0, 0, 0], dtype=float)
-# At a 0.84 m hob a dumpling 6 cm from the pan centre, on the -y side, has no
-# collision-free hover for any of the four grasp candidates (measured 2026-11-02).
+# At a 0.84 m hob a dumpling 6 cm from the pan centre, on the -y side, had no
+# collision-free hover for any of the scripted pick's four grasp candidates (measured
+# 2026-11-02). The planned pick reaches it, and every other pan pose tried since.
 UNPLANNABLE_OFFSET = (0.0, -0.06)
 
 
@@ -47,6 +48,7 @@ def test_every_dumpling_pick_requires_the_atom_but_the_human_reset_does_not():
     ("error", "planning"),
     [
         ("No feasible continuation from prepared arm postures", True),
+        ("No planned pick from the pan: yaw +0 pitch 0: no grasp IK within 10 mm", True),
         ("No collision-free empty-arm preparation path: residual 0.0410, reachable poses 0", True),
         ("IK infeasible in prepare arm in clear aisle: residual 0.0120; joint degrees []", True),
         ("IK infeasible in position for shrimp pick: residual 0.0120; joint degrees []", True),
@@ -178,7 +180,7 @@ class Scenes:
             self.pause(phase="position for shrimp pick", seconds=0.5, grip=0)
             raise ValueError(error)
 
-        monkeypatch.setattr(PotstickerController, "pick_payload_with_retry", pick)
+        monkeypatch.setattr(KitchenController, "pick_payload_with_retry", pick)
 
 
 @pytest.fixture
@@ -194,8 +196,10 @@ def test_an_untried_dumpling_is_plannable_wherever_it_is(*, in_pan):
     assert {(PICK_PLANNABLE, ("robot", n)) for n in names} <= fresh.observe().abstract_atoms
 
 
-def test_a_real_planning_refusal_makes_the_atom_false():
+def test_a_real_planning_refusal_makes_the_atom_false(*, monkeypatch):
     env = Scenes.dumpling_in_pan(hob=0.84, offset=UNPLANNABLE_OFFSET)
+    # No grasp orientation left to try: the real planner refuses, through the real path.
+    monkeypatch.setattr(KitchenController, "PAN_PICK_YAW_TURNS_DEG", ())
     assert Scenes.plannable(env=env)
     env.take_action(action=PICK_ACTION)
     assert env.last_info["success"] is False
