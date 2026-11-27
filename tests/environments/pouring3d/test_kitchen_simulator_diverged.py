@@ -13,6 +13,7 @@ import importlib.util
 import json
 from pathlib import Path
 
+import mujoco
 import numpy as np
 import pytest
 
@@ -26,13 +27,19 @@ pytestmark = [needs_kinder, pytest.mark.xdist_group("kitchen_simulator_diverged"
 FIXTURE = Path(__file__).parent / "fixtures" / "kitchen_diverges_curtis_p1.json"
 
 
-def _recorded() -> KitchenEnvironment:
-    """The Della run's state at t = 7176.0 s, restored as the earlier diagnosis did."""
+def _recorded(*, integrator: str | None = None) -> KitchenEnvironment:
+    """The Della run's state at t = 7176.0 s, restored as the earlier diagnosis did.
+
+    The run stepped with KinDER's `implicitfast`; the kitchen now uses `implicit`
+    (`test_kitchen_integrator.py`), so a replay of the guard firing restores the
+    integrator it was recorded under."""
     state = json.loads(FIXTURE.read_text())
     requested = state["requested_count"]
     env = KitchenEnvironment(requested_count=requested)
     env.reset_to_seed(seed=0, requested=requested)
     c = env.controller()
+    if integrator is not None:
+        c.model.opt.integrator = getattr(mujoco.mjtIntegrator, integrator)
     c.data.qpos[:] = state["qpos"]
     c.data.qvel[:] = state["qvel"]
     c.data.time = state["time"]
@@ -43,7 +50,7 @@ def _recorded() -> KitchenEnvironment:
 
 
 def test_stepping_the_recorded_state_raises_at_the_tick_the_guard_fires():
-    env = _recorded()
+    env = _recorded(integrator="mjINT_IMPLICITFAST")
     try:
         c = env.controller()
         ticks = 0
@@ -60,6 +67,19 @@ def test_stepping_the_recorded_state_raises_at_the_tick_the_guard_fires():
         assert details["time_after_reset"] < 1.0
         assert not isinstance(raised.value, Exception)
         assert "potsticker_1" in str(raised.value)
+    finally:
+        env.close()
+
+
+def test_the_kitchen_integrator_steps_the_recorded_state_without_diverging():
+    env = _recorded()
+    try:
+        c = env.controller()
+        vadr = int(c.model.jnt_dofadr[c.model.body("potsticker_1").jntadr[0]])
+        for _ in range(50):
+            c.motor_step(target_q=c.last_q, grip=c.grip)
+            assert np.linalg.norm(c.data.qvel[vadr + 3 : vadr + 6]) < 1000.0
+        assert c.data.time == pytest.approx(7181.0, abs=1e-5)
     finally:
         env.close()
 

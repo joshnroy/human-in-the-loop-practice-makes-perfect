@@ -36,6 +36,20 @@ class KitchenScene(PotstickerScene):
         self.payload_rest = PayloadRestWindow()
         super().__init__(*args, **kwargs)
 
+    # KinDER's robot MJCF sets `implicitfast`, which drops the gyroscopic term from the
+    # implicit derivative: a dumpling spinning past ~100 rad/s on the skillet or floor
+    # gains energy with no torque on it until MuJoCo's guard wipes the scene (Della sweep
+    # 16997464). The robot XML's <option> is merged in after the scene's, so the override
+    # goes on the compiled model, before the first step (Josh, 2026-11-07).
+    INTEGRATOR: ClassVar[str] = "mjINT_IMPLICIT"
+
+    def _initialize_object_poses(self) -> None:
+        import mujoco
+
+        model, _ = self._model_and_data()
+        model.opt.integrator = getattr(mujoco.mjtIntegrator, self.INTEGRATOR)
+        super()._initialize_object_poses()
+
     def reset(self, *, seed: int | None = None, options: dict | None = None) -> tuple:
         self.payload_rest.clear()
         result = super().reset(seed=seed, options=options)
