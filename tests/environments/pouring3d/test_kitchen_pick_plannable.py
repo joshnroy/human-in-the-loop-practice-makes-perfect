@@ -65,6 +65,7 @@ def test_every_dumpling_pick_requires_the_atom_but_the_human_reset_does_not():
         ("Physical shrimp grasp lost", False),
         ("Shrimp grasp lacks both finger contacts", False),
         ("Shrimp not retained through lift", False),
+        ("Pick lifted a second dumpling: potsticker_0", False),
         ("Per-skill control-step limit exceeded", False),
         ("Shrimp pick requires an empty hand and the named source", False),
     ],

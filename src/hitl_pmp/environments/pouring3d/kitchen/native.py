@@ -1198,6 +1198,7 @@ class KitchenController(PotstickerController):
 
         grip = self.recovery_open_grip
         self.grip = grip
+        before = self.scene.cube_locations()
         if PickShrimpController.TUCK in plans:
             self.follow_arm_path(
                 path=plans[PickShrimpController.TUCK], phase=PickShrimpController.TUCK, grip=grip
@@ -1230,6 +1231,43 @@ class KitchenController(PotstickerController):
         if self.body_pose(name=name)[0][2] < start[2] + 0.10:
             self.held = None
             raise ValueError("Shrimp not retained through lift")
+        extra = [
+            other
+            for other, was, now in zip(
+                self.scene.cube_names, before, self.scene.cube_locations(), strict=True
+            )
+            if other != name and was != "air" and now == "air"
+        ]
+        if extra:
+            self.return_lifted_dumplings(name=name, descent=descent)
+            raise ValueError(f"{self.SECOND_DUMPLING_LIFTED}: {', '.join(extra)}")
+
+    # A pick whose lift carried another dumpling up with the named one fails with this.
+    SECOND_DUMPLING_LIFTED: ClassVar[str] = "Pick lifted a second dumpling"
+
+    def return_lifted_dumplings(self, *, name: str, descent: list[np.ndarray]) -> None:
+        """Lower the hand back down the checked descent and open it there.
+
+        A second dumpling pinched between a pad and the held one hangs by friction, off
+        every surface: it has no location, so no robot skill can name it. Released where
+        they were taken, both lie on a surface again, and the empty hand rises back up
+        the descent to the hover."""
+        self.follow_contact_path(
+            path=descent, phase="lower shrimp after lifting a second dumpling", grip=1
+        )
+        self.held = None
+        self.events.append({"event": "released a pick that lifted a second dumpling"})
+        self.pause(phase="release shrimp after lifting a second dumpling", seconds=1, grip=0)
+        # `clear_failed_pick` demands each waypoint within 2 s and so can stop part way
+        # up; rise here as the lift did, and leave it only the hover the hand is at.
+        self.follow_contact_path(
+            path=descent[::-1], phase="retreat after failed shrimp pick", grip=0
+        )
+        self.shrimp_approach_path = self.shrimp_approach_path[:1]
+        for _ in range(round(10 * self.frequency)):
+            if self.scene.cubes_settled():
+                break
+            self.motor_step(target_q=self.last_q, grip=0)
 
     # The scripted descent and lift each took 4 s; their checked replays take no less.
     CONTACT_PATH_SECONDS: ClassVar[float] = 4.0
