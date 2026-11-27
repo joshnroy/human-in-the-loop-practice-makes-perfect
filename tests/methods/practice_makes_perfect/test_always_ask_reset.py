@@ -15,6 +15,7 @@ import pytest
 from pydantic import BaseModel, ConfigDict
 
 from hitl_pmp.core.method.method import (
+    HumanCubeBinResetRequested,
     HumanStartResetRequested,
     InteractionComplete,
 )
@@ -444,6 +445,17 @@ def test_a_stop_only_session_owes_one_forced_reset(*, name: str, world: _World) 
     assert DOMAINS[name](wrapped=False).method.stop_only_session_reset() is None
 
 
+@pytest.mark.parametrize("name", sorted(DOMAINS))
+def test_with_rule_three_off_a_stop_only_session_owes_no_reset(*, name: str, world: _World) -> None:
+    """Pouring's always-ask arm runs with the STOP-only-session reset off (Josh,
+    2026-11-20): the session ends with no reset owed and nothing recorded as forced."""
+    del world
+    domain = DOMAINS[name]()
+    _rule(domain=domain).stop_only_session = False
+    assert domain.method.stop_only_session_reset() is None
+    assert _rule(domain=domain).forced == {}
+
+
 def test_the_pomdp_planner_takes_a_stop_only_reset_before_any_dispatch(
     *, world: _World, tmp_path
 ) -> None:
@@ -720,3 +732,36 @@ def test_the_wrapper_drops_only_the_tossing3d_human_reset_belief(
         if wrapped
         else TOSSING3D_DOMAIN
     )
+
+
+def test_by_default_the_forced_reset_is_the_full_sampled_start_reset() -> None:
+    rule = AlwaysAskReset(cost=PRICE)
+    assert rule.skill == "reset_to_sampled_start"
+    assert rule.destination() == SAMPLED_START_RESET_DESTINATION
+
+
+@pytest.mark.parametrize("name", sorted(DOMAINS))
+def test_a_wrapper_naming_a_domain_reset_forces_that_reset_priced_by_its_name(
+    *, name: str, world: _World
+) -> None:
+    """Pouring cannot re-sample its scene mid-practice (Josh, 2026-11-20: "A: pour-back"),
+    so its always-ask arm forces the domain's own human reset instead: requested under
+    that reset's destination, not as a full reset, and charged under that name."""
+    domain = DOMAINS[name]()
+    domain.method.always_ask_reset = AlwaysAskReset(skill="human_bulk_pour_back")
+    domain.method.configure_practice_accounting(
+        accounting=PracticeAccounting(
+            costs=PracticeCosts(
+                human_skills={"human_bulk_pour_back": HumanCharge(cost=ChargeFunction(value=7.0))},
+                human_weight=3.0,
+            )
+        )
+    )
+    world.candidates = [domain.plain]
+    world.reachable = False
+    world.atoms = domain.plain.preconditions
+    with pytest.raises(HumanCubeBinResetRequested) as request:
+        _episode(domain=domain).step(state=domain.state)
+    assert not isinstance(request.value, HumanStartResetRequested)
+    assert request.value.destination == "human_bulk_pour_back"
+    assert request.value.cost == 21.0
