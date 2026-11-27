@@ -758,15 +758,33 @@ class KitchenController(PotstickerController):
     PAN_PICK_YAW_TURNS_DEG: ClassVar[tuple[float, ...]] = (0.0, 180.0, 45.0, -45.0, 90.0, 225.0)
     # Multi-start IK for the grasp configuration, as `prepare_empty_arm` searches.
     PAN_PICK_IK_STARTS: ClassVar[int] = 16
+    # A pick from the floor that plans no approach refuses with this, before any motion.
+    FLOOR_PICK_REFUSAL: ClassVar[str] = "No planned pick from the floor"
+    # Base poses offered for a floor pick: the base centre this far from the dumpling,
+    # facing it from each heading in turn. The scripted pick's pose, from -x, comes first.
+    FLOOR_PICK_REACH_M: ClassVar[float] = 0.65
+    FLOOR_PICK_HEADINGS_DEG: ClassVar[tuple[float, ...]] = (
+        0.0,
+        45.0,
+        -45.0,
+        90.0,
+        -90.0,
+        135.0,
+        -135.0,
+        180.0,
+    )
 
     def pick_payload_with_retry(self, *, index: int, location: str) -> None:
-        """From the pan the pick is planned (`pick_from_pan`); elsewhere it is unchanged."""
-        if location != "tray":
+        """From the pan and from the floor the pick is planned (`pick_from_pan`,
+        `pick_from_floor`); elsewhere it is unchanged."""
+        if location == "tray":
+            self.pick_from_pan(index=index)
+        elif location == "floor":
+            self.pick_from_floor(index=index)
+        else:
             super().pick_payload_with_retry(index=index, location=location)
-            return
-        self.pick_from_pan(index=index)
 
-    def pan_pick_rotations(self, *, name: str) -> list[tuple[str, Rotation]]:
+    def pan_pick_rotations(self, *, name: str, heading: float = 0.0) -> list[tuple[str, Rotation]]:
         """Grasp orientations in the order tried: each yaw of `PAN_PICK_YAW_TURNS_DEG` at
         the configured, the top-down and the steep pitch (the retry's three pitches).
 
@@ -774,13 +792,17 @@ class KitchenController(PotstickerController):
         near the wall chose the least-negative footprint margin, yaw + 90 deg in 3/3
         stranded runs, a pose with no IK solution at any pitch. Here each orientation is
         checked by IK and planning instead, with the pads allowed to touch the pan.
+
+        `heading` is the base's yaw at the pick (the pan pick's is 0): yaws are taken
+        relative to it, so the wrist starts on the robot's side of the dumpling.
         """
         _, across = self.payload_grasp_geometry(name=name)
-        natural = float(np.arctan2(across[1], across[0]))
+        natural = float(np.arctan2(across[1], across[0])) - heading
         natural = (natural + np.pi / 2) % np.pi - np.pi / 2
         if natural > 0:
             # The wrist on the aisle side of the dumpling, as the scripted pick takes it.
             natural -= np.pi
+        natural += heading
         pitch = self.recovery_pitch_degrees
         # The configured tilt first: the drop's planned carry finds no carry pose for a
         # top-down grasp (measured at the pan centre, 2026-11-09), and the scripted pick
@@ -892,6 +914,18 @@ class KitchenController(PotstickerController):
     ) -> tuple[dict[str, list[np.ndarray]], list[np.ndarray], np.ndarray, str]:
         """Plan the whole pick before anything moves: the planned free-space motions,
         the grasp-to-hover chain, the grasp position and the orientation's label."""
+        plans, chain, grasp, label, _ = self.plan_payload_pick(
+            name=name, base_targets=[base_target], refusal=self.PAN_PICK_REFUSAL
+        )
+        return plans, chain, grasp, label
+
+    def plan_payload_pick(
+        self, *, name: str, base_targets: list[np.ndarray], refusal: str
+    ) -> tuple[dict[str, list[np.ndarray]], list[np.ndarray], np.ndarray, str, np.ndarray]:
+        """`plan_pick_from_pan` from the first of `base_targets` (x, y, yaw) that plans,
+        each with the grasp orientations of `pan_pick_rotations` at its heading; also
+        returns the base target. A base that plans no path refuses the whole pick when it
+        is the only one offered, as the pan pick always has; otherwise the next is tried."""
         from .planning.parameterized_skills import PickShrimpController, PlanningRefused
         from .planning.utils import KitchenPyBulletSim
 
@@ -900,50 +934,110 @@ class KitchenController(PotstickerController):
         sim = KitchenPyBulletSim.from_controller(controller=self)
         try:
             planner = PickShrimpController(sim=sim)
-            based = False
-            for label, rotation in self.pan_pick_rotations(name=name):
-                grasp = point - rotation.apply([0, 0, self.recovery_finger_offset])
-                chain = self.pan_pick_chain(grasp=grasp, rotation=rotation, base=base_target)
-                if isinstance(chain, str):
-                    refusals.append(f"{label}: {chain}")
-                    continue
-                if len(chain) - 1 < round(self.PAN_PICK_HOVER_M / self.PAN_PICK_STEP_M):
-                    try:
-                        chain = chain + self.planned_pan_lift(
-                            sim=sim,
-                            chain=chain,
-                            grasp=grasp,
-                            rotation=rotation,
-                            base_target=base_target,
-                            name=name,
-                        )
-                    except PlanningRefused as exc:
-                        straight = (len(chain) - 1) * self.PAN_PICK_STEP_M * 100
-                        refusals.append(f"{label}: straight rise {straight:.0f} cm, then {exc}")
+            for base_target in base_targets:
+                where = (
+                    ""
+                    if len(base_targets) == 1
+                    else (
+                        f"base ({base_target[0]:.2f}, {base_target[1]:.2f}, "
+                        f"{np.rad2deg(base_target[2]):.0f} deg) "
+                    )
+                )
+                based = False
+                for label, rotation in self.pan_pick_rotations(
+                    name=name, heading=float(base_target[2])
+                ):
+                    grasp = point - rotation.apply([0, 0, self.recovery_finger_offset])
+                    chain = self.pan_pick_chain(grasp=grasp, rotation=rotation, base=base_target)
+                    if isinstance(chain, str):
+                        refusals.append(f"{where}{label}: {chain}")
                         continue
-                if not based:
-                    # The tuck, when one is needed, first tries this grasp's orientation.
+                    if len(chain) - 1 < round(self.PAN_PICK_HOVER_M / self.PAN_PICK_STEP_M):
+                        try:
+                            chain = chain + self.planned_pan_lift(
+                                sim=sim,
+                                chain=chain,
+                                grasp=grasp,
+                                rotation=rotation,
+                                base_target=base_target,
+                                name=name,
+                            )
+                        except PlanningRefused as exc:
+                            straight = (len(chain) - 1) * self.PAN_PICK_STEP_M * 100
+                            refusals.append(
+                                f"{where}{label}: straight rise {straight:.0f} cm, then {exc}"
+                            )
+                            continue
+                    if not based:
+                        # The tuck, when one is needed, first tries this grasp's orientation.
+                        try:
+                            planner.plan_base(
+                                x=self.scene._get_object_centric_state(),
+                                arm=self.data.qpos[self.arm_q].copy(),
+                                base=self.data.qpos[self.base_q].copy(),
+                                base_target=base_target,
+                                rotations=[rotation],
+                                home=self.arm_neutral_q.copy(),
+                            )
+                        except PlanningRefused as exc:
+                            if len(base_targets) == 1:
+                                raise PlanningRefused(f"{refusal}: {exc}") from exc
+                            refusals.append(f"{where}{exc}")
+                            break
+                        based = True
                     try:
-                        planner.plan_base(
-                            x=self.scene._get_object_centric_state(),
-                            arm=self.data.qpos[self.arm_q].copy(),
-                            base=self.data.qpos[self.base_q].copy(),
-                            base_target=base_target,
-                            rotations=[rotation],
-                            home=self.arm_neutral_q.copy(),
-                        )
+                        planner.plan_hover(hover=chain[-1], base_target=base_target)
                     except PlanningRefused as exc:
-                        raise PlanningRefused(f"{self.PAN_PICK_REFUSAL}: {exc}") from exc
-                    based = True
-                try:
-                    planner.plan_hover(hover=chain[-1], base_target=base_target)
-                except PlanningRefused as exc:
-                    refusals.append(f"{label}: {exc}")
-                    continue
-                return planner.plans, chain, grasp, label
+                        refusals.append(f"{where}{label}: {exc}")
+                        continue
+                    return planner.plans, chain, grasp, label, base_target
         finally:
             sim.close()
-        raise PlanningRefused(f"{self.PAN_PICK_REFUSAL}: " + "; ".join(refusals))
+        raise PlanningRefused(f"{refusal}: " + "; ".join(refusals))
+
+    def floor_pick_base_targets(self, *, name: str) -> list[np.ndarray]:
+        """Base poses facing the dumpling from each of `FLOOR_PICK_HEADINGS_DEG`, less those
+        whose 2-D footprint overlaps an obstacle's: no path could end there."""
+        from .planning.parameterized_skills import KitchenMotionPlanner
+
+        point, _ = self.payload_grasp_geometry(name=name)
+        state = self.scene._get_object_centric_state()
+        targets = []
+        for heading in np.deg2rad(self.FLOOR_PICK_HEADINGS_DEG):
+            direction = np.array([np.cos(heading), np.sin(heading)])
+            target = np.r_[point[:2] - self.FLOOR_PICK_REACH_M * direction, heading]
+            if not KitchenMotionPlanner.footprint_blocked(state=state, target=target):
+                targets.append(target)
+        return targets
+
+    def pick_from_floor(self, *, index: int) -> None:
+        """Pick a dumpling from the floor as `pick_from_pan` picks one from the pan, the
+        base facing it from the first heading that plans. The scripted pick drove the base
+        straight to a pose in front of the dumpling, through the stove when it lay past it
+        (pouring-threefix-20261109, EES seed 2 at p = 0.1, a dead end for the run)."""
+        name = self.scene.cube_names[index]
+        if self.held is not None or self.scene.cube_locations()[index] != "floor":
+            raise ValueError("Shrimp pick requires an empty hand and the named source")
+        self.shrimp_recovery_active = True
+        self.shrimp_approach_path.clear()
+        self.payload_approach_plan.clear()
+        targets = self.floor_pick_base_targets(name=name)
+        if not targets:
+            raise ValueError(
+                f"{self.FLOOR_PICK_REFUSAL}: every base pose facing the dumpling overlaps "
+                "an obstacle"
+            )
+        start = self.body_pose(name=name)[0]
+        plans, chain, grasp, label, base = self.plan_payload_pick(
+            name=name, base_targets=targets, refusal=self.FLOOR_PICK_REFUSAL
+        )
+        self.events.append({
+            "event": "planned pick from the floor",
+            "payload": name,
+            "grasp": label,
+            "base": [float(v) for v in base],
+        })
+        self.follow_planned_pick(name=name, plans=plans, chain=chain, grasp=grasp, start=start)
 
     def planned_pan_lift(
         self,
@@ -997,8 +1091,6 @@ class KitchenController(PotstickerController):
         nothing). Then the planned tuck, base and arm motions to a hover above the
         dumpling; the checked vertical descent; the pinch, which welds the piece to the
         hand; and the lift, the descent replayed upwards."""
-        from .planning.parameterized_skills import PickShrimpController
-
         name = self.scene.cube_names[index]
         if self.held is not None or self.scene.cube_locations()[index] != "tray":
             raise ValueError("Shrimp pick requires an empty hand and the named source")
@@ -1010,6 +1102,21 @@ class KitchenController(PotstickerController):
         base_target = np.array([self.recovery_base_x, point[1], 0.0])
         plans, chain, grasp, label = self.plan_pick_from_pan(name=name, base_target=base_target)
         self.events.append({"event": "planned pick from the pan", "payload": name, "grasp": label})
+        self.follow_planned_pick(name=name, plans=plans, chain=chain, grasp=grasp, start=start)
+
+    def follow_planned_pick(
+        self,
+        *,
+        name: str,
+        plans: dict[str, list[np.ndarray]],
+        chain: list[np.ndarray],
+        grasp: np.ndarray,
+        start: np.ndarray,
+    ) -> None:
+        """Execute a planned pick: the planned tuck, base and arm motions to the hover,
+        the checked descent, the pinch and the lift; `start` is where the dumpling lay."""
+        from .planning.parameterized_skills import PickShrimpController
+
         grip = self.recovery_open_grip
         self.grip = grip
         if PickShrimpController.TUCK in plans:
