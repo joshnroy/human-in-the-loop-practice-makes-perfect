@@ -211,6 +211,12 @@ class KitchenController(PotstickerController):
     # Episode-initial arm configuration; set by build(). Continuous joints are
     # unwound by whole turns towards it before every empty-hand pick.
     arm_neutral_q: np.ndarray = Field(default_factory=lambda: np.zeros(7))
+    # Episode-initial jug and skillet free-joint poses and open finger joints; set by
+    # build(). The human reset stands the vessels back at the former two and releases
+    # the hand to the latter.
+    jug_home_qpos: np.ndarray = Field(default_factory=lambda: np.zeros(7))
+    skillet_home_qpos: np.ndarray = Field(default_factory=lambda: np.zeros(7))
+    open_finger_qpos: np.ndarray = Field(default_factory=lambda: np.zeros(0))
     # The commanded-delta motors track about 0.2 rad/s; prepare_empty_arm uses the same.
     unwind_speed: float = 0.20
     # Execution speeds of planned motions, within what the motors are measured to track
@@ -413,7 +419,55 @@ class KitchenController(PotstickerController):
         ]
         controller.mode = "joint_lateral"
         controller.arm_neutral_q = controller.data.qpos[controller.arm_q].copy()
+        controller.jug_home_qpos = controller.data.qpos[controller.free_qpos(name="pitcher")].copy()
+        controller.skillet_home_qpos = controller.data.qpos[
+            controller.free_qpos(name="tray")
+        ].copy()
+        controller.open_finger_qpos = controller.data.qpos[controller.finger_qpos()].copy()
         return controller
+
+    def free_qpos(self, *, name: str) -> slice:
+        """A free body's 7 qpos entries (position, quaternion)."""
+        address = int(self.model.jnt_qposadr[self.model.body_jntadr[self.model.body(name).id]])
+        return slice(address, address + 7)
+
+    def free_dofs(self, *, name: str) -> slice:
+        address = int(self.model.jnt_dofadr[self.model.body_jntadr[self.model.body(name).id]])
+        return slice(address, address + 6)
+
+    def human_stands_vessel_home(self, *, name: str) -> None:
+        """Stand a vessel ("pitcher" or "tray") at its episode-initial pose, at rest."""
+        import mujoco
+
+        home = self.jug_home_qpos if name == "pitcher" else self.skillet_home_qpos
+        self.data.qpos[self.free_qpos(name=name)] = home
+        self.data.qvel[self.free_dofs(name=name)] = 0.0
+        mujoco.mj_forward(self.model, self.data)
+
+    def finger_joints(self) -> list[int]:
+        """The gripper's linkage joints: every robot hinge that is not the base or arm."""
+        robot = self.scene.robot_name
+        taken = {*np.atleast_1d(self.base_q).tolist(), *np.atleast_1d(self.arm_q).tolist()}
+        return [
+            j
+            for j in range(self.model.njnt)
+            if self.model.joint(j).name.startswith(f"{robot}_")
+            and int(self.model.jnt_qposadr[j]) not in taken
+        ]
+
+    def finger_qpos(self) -> np.ndarray:
+        return np.array([int(self.model.jnt_qposadr[j]) for j in self.finger_joints()], dtype=int)
+
+    def human_takes_jug_home(self) -> None:
+        """The human reset's hand-off: take whatever the hand holds, open the hand, and
+        stand the jug upright at its episode-initial pose, at rest. The robot's base and
+        arm are not moved; the food is respawned in the jug afterwards (`respawn_...`)."""
+        self.scene.release_payloads()
+        self.held = None
+        self.grip = 0.0
+        self.data.qpos[self.finger_qpos()] = self.open_finger_qpos
+        self.data.qvel[[int(self.model.jnt_dofadr[j]) for j in self.finger_joints()]] = 0.0
+        self.human_stands_vessel_home(name="pitcher")
 
     def continuous_turns(self) -> np.ndarray:
         """Whole turns each continuous arm joint has wound away from its neutral angle.
