@@ -39,7 +39,27 @@ class KitchenScene(PotstickerScene):
         self.payload_rest.clear()
         result = super().reset(seed=seed, options=options)
         self.release_payloads()
+        self.weld_skillet()
         return result
+
+    # The skillet is welded to the stove where the episode placed it (Josh, 2026-11-06),
+    # so no pour, pick or spill can move it and `TrayHome` is always true. A weld
+    # equality to the world rather than #726's mocap body: the skillet keeps its free
+    # joint, so qpos keeps its layout and every recorded state still restores.
+    SKILLET_WELD: ClassVar[str] = "skillet_weld"
+
+    def weld_skillet(self) -> None:
+        import mujoco
+
+        model, data = self._model_and_data()
+        mujoco.mj_forward(model, data)
+        weld = int(mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_EQUALITY, self.SKILLET_WELD))
+        pan = model.body("tray").id
+        model.eq_data[weld, :3] = 0.0
+        model.eq_data[weld, 3:6] = data.xpos[pan]
+        model.eq_data[weld, 6:10] = data.xquat[pan]
+        data.eq_active[weld] = 1
+        mujoco.mj_forward(model, data)
 
     # A dumpling the gripper has closed on is held rigidly until it is released: a
     # weld from the hand to the piece, frozen at the pose it was grasped in (Josh,
@@ -81,6 +101,10 @@ class KitchenScene(PotstickerScene):
     def respawn_payload_in_pitcher(self) -> None:
         self.release_payloads()
         super().respawn_payload_in_pitcher()
+        # A respawn moves every piece in zero sim time: positions from before it are not
+        # this trajectory's past, so rest by position starts again (Settled falls back
+        # to the speed rule until the window refills).
+        self.payload_rest.clear()
 
     def step(self, action: Any) -> Any:  # noqa: PLR0917 -- gymnasium protocol
         result = super().step(action)
@@ -112,6 +136,15 @@ class KitchenScene(PotstickerScene):
         """Outcome rest by position (`PayloadRestWindow`), immune to rocking in place."""
         _, data = self._model_and_data()
         return self.payload_rest.settled(time=float(data.time), positions=self.payload_positions())
+
+    def payload_resting(self) -> np.ndarray | None:
+        """Per piece, whether its centre stayed within the rest threshold over the
+        window; None until the recorded history spans the whole window."""
+        _, data = self._model_and_data()
+        time = float(data.time)
+        if not self.payload_rest.covers(time=time):
+            return None
+        return self.payload_rest.resting(time=time, positions=self.payload_positions())
 
     def _check_goals(self) -> bool:
         locations = self.cube_locations()
@@ -145,6 +178,15 @@ class KitchenScene(PotstickerScene):
         equality = root.find("equality")
         if equality is None:
             equality = ET.SubElement(root, "equality")
+        ET.SubElement(
+            equality,
+            "weld",
+            name=self.SKILLET_WELD,
+            body1="world",
+            body2="tray",
+            active="false",
+            solref="0.002 1",
+        )
         for name in self.cube_names:
             ET.SubElement(
                 equality,
@@ -211,6 +253,12 @@ class KitchenController(PotstickerController):
     # Episode-initial arm configuration; set by build(). Continuous joints are
     # unwound by whole turns towards it before every empty-hand pick.
     arm_neutral_q: np.ndarray = Field(default_factory=lambda: np.zeros(7))
+    # Episode-initial jug and skillet free-joint poses and open finger joints; set by
+    # build(). The human reset stands the vessels back at the former two and releases
+    # the hand to the latter.
+    jug_home_qpos: np.ndarray = Field(default_factory=lambda: np.zeros(7))
+    skillet_home_qpos: np.ndarray = Field(default_factory=lambda: np.zeros(7))
+    open_finger_qpos: np.ndarray = Field(default_factory=lambda: np.zeros(0))
     # The commanded-delta motors track about 0.2 rad/s; prepare_empty_arm uses the same.
     unwind_speed: float = 0.20
     # Execution speeds of planned motions, within what the motors are measured to track
@@ -413,7 +461,55 @@ class KitchenController(PotstickerController):
         ]
         controller.mode = "joint_lateral"
         controller.arm_neutral_q = controller.data.qpos[controller.arm_q].copy()
+        controller.jug_home_qpos = controller.data.qpos[controller.free_qpos(name="pitcher")].copy()
+        controller.skillet_home_qpos = controller.data.qpos[
+            controller.free_qpos(name="tray")
+        ].copy()
+        controller.open_finger_qpos = controller.data.qpos[controller.finger_qpos()].copy()
         return controller
+
+    def free_qpos(self, *, name: str) -> slice:
+        """A free body's 7 qpos entries (position, quaternion)."""
+        address = int(self.model.jnt_qposadr[self.model.body_jntadr[self.model.body(name).id]])
+        return slice(address, address + 7)
+
+    def free_dofs(self, *, name: str) -> slice:
+        address = int(self.model.jnt_dofadr[self.model.body_jntadr[self.model.body(name).id]])
+        return slice(address, address + 6)
+
+    def human_stands_vessel_home(self, *, name: str) -> None:
+        """Stand a vessel ("pitcher" or "tray") at its episode-initial pose, at rest."""
+        import mujoco
+
+        home = self.jug_home_qpos if name == "pitcher" else self.skillet_home_qpos
+        self.data.qpos[self.free_qpos(name=name)] = home
+        self.data.qvel[self.free_dofs(name=name)] = 0.0
+        mujoco.mj_forward(self.model, self.data)
+
+    def finger_joints(self) -> list[int]:
+        """The gripper's linkage joints: every robot hinge that is not the base or arm."""
+        robot = self.scene.robot_name
+        taken = {*np.atleast_1d(self.base_q).tolist(), *np.atleast_1d(self.arm_q).tolist()}
+        return [
+            j
+            for j in range(self.model.njnt)
+            if self.model.joint(j).name.startswith(f"{robot}_")
+            and int(self.model.jnt_qposadr[j]) not in taken
+        ]
+
+    def finger_qpos(self) -> np.ndarray:
+        return np.array([int(self.model.jnt_qposadr[j]) for j in self.finger_joints()], dtype=int)
+
+    def human_takes_jug_home(self) -> None:
+        """The human reset's hand-off: take whatever the hand holds, open the hand, and
+        stand the jug upright at its episode-initial pose, at rest. The robot's base and
+        arm are not moved; the food is respawned in the jug afterwards (`respawn_...`)."""
+        self.scene.release_payloads()
+        self.held = None
+        self.grip = 0.0
+        self.data.qpos[self.finger_qpos()] = self.open_finger_qpos
+        self.data.qvel[[int(self.model.jnt_dofadr[j]) for j in self.finger_joints()]] = 0.0
+        self.human_stands_vessel_home(name="pitcher")
 
     def continuous_turns(self) -> np.ndarray:
         """Whole turns each continuous arm joint has wound away from its neutral angle.

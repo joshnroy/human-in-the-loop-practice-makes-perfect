@@ -30,12 +30,16 @@ class KitchenObjects(PourObjects):
     hob_type: ClassVar[Type] = Type(name="kitchen_hob", feature_names=("on", "cold"))
     hob: ClassVar[Object] = Object(name="hob", type=hob_type)
 
+    def requests(self) -> tuple[Object, ...]:
+        """None: a kitchen task's goal is its `Split{n}` atom, not a request object."""
+        return ()
+
     def all(self) -> tuple[Object, ...]:
         return (*super().all(), self.hob)
 
     @classmethod
     def types(cls) -> tuple[Type, ...]:
-        return (*super().types(), cls.hob_type)
+        return (*(t for t in super().types() if t != cls.request_type), cls.hob_type)
 
 
 class Pose(BaseModel):

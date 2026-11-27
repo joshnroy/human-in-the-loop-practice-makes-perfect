@@ -14,6 +14,7 @@ from hitl_pmp.environments.pouring3d.practice.types import FrozenPourState
 
 from .config import KitchenGeometry
 from .pick_plannable import KitchenPickPlannable
+from .predicates import KitchenPredicates
 from .types import ClosedLoopPourParameters, PickRefusal
 from .types import KitchenObjects as O
 
@@ -33,11 +34,20 @@ class KitchenEnvironment(FrozenPourEnvironment):
     # seasoned cast iron, a judgement in 0.3-0.5, not a measurement.
     skillet_mu: float = Field(default=0.4, ge=0, allow_inf_nan=False)
     deployment: bool = False
-    human_interruption_cost: float = Field(default=5, gt=0, allow_inf_nan=False)
+    human_interruption_cost: float = Field(default=5, ge=0, allow_inf_nan=False)
+    # p: the human's true competence at the pour-back (SweepOffShelf3D's
+    # `reset_cubes_success_probability`, #433). Each attempt fully succeeds with
+    # probability p and otherwise changes nothing; it is charged either way.
+    human_reset_success_probability: float = Field(default=1.0, ge=0.0, le=1.0)
+    # Control ticks one attempt takes the human: the costs file's duration for it.
+    human_reset_ticks: int = Field(default=1, ge=1)
+    # Seeds the human's own draws; the run seed, so a run is fixed by `--seed`.
+    human_seed: int = 0
     human_interventions: int = 0
     interruption_cost_total: float = 0
     episode_boundaries: list[dict[str, Any]] = Field(default_factory=list)
     _started: bool = PrivateAttr(default=False)
+    _human_rng: np.random.Generator | None = PrivateAttr(default=None)
     # Planning refusals of dispatched dumpling picks, by dumpling name; kept for the
     # life of this instance (see `pick_plannable.py`).
     _pick_refusals: dict[str, PickRefusal] = PrivateAttr(default_factory=dict)
@@ -117,13 +127,21 @@ class KitchenEnvironment(FrozenPourEnvironment):
         on = c.scene.cooking_observed()
         state.data[O.hob] = np.array([float(on), float(not on)])
         atoms = set(state.abstract_atoms)
-        # Settled by the rest test the drop's settle wait and ready() use: KinDER's speed
-        # rule alone misses a dumpling rocking in place, and without that Settled no skill
-        # (PickPitcher, or the reset once every piece is in the jug) is applicable.
-        if c.ready_settled():
-            atoms |= {("Settled", (name,)) for name in c.scene.cube_names if name != c.held}
+        # Settled is judged per dumpling by where its centre has been over the rest
+        # window: a dumpling rocking in place (spin above KinDER's 0.25 rad/s speed rule,
+        # centre still) is settled, and the held one, which moves with the hand, judges
+        # nobody else. KinDER's per-piece speed rule stands only until the window is
+        # covered, after construction or a reset.
+        resting = c.scene.payload_resting()
+        if resting is not None:
+            atoms -= {("Settled", (name,)) for name in c.scene.cube_names}
+            atoms |= {
+                ("Settled", (name,))
+                for name, rests in zip(c.scene.cube_names, resting, strict=True)
+                if rests and name != c.held
+            }
         atoms |= KitchenPickPlannable.atoms(controller=c, refusals=self._pick_refusals)
-        state.abstract_atoms = frozenset(atoms)
+        state.abstract_atoms = KitchenPredicates.translate(atoms=frozenset(atoms))
         return state
 
     def after_tick(self) -> None:
@@ -188,18 +206,92 @@ class KitchenEnvironment(FrozenPourEnvironment):
         self.human_interventions += 1
         self.interruption_cost_total += self.human_interruption_cost
         self.last_info = {"skill": HUMAN_RESET, "success": False, "error": None}
-        result = super().reset_movables(destination=LEGACY_RESET)
+        c = self.controller()
+        if not self.human_reset_succeeds():
+            # Attempted and failed: the human moves nothing, but the attempt takes their
+            # duration and the scene runs through it (the robot holds still), so a
+            # dumpling caught mid-rock is not frozen there. True, so the human oracle
+            # reports an outcome rather than a refusal; the methods score it from the state.
+            c.pause(phase="human attempt", seconds=self.human_reset_ticks / c.frequency)
+            self._steps += 1
+            self.last_info.update(
+                human_interventions=1,
+                interruption_cost=self.human_interruption_cost,
+                human_reset_failed=True,
+            )
+            self.current_state = self.observe()
+            return True
+        food_only = (
+            c.held is None
+            and c.vessel_home(name="pitcher")
+            and c.vessel_home(name="tray")
+            and c.scene.cube_locations() != ["pitcher"] * self.payload_count
+        )
+        if food_only:
+            result = super().reset_movables(destination=LEGACY_RESET)
+        else:
+            result = self.reset_from_any_state()
         self.last_info.update(
             skill=HUMAN_RESET,
             success=result,
             human_interventions=1,
             interruption_cost=self.human_interruption_cost,
         )
-        return result
+        # Attempted either way, as a failed draw is: a pour-back that does not reach
+        # `ready()` is an outcome the methods score from the state, not a refusal for
+        # the oracle to end the run on.
+        return True
+
+    # A fixed tag mixed into the human's seed, so its stream is not the one a method
+    # seeded with the same run seed draws from.
+    HUMAN_RNG_STREAM: ClassVar[int] = 0x68756D616E
+
+    def human_reset_succeeds(self) -> bool:
+        """One draw of the human's own seeded generator: True with probability p.
+        Drawn on every attempt, so p = 1 consumes draws but never fails."""
+        if self._human_rng is None:
+            self._human_rng = np.random.default_rng([self.human_seed, self.HUMAN_RNG_STREAM])
+        return bool(self._human_rng.random() < self.human_reset_success_probability)
+
+    def reset_from_any_state(self) -> bool:
+        """The human reset from a state the food-only pour-back does not cover (Josh,
+        2026-11-06): the human takes the jug or a dumpling from the hand and stands the
+        jug at home, and returns the dumplings to it if any is out or the jug moved. The
+        skillet is welded to the stove, so physics never displaces it, but MuJoCo's own
+        divergence guard can: `mj_resetData` sends it to the world origin and turns the
+        weld off, so the human stands it home and it is welded again. What is already
+        in place is not touched, so from the fully reset state this changes nothing.
+        Same price, same success test (`ready()`) and zero robot ticks."""
+        c = self.controller()
+        weld = c.model.equality(c.scene.SKILLET_WELD).id
+        if not c.vessel_home(name="tray") or not c.data.eq_active[weld]:
+            c.human_stands_vessel_home(name="tray")
+            c.scene.weld_skillet()
+        jug_moved = c.held is not None or not c.vessel_home(name="pitcher")
+        if jug_moved:
+            c.human_takes_jug_home()
+        if jug_moved or c.scene.cube_locations() != ["pitcher"] * self.payload_count:
+            c.scene.respawn_payload_in_pitcher()
+        self._steps += 1
+        self.last_info = {
+            "skill": LEGACY_RESET,
+            "success": c.ready(),
+            "error": None,
+            "human_interventions": 1,
+            "seconds": 0,
+            "controller_steps": 0,
+        }
+        self.current_state = self.observe()
+        return bool(self.last_info["success"])
 
     def finish_human_handoff(self) -> None:
         """Declare task completion before a human removes food between tasks."""
-        if ("Goal", (f"request_{self.requested_count}",)) not in self.observe().abstract_atoms:
+        done = {
+            (f"Split{self.requested_count}", ()),
+            ("HandEmpty", ("robot",)),
+            ("PitcherHome", ("pitcher",)),
+        }
+        if not done <= self.observe().abstract_atoms:
             raise ValueError("Handoff requires completed deployment")
         self.episode_boundaries.append({"reason": "human removes cooked food between tasks"})
         self._started = False

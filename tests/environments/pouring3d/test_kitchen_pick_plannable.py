@@ -91,11 +91,9 @@ class Planning:
         provider = KitchenSkillProvider(env=KitchenEnvironment(requested_count=1))
         o = provider.env.objects()
         pick = provider.ground(name="PickShrimpFromTray")
-        shrimp, pitcher, tray = o.shrimp()[0], o.pitcher, o.tray
+        shrimp, pitcher = o.shrimp()[0], o.pitcher
         init = set(pick.preconditions) | {
             Planning.atom("PitcherHome", pitcher),
-            Planning.atom("TrayHome", tray),
-            Planning.atom("NeedsReset"),
             *(Planning.atom("InPitcher", s, pitcher) for s in o.shrimp()[1:]),
             *(
                 Planning.atom("PayloadOrder", a, b)

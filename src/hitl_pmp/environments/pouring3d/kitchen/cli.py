@@ -35,11 +35,26 @@ class KitchenCli:
             default=list(KitchenSkillProvider.model_fields["ramp_rate_bounds"].default),
             help="The closed-loop Pour's learned tilt ramp rate, deg/s; default %(default)s",
         )
+        parser.add_argument(
+            "--human-reset-success-probability",
+            type=KitchenCli.probability,
+            default=KitchenEnvironment.model_fields["human_reset_success_probability"].default,
+            help="p: the human's true competence at the pour-back. Each attempt restores "
+            "the scene with probability p and otherwise changes nothing; it is charged "
+            "either way. Drawn from its own generator, seeded by --seed.",
+        )
         parser.set_defaults(
             practice_reset_policy=PracticeResetPolicy.NEVER,
             surface_mu=KitchenEnvironment.model_fields["surface_mu"].default,
             **dict.fromkeys(OPEN_LOOP_POUR_FLAGS),
         )
+
+    @staticmethod
+    def probability(value: str) -> float:  # noqa: PLR0917  (argparse calls type= positionally)
+        p = float(value)
+        if not 0.0 <= p <= 1.0:
+            raise argparse.ArgumentTypeError(f"a probability must lie in [0, 1], got {p}")
+        return p
 
     @staticmethod
     def human_interruption_cost(*, args: argparse.Namespace) -> float:
@@ -54,6 +69,18 @@ class KitchenCli:
         return costs.human_weight * charge.value
 
     @staticmethod
+    def human_reset_ticks(*, args: argparse.Namespace) -> int:
+        """How many control ticks one human attempt takes: its duration in the same
+        costs file, so the scene runs exactly as long as the attempt is billed."""
+        costs = PracticeCosts.load(path=args.practice_cost_config)
+        if HUMAN_RESET not in costs.human_skills:
+            raise ValueError(f"{args.practice_cost_config} does not price {HUMAN_RESET!r}")
+        duration = costs.human_skills[HUMAN_RESET].duration
+        if duration.function is not None:
+            raise ValueError(f"{HUMAN_RESET!r} needs a constant duration for the kitchen")
+        return int(duration.value)
+
+    @staticmethod
     def build_problem(*, args: argparse.Namespace, deployment: bool = False) -> KitchenProblem:
         # Reuse argument validation only; this constructs no native scene.
         base = FrozenPourCli.build_problem(args=args)
@@ -66,6 +93,9 @@ class KitchenCli:
             geometry=geometry,
             deployment=deployment,
             human_interruption_cost=KitchenCli.human_interruption_cost(args=args),
+            human_reset_success_probability=getattr(args, "human_reset_success_probability", 1.0),
+            human_seed=args.seed,
+            human_reset_ticks=KitchenCli.human_reset_ticks(args=args),
         )
         tasks = KitchenTasks(
             env=env,
